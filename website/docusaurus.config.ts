@@ -12,10 +12,10 @@ const config: Config = {
   },
 
   url: 'https://zyvorai.github.io',
-  baseUrl: '/gryvia/',
+  baseUrl: '/zyvor-gryvia/',
 
   organizationName: 'zyvorai',
-  projectName: 'gryvia',
+  projectName: 'zyvor-gryvia',
 
   onBrokenLinks: 'throw',
 
@@ -41,7 +41,7 @@ const config: Config = {
       {
         docs: {
           sidebarPath: './sidebars.ts',
-          editUrl: 'https://github.com/zyvorai/gryvia/tree/main/website/',
+          editUrl: 'https://github.com/zyvorai/zyvor-gryvia/tree/main/website/',
         },
         blog: false,
         theme: {
@@ -54,14 +54,15 @@ const config: Config = {
   themeConfig: {
     image: 'img/gryvia-share-card.png',
     colorMode: {
-      respectPrefersColorScheme: true,
+      defaultMode: 'dark',
+      respectPrefersColorScheme: false,
     },
     navbar: {
       title: 'Gryvia',
       logo: {alt: 'Gryvia', src: 'img/favicon.svg'},
       items: [
         {type: 'docSidebar', sidebarId: 'docsSidebar', position: 'left', label: 'Docs'},
-        {href: 'https://github.com/zyvorai/gryvia', label: 'GitHub', position: 'right'},
+        {href: 'https://github.com/zyvorai/zyvor-gryvia', label: 'GitHub', position: 'right'},
       ],
     },
     footer: {
@@ -78,8 +79,8 @@ const config: Config = {
         {
           title: 'Project',
           items: [
-            {label: 'GitHub', href: 'https://github.com/zyvorai/gryvia'},
-            {label: 'Issues', href: 'https://github.com/zyvorai/gryvia/issues'},
+            {label: 'GitHub', href: 'https://github.com/zyvorai/zyvor-gryvia'},
+            {label: 'Issues', href: 'https://github.com/zyvorai/zyvor-gryvia/issues'},
           ],
         },
       ],
