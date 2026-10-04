@@ -1,9 +1,6 @@
 <div align="center">
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/social/gryvia-share-card-dark.png">
-  <img src="docs/social/gryvia-share-card.png" alt="Gryvia — GPU is the new CPU. Gryvia is its scheduler. Kubernetes-native GPU fabric: topology-aware scheduling, RDMA/NVLink automation, parallel-filesystem storage." width="820">
-</picture>
+<img src="docs/social/gryvia-hero-dark.jpg" alt="Gryvia - GPU is the new CPU. Gryvia is its scheduler." width="100%">
 
 # Gryvia
 
@@ -131,7 +128,7 @@ The [CRD reference](website/docs/reference/crds.md) lists every kind with the op
 **fictional** demo data (GPU nodes, a quota, a job) so you can explore the dashboard without hardware:
 
 ```bash
-git clone https://github.com/zyvorai/gryvia && cd gryvia
+git clone https://github.com/zyvorai/zyvor-gryvia && cd gryvia
 ./scripts/kind-demo.sh
 kubectl -n gryvia-system port-forward svc/gryvia-ui 8443:443   # https://localhost:8443
 ```
@@ -343,7 +340,7 @@ XDP/TCX/sockops attachments have not been validated on hardware. The collector i
 `hostNetwork` (its image is built by the release workflow, which has not yet run with it), and most of its endpoints are unauthenticated; see
 [Flight Recorder](docs/flight-recorder.md) for its node-local, job-attributed diagnostic preview (the gateway's
 cluster view, `GET /api/flight/jobs/{job}`, is token-authenticated but has not run on a real cluster). Real network
-flows can instead come from [Netra](https://github.com/zyvorai/netra) (`apiGateway.netra.url`). The rest of the platform
+flows can instead come from [Netra](https://github.com/zyvorai/zyvor-netra) (`apiGateway.netra.url`). The rest of the platform
 does not depend on the collector. Not present: a mutating quota-pacing eBPF program, and the fabric-signal score is not
 used by the scheduler.
 
