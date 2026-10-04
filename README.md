@@ -1,26 +1,65 @@
 <div align="center">
 
-<img src="docs/social/gryvia-hero-dark.jpg" alt="Gryvia - GPU is the new CPU. Gryvia is its scheduler." width="100%">
-
 # Gryvia
-
-**GPU is the new CPU. Gryvia is its scheduler.**
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-0071e3?style=flat-square&labelColor=1d1d1f)](LICENSE)
 [![Go Version](https://img.shields.io/badge/Go-1.27+-0071e3?style=flat-square&labelColor=1d1d1f&logo=go&logoColor=white)](https://go.dev/)
 [![Kubernetes](https://img.shields.io/badge/Kubernetes-1.30+-0071e3?style=flat-square&labelColor=1d1d1f&logo=kubernetes&logoColor=white)](https://kubernetes.io/)
 [![NVIDIA](https://img.shields.io/badge/NVIDIA-GPU-0071e3?style=flat-square&labelColor=1d1d1f&logo=nvidia&logoColor=white)](https://nvidia.com)
 
-[**Quick Start**](#install-on-your-cluster) · [**Docs**](website/docs/intro.md) · [**Architecture**](#architecture) · [**Demo**](#try-it-in-five-minutes-no-gpus) · [**License**](#license)
+[![Book a demo](https://img.shields.io/badge/Book_a_demo-0071e3?style=for-the-badge)](https://zyvor.dev/schedule?utm_source=github&utm_medium=gryvia&utm_campaign=readme_hero)
+[![30-day PoC](https://img.shields.io/badge/30--day_PoC-000000?style=for-the-badge)](https://zyvor.dev/poc?utm_source=github&utm_medium=gryvia&utm_campaign=readme_hero)
+[![Quickstart](https://img.shields.io/badge/Quickstart_on_kind,_no_GPUs-76d13a?style=for-the-badge)](#quickstart)
+
+<img src="docs/social/gryvia-hero-dark.jpg" alt="Gryvia - GPU is the new CPU. Gryvia is its scheduler." width="100%">
+
+### GPU is the new CPU. Gryvia is its scheduler.
+
+**A Kubernetes-native GPU platform for teams training large models.** GPU-aware job admission, RDMA/NVLink and parallel-filesystem operators, quotas and budgets, and a multi-tenant GPU service with a price catalog and metering, so placement is handled by operators instead of hand-tuned per cluster.
+
+**GPU-aware job admission** · **6 Kubernetes operators** · **47 CRDs** · **Opt-in Kueue gang admission** · **Try it on kind, no GPUs**
+
+[**Quickstart**](#quickstart) · [**Docs**](website/docs/intro.md) · [**Architecture**](#architecture) · [**Demo**](#try-it-in-five-minutes-no-gpus) · [**License**](#license)
 
 </div>
+
+---
 
 > **Status: alpha, under active development.** Much of the platform is implemented and unit-tested, but the GPU,
 > RDMA and eBPF paths have not been run on real hardware, and part of the CRD surface is design only.
 > [What works today](#what-works-today) says which is which. Performance figures in this repository are
 > design targets, not measured results — see [Performance Metrics](#performance-metrics).
 
----
+## What's new
+
+From the Unreleased section of the [changelog](CHANGELOG.md); each entry there says how it was tested.
+
+| Feature | What it does |
+|---|---|
+| **Operator copilot** | `POST /api/copilot/chat` and a dashboard page answer plain-language questions about jobs, models, datasets, inference services and lineage over five read-only tools, with the caller's own LLM key |
+| **Data catalog and markings** | Document and search `GryviaDataset`s (owner, tags, column schema); label-based markings hide datasets and models from users outside the marking's OIDC group |
+| **Lineage and audit** | `GET /api/lineage` draws dataset → job → model → inference service; the gateway audit trail can be durable on SQLite with filters and CSV export |
+| **Production promotion approval** | Opt-in: a tenant's promote-to-production waits for a provider admin to approve or reject it |
+| **Scale to zero** | `GryviaInferenceService.spec.scaleToZero`, with an LLM gateway activator that wakes an idle model on the next request |
+| **Slurm on Kubernetes** | Opt-in Slinky slurm-operator sub-chart, per-tenant partitions, and `gryvia submit --sbatch` to import Slurm batch scripts |
+| **Playground** | Chat with any ready model on the LLM gateway from the dashboard, with the settings as curl or OpenAI Python code |
+
+## Why Gryvia
+
+| When this happens… | Gryvia gives you… |
+|---|---|
+| GPUs sit idle or fragmented because placement ignores GPU type and interconnect | The ai-operator filters and scores nodes on GPU type, RDMA/SR-IOV, NVLink/NVSwitch, free GPUs and memory, and records its choice in the job status |
+| Every training job is a hand-written set of Pods, Services and PVCs | One `GryviaAIJob` (type, gpus, gpuType, distributed); the operator creates the Indexed Job or StatefulSet, the headless Service and the PVC |
+| Multi-node jobs need all-or-nothing admission and fair sharing | Gang admission, quota borrowing and priority preemption through the opt-in Kueue integration |
+| Several teams share one GPU cluster and nobody knows who used what | Tenants, per-team quotas and budgets, GPU-hour metering, a SKU price catalog and estimate invoices (no payments) |
+| Bringing a GPU server into the cluster is a day of driver work | An optional NVIDIA GPU Operator sub-chart, a k3s bootstrap script and automatic `GryviaGpuNode` registration (not yet validated on real GPUs) |
+| You need to evaluate before you have GPUs | `scripts/kind-demo.sh` installs Gryvia on kind with fictional demo data |
+
+GPU-type-, interconnect- and quota-aware job admission to reduce idle and fragmented GPUs; hardware access without a
+virtualization layer; per-tenant cost visibility; Kubernetes-native operators and CRDs built for platform teams; open
+source under Apache 2.0.
+
+![Capabilities at a glance: Admit, Tenants, Nodes, Models](docs/ux/readme-capabilities.jpg)
 
 ## The problem, the shape of the fix
 
@@ -96,21 +135,11 @@ for the custom resources.<br>
 
 ---
 
-## What works today
+## Gryvia vs Kubernetes + GPU Operator
 
-| State | What |
-|---|---|
-| **Implemented and tested in CI** (unit tests, chart rendering, a kind install with demo data read back through the API and CLI) | The Helm chart; GPU, AI workload and quota operators; `GryviaAIJob` placement, run-to-completion Job and StatefulSet creation and the admission webhook; per-namespace quotas and budgets; tenants, SKU catalog, usage metering and estimate invoices; the API gateway with API-key, session and OIDC roles; the dashboard; the CLI |
-| **Implemented, tests are unit-level or a kind e2e (AIJob lifecycle, ML controllers, Kueue, GPUaaS, the kind demo and the fake-collector network-intelligence e2e pass in CI; the last one flaked until its fake collectors shared one detection time); unverified on real clusters, GPUs and services** | The ML controllers for workspaces, inference services, the model registry, workflows and the auto tuner (on by default in the ai-operator, `--enable-ml-controllers`) and the opt-in model factory (`aiOperator.modelWatch.enabled`: fine-tune, evaluate and canary new open models from the Hugging Face Hub; no real fine-tune has run), all with only unit tests with a fake client and `e2e-ml.yml` (tiny CPU images, no GPU or real model server); opt-in Kueue integration (`kueue.enabled`, `aiOperator.kueueIntegration`, `quotaOperator.kueueIntegration`); opt-in admission gate for quotas and hard budgets (`aiOperator.admissionGate`), node reservations (`quotaOperator.reservations`), per-tenant Kubernetes RBAC (`quotaOperator.tenantRbac`) and the signed invoice webhook; opt-in gateway and quota-operator Prometheus metrics with dashboards, alerts and runbooks (`monitoring.enabled`, `apiGateway.metrics.*`; never rendered against a live Prometheus or Grafana); the network-intelligence operator's real collector and Netra sources (`operator.sources.*`; e2e against a fake collector only); opt-in per-node fabric status merge (`aiOperator.mergeFabricSignals`); NVIDIA GPU Operator sub-chart, `install-k3s-gpu.sh` and node auto-registration (GPU-less k3s in CI only); storage and network operators (off by default); OIDC against a real identity provider; anything that needs GPUs, RDMA or a parallel filesystem |
-| **Experimental** | The eBPF collector, the 47 eBPF programs, fabric signals and the Flight Recorder (verified on Linux 7.0 x86_64 only); the network-intelligence operator |
-| **Removed legacy APIs and unused library code** | SLA, audit, auto-scaler, retry policy, DR tests, benchmarks, metrics and quota policies were removed (the CHANGELOG has the upgrade steps). Job hooks and datasets have opt-in controllers; `platformCompletion.reportUnsupportedAPIs` marks their objects unsupported while those controllers are off. The operator's own gang scheduling, DRF queues, preemption and elastic scaling are library code that no controller calls (Kueue provides gang admission and preemption when its integration is switched on) |
-| **Not implemented** | Payments or tax invoices, multi-cluster federation, a mutating quota-pacing eBPF program |
+![Gryvia vs Kubernetes + GPU Operator: one job spec, GPU-aware, metered per tenant](docs/ux/readme-vs.jpg)
 
-The [CRD reference](website/docs/reference/crds.md) lists every kind with the operator that reconciles it (or `none`).
-
----
-
-## Gryvia vs vanilla Kubernetes
+Gryvia runs on Kubernetes and uses NVIDIA's GPU Operator for drivers; this is what it adds on top.
 
 | Capability | Vanilla K8s + GPU Operator | Gryvia today |
 |---|---|---|
@@ -121,8 +150,78 @@ The [CRD reference](website/docs/reference/crds.md) lists every kind with the op
 | GPU failure handling | Manual intervention | Node readiness and per-GPU health on `GryviaGpuNode` (DCGM); no automated remediation |
 | Cost tracking | Not built in | GPU-hour metering, SKU catalog, estimate invoices, per-team `GryviaQuota` and `GryviaBudget` budgets (opt-in admission gate that rejects on estimated spend; estimates only); actual-usage chargeback estimates; no payments |
 | Multi-tenancy | Namespaces and your own RBAC | `GryviaTenant` namespaces with quota and NetworkPolicy; isolation is enforced by the gateway, plus opt-in per-tenant RoleBindings (`quotaOperator.tenantRbac`, unverified against a real identity provider) |
+| **Choose vanilla Kubernetes when** | Default placement and the GPU Operator are enough, you do not need tenants or metering, and you would rather not run alpha software in the GPU path | |
 
-## Try it in five minutes (no GPUs)
+<a id="gryvia-vs-vanilla-kubernetes"></a>
+
+---
+
+## How it fits together
+
+![Operators place the work; Kubernetes runs it](docs/ux/readme-how-it-works.jpg)
+
+### Architecture
+
+```
+ kubectl · gryvia CLI ─────────────────────────────┐
+ Dashboard ──▶ API gateway (admin | tenant roles) ─┤──▶  Kubernetes API  (gryvia.io/v1alpha1 CRDs)
+ Python SDK ──▶ API gateway      Go SDK ───────────┘            │
+                                                                ▼
+   Operators (helm/gryvia):  gpu · ai (+ admission webhook) · quota · [storage] · [network]
+   Operator (helm/network-intelligence):  network-intelligence
+                                                                │
+   GPU nodes:  NVIDIA GPU Operator (optional) ─▶ node labels ─▶ GryviaGpuNode (auto-registered)
+   Observability:  DCGM exporter · optional eBPF collector DaemonSet (experimental) · optional Netra flows
+```
+
+One cluster is managed per install. Opt-in federation probes verify remote readiness, and native Kueue MultiKueue configuration is available; a two-kind-cluster MultiKueue e2e (CPU pods) passes in CI, but GPUs, data replication and failover across clusters remain unverified. The GPU-aware scheduling is the ai
+operator's node selection (filter, score, select), not a separate scheduler.
+
+### Core Components
+
+<details>
+<summary><b>47 CRDs, 43 of them with a runtime controller (the CRD reference has the full table)</b></summary>
+
+**Reconciled by a runtime controller (43; some opt-in).**
+GPU operator: `GryviaHealthCheck` (opt-in health/remediation flags), `GryviaGpuNode` (also auto-created from GPU feature-discovery labels), `GryviaGpuMemoryOptimizer`, `GryviaGPUSharingPolicy` (opt-in `--enable-gpu-sharing`, chart `gpuOperator.gpuSharing`: writes the node labels for time-slicing and MIG) ·
+AI operator: `GryviaAIJob`, `GryviaCheckpointGuard`, `GryviaLiveExperiment`, `GryviaModelLineage`,
+`GryviaTrainingProfiler`, `GryviaTrainingTimeMachine`, and the ML kinds `GryviaWorkspace`, `GryviaInferenceService`,
+`GryviaModelRegistry`, `GryviaWorkflow`, `GryviaAutoTuner`, `GryviaPriority`, `GryviaTemplate` (on by default, `--enable-ml-controllers`), plus
+`GryviaModelWatch` (only with `--enable-model-watch`, see [Model factory](docs/model-factory.md)), `GryviaVectorIndex` (only with `--enable-rag`, see [RAG](docs/rag.md)), `GryviaAgent` (only with `--enable-agents`, see [Agents](docs/agents.md)), `GryviaJobHook` (only with `--enable-job-hooks`, see [Job hooks](docs/job-hooks.md)), `GryviaFederation` (only with an administrator server allowlist), `GryviaFabricSignal` (only with `--merge-fabric-signals`) · Quota operator: `GryviaQuota`, `GryviaTenant`,
+`GryviaUsageRecord`, `GryviaCostPredictor`, `GryviaBudget`, `GryviaChargeback`, `GryviaReservation` (only with `--enable-reservations`) · Storage operator: `GryviaStorage`, `GryviaDataset` (only with `--enable-datasets`, see [Datasets](docs/datasets.md)) · Network operator: `GryviaNetwork` ·
+Network-intelligence operator: `GryviaFlowPolicy`, `GryviaTrafficInsight`, `GryviaAutoPolicy`, `GryviaTraceSession`,
+`GryviaServiceGraph`, `GryviaNetworkAnomaly`, `GryviaSecurityPolicy`, `GryviaNetworkCost`, `GryviaTrainingInsight`,
+`GryviaInferenceInsight`.
+
+**Data kinds without a controller (4).** `GryviaGpuSku`, `GryviaNetworkRate`, `GryviaNetworkUsageRecord` and `GryviaNodeFabric` are catalog/telemetry data read by other controllers. The legacy kinds `GryviaAutoScaler`, `GryviaRetryPolicy`, `GryviaSLA`, `GryviaAudit`, `GryviaQuotaPolicy`, `GryviaMetric`, `GryviaBenchmark` and `GryviaDRTest`, which never had a runtime, were removed; see the [CHANGELOG](CHANGELOG.md) for the upgrade steps.
+
+</details>
+
+**Six operators:** GPU (registers `GryviaGpuNode`s and reports readiness, driver/CUDA versions and DCGM health; it does
+not install drivers, NVIDIA's GPU Operator does) · AI workload (`GryviaAIJob` placement and Job/StatefulSet workloads, the admission
+webhook, the ML controllers, an opt-in quota/budget admission gate and Kueue integration, and the profiler,
+checkpoint-guard, live-experiment, lineage and time-machine CRDs) · Quota (quotas and
+per-namespace budgets, `GryviaBudget`, tenants, usage metering, opt-in node reservations, tenant RBAC and per-tenant Kueue queues) · Storage and Network (optional; parallel-filesystem CSI backends, and
+RDMA/SR-IOV device plugins with Multus attachments; hardware-unverified) · Network Intelligence (Cilium policy actions
+and insights; its own chart, experimental).
+
+**GPU-aware node selection:** the AI operator lists nodes and their running GPU pods, filters out nodes that are not
+ready, have the wrong `gryvia.io/gpu` type, lack the requested RDMA/SR-IOV label or the free GPUs, then scores the rest
+(GPU type match +50, RDMA +30, NVSwitch +40 or NVLink +30 for multi-GPU jobs, +5 per free GPU, +1 per 10 GB of GPU
+memory, plus CPU/memory) and takes the top `distributed.nodes`. It records that choice in `status.nodesAllocated` (and
+keeps the job Pending, retrying every 30 s, when no node qualifies); the workload's pods (Job or StatefulSet) are constrained by node
+selector (`gryvia.io/gpu`, `gryvia.io/rdma`, `spec.nodeSelector`) and placed by the default Kubernetes scheduler. The
+There is no in-tree gang scheduler, DRF queue or preemption, and elastic training is only partial (`distributed.elastic.minNodes`, unit-tested, no live resize; see docs/elastic-training.md) (Kueue, when its integration is on, does gang admission, borrowing and priority preemption instead; unverified on a cluster), and the standalone NVLink/NUMA
+topology optimizer in `scheduler/` is not called by the running operator. Opt-in fabric-aware ranking (`--fabric-aware-scheduling`, chart `aiOperator.fabricAwareScheduling`, or the per-job annotation `gryvia.io/fabric-aware`) subtracts up to 25 points from nodes whose fresh `GryviaNodeFabric` signal reports a sick fabric; it is off by default, unit-tested, and never run on a real fabric. Detail:
+[Scheduling guide](website/docs/guides/SCHEDULING.md).
+
+---
+
+## Quickstart
+
+Requirements: a Kubernetes 1.30+ cluster and Helm for an install; [kind](https://kind.sigs.k8s.io) (with a container runtime) and `kubectl` for the demo. The CLI builds with `cargo build --release` in `cli/`.
+
+### Try it in five minutes (no GPUs)
 
 `scripts/kind-demo.sh` creates a local [kind](https://kind.sigs.k8s.io) cluster, installs Gryvia and loads
 **fictional** demo data (GPU nodes, a quota, a job) so you can explore the dashboard without hardware:
@@ -137,7 +236,7 @@ Sign in as `admin` / `Admin@321`. That is a well-known lab key: set your own (`a
 an install; the sign-in page shows the `kubectl` command that reads the key in use. See [Authentication and TLS](website/docs/guides/AUTH_AND_TLS.md). The demo's GPU nodes are fictional:
 nothing runs real GPU work.
 
-## Install on your cluster
+### Install on your cluster
 
 ```bash
 helm install gryvia oci://ghcr.io/zyvorai/charts/gryvia \
@@ -192,65 +291,6 @@ Also in the dashboard (Catalog, Usage, Tenants, Invoices) and under `/api/skus`,
 `/api/invoices`. It has been tested with unit tests and fake clusters, not against a real identity provider or GPUs.
 See [GPU as a Service](website/docs/guides/GPU_AS_A_SERVICE.md), and [GPU cloud platform](docs/gpu-cloud-platform.md)
 for what GPU clouds advertise mapped to what Gryvia has and how each part is tested.
-
----
-
-## Architecture
-
-```
- kubectl · gryvia CLI ─────────────────────────────┐
- Dashboard ──▶ API gateway (admin | tenant roles) ─┤──▶  Kubernetes API  (gryvia.io/v1alpha1 CRDs)
- Python SDK ──▶ API gateway      Go SDK ───────────┘            │
-                                                                ▼
-   Operators (helm/gryvia):  gpu · ai (+ admission webhook) · quota · [storage] · [network]
-   Operator (helm/network-intelligence):  network-intelligence
-                                                                │
-   GPU nodes:  NVIDIA GPU Operator (optional) ─▶ node labels ─▶ GryviaGpuNode (auto-registered)
-   Observability:  DCGM exporter · optional eBPF collector DaemonSet (experimental) · optional Netra flows
-```
-
-One cluster is managed per install. Opt-in federation probes verify remote readiness, and native Kueue MultiKueue configuration is available; a two-kind-cluster MultiKueue e2e (CPU pods) passes in CI, but GPUs, data replication and failover across clusters remain unverified. The GPU-aware scheduling is the ai
-operator's node selection (filter, score, select), not a separate scheduler.
-
----
-
-## Core Components
-
-<details>
-<summary><b>47 CRDs, 43 of them with a runtime controller (the CRD reference has the full table)</b></summary>
-
-**Reconciled by a runtime controller (43; some opt-in).**
-GPU operator: `GryviaHealthCheck` (opt-in health/remediation flags), `GryviaGpuNode` (also auto-created from GPU feature-discovery labels), `GryviaGpuMemoryOptimizer`, `GryviaGPUSharingPolicy` (opt-in `--enable-gpu-sharing`, chart `gpuOperator.gpuSharing`: writes the node labels for time-slicing and MIG) ·
-AI operator: `GryviaAIJob`, `GryviaCheckpointGuard`, `GryviaLiveExperiment`, `GryviaModelLineage`,
-`GryviaTrainingProfiler`, `GryviaTrainingTimeMachine`, and the ML kinds `GryviaWorkspace`, `GryviaInferenceService`,
-`GryviaModelRegistry`, `GryviaWorkflow`, `GryviaAutoTuner`, `GryviaPriority`, `GryviaTemplate` (on by default, `--enable-ml-controllers`), plus
-`GryviaModelWatch` (only with `--enable-model-watch`, see [Model factory](docs/model-factory.md)), `GryviaVectorIndex` (only with `--enable-rag`, see [RAG](docs/rag.md)), `GryviaAgent` (only with `--enable-agents`, see [Agents](docs/agents.md)), `GryviaJobHook` (only with `--enable-job-hooks`, see [Job hooks](docs/job-hooks.md)), `GryviaFederation` (only with an administrator server allowlist), `GryviaFabricSignal` (only with `--merge-fabric-signals`) · Quota operator: `GryviaQuota`, `GryviaTenant`,
-`GryviaUsageRecord`, `GryviaCostPredictor`, `GryviaBudget`, `GryviaChargeback`, `GryviaReservation` (only with `--enable-reservations`) · Storage operator: `GryviaStorage`, `GryviaDataset` (only with `--enable-datasets`, see [Datasets](docs/datasets.md)) · Network operator: `GryviaNetwork` ·
-Network-intelligence operator: `GryviaFlowPolicy`, `GryviaTrafficInsight`, `GryviaAutoPolicy`, `GryviaTraceSession`,
-`GryviaServiceGraph`, `GryviaNetworkAnomaly`, `GryviaSecurityPolicy`, `GryviaNetworkCost`, `GryviaTrainingInsight`,
-`GryviaInferenceInsight`.
-
-**Data kinds without a controller (4).** `GryviaGpuSku`, `GryviaNetworkRate`, `GryviaNetworkUsageRecord` and `GryviaNodeFabric` are catalog/telemetry data read by other controllers. The legacy kinds `GryviaAutoScaler`, `GryviaRetryPolicy`, `GryviaSLA`, `GryviaAudit`, `GryviaQuotaPolicy`, `GryviaMetric`, `GryviaBenchmark` and `GryviaDRTest`, which never had a runtime, were removed; see the [CHANGELOG](CHANGELOG.md) for the upgrade steps.
-
-</details>
-
-**Six operators:** GPU (registers `GryviaGpuNode`s and reports readiness, driver/CUDA versions and DCGM health; it does
-not install drivers, NVIDIA's GPU Operator does) · AI workload (`GryviaAIJob` placement and Job/StatefulSet workloads, the admission
-webhook, the ML controllers, an opt-in quota/budget admission gate and Kueue integration, and the profiler,
-checkpoint-guard, live-experiment, lineage and time-machine CRDs) · Quota (quotas and
-per-namespace budgets, `GryviaBudget`, tenants, usage metering, opt-in node reservations, tenant RBAC and per-tenant Kueue queues) · Storage and Network (optional; parallel-filesystem CSI backends, and
-RDMA/SR-IOV device plugins with Multus attachments; hardware-unverified) · Network Intelligence (Cilium policy actions
-and insights; its own chart, experimental).
-
-**GPU-aware node selection:** the AI operator lists nodes and their running GPU pods, filters out nodes that are not
-ready, have the wrong `gryvia.io/gpu` type, lack the requested RDMA/SR-IOV label or the free GPUs, then scores the rest
-(GPU type match +50, RDMA +30, NVSwitch +40 or NVLink +30 for multi-GPU jobs, +5 per free GPU, +1 per 10 GB of GPU
-memory, plus CPU/memory) and takes the top `distributed.nodes`. It records that choice in `status.nodesAllocated` (and
-keeps the job Pending, retrying every 30 s, when no node qualifies); the workload's pods (Job or StatefulSet) are constrained by node
-selector (`gryvia.io/gpu`, `gryvia.io/rdma`, `spec.nodeSelector`) and placed by the default Kubernetes scheduler. The
-There is no in-tree gang scheduler, DRF queue or preemption, and elastic training is only partial (`distributed.elastic.minNodes`, unit-tested, no live resize; see docs/elastic-training.md) (Kueue, when its integration is on, does gang admission, borrowing and priority preemption instead; unverified on a cluster), and the standalone NVLink/NUMA
-topology optimizer in `scheduler/` is not called by the running operator. Opt-in fabric-aware ranking (`--fabric-aware-scheduling`, chart `aiOperator.fabricAwareScheduling`, or the per-job annotation `gryvia.io/fabric-aware`) subtracts up to 25 points from nodes whose fresh `GryviaNodeFabric` signal reports a sick fabric; it is off by default, unit-tested, and never run on a real fabric. Detail:
-[Scheduling guide](website/docs/guides/SCHEDULING.md).
 
 ---
 
@@ -356,25 +396,7 @@ now have controllers that are unit-tested and covered by a kind e2e (tiny CPU im
 real model server. Worked examples are in [examples/](examples/) and the
 [user guide](website/docs/user-guide/jobs.md).
 
----
-
-## Contributing
-
-We welcome contributions — see [CONTRIBUTING.md](CONTRIBUTING.md).
-
-## License
-
-Commercial subscriptions and support: see [docs/SUBSCRIPTION-MODEL.md](docs/SUBSCRIPTION-MODEL.md).
-
-Apache License 2.0 — see [LICENSE](LICENSE).
-
----
-
-### Why Gryvia
-
-GPU-type-, interconnect- and quota-aware job admission to reduce idle and fragmented GPUs; hardware access without a
-virtualization layer; per-tenant cost visibility; Kubernetes-native operators and CRDs built for platform teams; open
-source under Apache 2.0.
+Runtime completion work—telemetry proxy, measured canary rollback, checkpoint integrity/recovery, native scheduling integrations, GPU quarantine/drain, metered chargeback and explicit legacy-API capability reporting—is documented in [platform completion](docs/platform-completion.md), including remaining integration and hardware limits.
 
 <div align="center">
 
@@ -384,4 +406,63 @@ source under Apache 2.0.
 
 </div>
 
-Runtime completion work—telemetry proxy, measured canary rollback, checkpoint integrity/recovery, native scheduling integrations, GPU quarantine/drain, metered chargeback and explicit legacy-API capability reporting—is documented in [platform completion](docs/platform-completion.md), including remaining integration and hardware limits.
+## Contributing
+
+We welcome contributions — see [CONTRIBUTING.md](CONTRIBUTING.md).
+
+---
+
+## Maturity
+
+Gryvia is **alpha**. The table below is the repository's own statement of what is real today.
+
+<a id="what-works-today"></a>
+
+### What works today
+
+| State | What |
+|---|---|
+| **Implemented and tested in CI** (unit tests, chart rendering, a kind install with demo data read back through the API and CLI) | The Helm chart; GPU, AI workload and quota operators; `GryviaAIJob` placement, run-to-completion Job and StatefulSet creation and the admission webhook; per-namespace quotas and budgets; tenants, SKU catalog, usage metering and estimate invoices; the API gateway with API-key, session and OIDC roles; the dashboard; the CLI |
+| **Implemented, tests are unit-level or a kind e2e (AIJob lifecycle, ML controllers, Kueue, GPUaaS, the kind demo and the fake-collector network-intelligence e2e pass in CI; the last one flaked until its fake collectors shared one detection time); unverified on real clusters, GPUs and services** | The ML controllers for workspaces, inference services, the model registry, workflows and the auto tuner (on by default in the ai-operator, `--enable-ml-controllers`) and the opt-in model factory (`aiOperator.modelWatch.enabled`: fine-tune, evaluate and canary new open models from the Hugging Face Hub; no real fine-tune has run), all with only unit tests with a fake client and `e2e-ml.yml` (tiny CPU images, no GPU or real model server); opt-in Kueue integration (`kueue.enabled`, `aiOperator.kueueIntegration`, `quotaOperator.kueueIntegration`); opt-in admission gate for quotas and hard budgets (`aiOperator.admissionGate`), node reservations (`quotaOperator.reservations`), per-tenant Kubernetes RBAC (`quotaOperator.tenantRbac`) and the signed invoice webhook; opt-in gateway and quota-operator Prometheus metrics with dashboards, alerts and runbooks (`monitoring.enabled`, `apiGateway.metrics.*`; never rendered against a live Prometheus or Grafana); the network-intelligence operator's real collector and Netra sources (`operator.sources.*`; e2e against a fake collector only); opt-in per-node fabric status merge (`aiOperator.mergeFabricSignals`); NVIDIA GPU Operator sub-chart, `install-k3s-gpu.sh` and node auto-registration (GPU-less k3s in CI only); storage and network operators (off by default); OIDC against a real identity provider; anything that needs GPUs, RDMA or a parallel filesystem |
+| **Experimental** | The eBPF collector, the 47 eBPF programs, fabric signals and the Flight Recorder (verified on Linux 7.0 x86_64 only); the network-intelligence operator |
+| **Removed legacy APIs and unused library code** | SLA, audit, auto-scaler, retry policy, DR tests, benchmarks, metrics and quota policies were removed (the CHANGELOG has the upgrade steps). Job hooks and datasets have opt-in controllers; `platformCompletion.reportUnsupportedAPIs` marks their objects unsupported while those controllers are off. The operator's own gang scheduling, DRF queues, preemption and elastic scaling are library code that no controller calls (Kueue provides gang admission and preemption when its integration is switched on) |
+| **Not implemented** | Payments or tax invoices, multi-cluster federation, a mutating quota-pacing eBPF program |
+
+The [CRD reference](website/docs/reference/crds.md) lists every kind with the operator that reconciles it (or `none`).
+
+---
+
+## Part of the Zyvor stack
+
+| Product | Role next to Gryvia |
+|---|---|
+| **Gryvia** | Kubernetes GPU platform: GPU-aware admission, tenants, quotas, metering |
+| **[Netra](https://github.com/zyvorai/zyvor-netra)** | Real network flows for Gryvia's gateway and network-intelligence operator (`apiGateway.netra.url`) |
+| **[Zyntra](https://github.com/zyvorai/zyvor-zyntra)** | Sovereign AI OS loop: an agent proposes in Zyntra, a person approves, and Zyntra writes the `GryviaPriority` ([docs/sovereign-aios.md](docs/sovereign-aios.md)) |
+| **[Duvora](https://github.com/zyvorai/zyvor-duvora)** | DPU fleet control plane; pairs with Gryvia on accelerated clusters |
+
+→ [zyvor.dev](https://zyvor.dev)
+
+---
+
+## License
+
+Gryvia is **free and open source** under the [Apache License 2.0](LICENSE). That does not change.
+
+**Zyvor Enterprise** adds what production teams ask for: supported releases, deployment and upgrade guidance, priority incident triage, a named technical contact and 24x7 critical intake. Plans and terms: [docs/SUBSCRIPTION-MODEL.md](docs/SUBSCRIPTION-MODEL.md) · [Pricing](https://zyvor.dev/pricing?utm_source=github&utm_medium=gryvia&utm_campaign=readme_license) · [sales@zyvor.dev](mailto:sales@zyvor.dev).
+
+Read the [threat model and known limits](SECURITY.md) before exposing an install beyond a lab · [Contributing](CONTRIBUTING.md).
+
+---
+
+<div align="center">
+
+### Turn your GPU cluster into a GPU service
+
+[![Book a demo](https://img.shields.io/badge/Book_a_demo-0071e3?style=for-the-badge)](https://zyvor.dev/schedule?utm_source=github&utm_medium=gryvia&utm_campaign=readme_footer)
+[![30-day PoC](https://img.shields.io/badge/Start_a_30--day_PoC-000000?style=for-the-badge)](https://zyvor.dev/poc?utm_source=github&utm_medium=gryvia&utm_campaign=readme_footer)
+[![Pricing](https://img.shields.io/badge/Pricing-1d1d1f?style=for-the-badge)](https://zyvor.dev/pricing?utm_source=github&utm_medium=gryvia&utm_campaign=readme_footer)
+[![Contact sales](https://img.shields.io/badge/Contact_sales-2997ff?style=for-the-badge)](mailto:sales@zyvor.dev?subject=Gryvia)
+[![Star on GitHub](https://img.shields.io/github/stars/zyvorai/zyvor-gryvia?style=for-the-badge&logo=github&label=Star&color=2997ff)](https://github.com/zyvorai/zyvor-gryvia)
+
+</div>
