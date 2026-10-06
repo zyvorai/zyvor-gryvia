@@ -79,7 +79,7 @@ jobs:
               echo "file=examples/agents/Dockerfile" >> "$GITHUB_OUTPUT" ;;
           esac
       - name: Build (no push)
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: ${{ steps.ctx.outputs.context }}
           file: ${{ steps.ctx.outputs.file }}
