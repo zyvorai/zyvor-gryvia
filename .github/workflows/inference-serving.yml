@@ -53,7 +53,7 @@ jobs:
         working-directory: operators/ai-operator
         run: go test -tags integration ./controllers -run TestInferenceServingAPIServer -count=1 -v
       - uses: azure/setup-helm@v5
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
       - name: Helm routing configuration
@@ -86,7 +86,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
       - name: Install pinned CPU PyTorch
