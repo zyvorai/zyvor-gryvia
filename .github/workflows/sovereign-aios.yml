@@ -61,7 +61,7 @@ jobs:
           go-version-file: zyntra/go.mod
           cache-dependency-path: zyntra/go.sum
       - uses: azure/setup-helm@v5
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
       - run: pip install -r gryvia/examples/agents/requirements.txt pyyaml cryptography
@@ -89,7 +89,7 @@ jobs:
           repository: zyvorai/netra
           path: netra
       - uses: azure/setup-helm@v5
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
       - run: pip install pyyaml ansible-core ansible-lint
