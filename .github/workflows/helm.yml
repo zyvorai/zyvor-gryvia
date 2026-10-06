@@ -47,6 +47,9 @@ jobs:
       - name: Run chart-testing (lint)
         run: ct lint --config .github/ct.yaml --all
 
+      - name: Intelligence operations use opt-in writes and namespace-local records
+        run: bash scripts/tests/intelligence-chart.test.sh
+
       - name: Kueue chart switches (default render has no Kueue, each switch adds only its own flag and RBAC)
         run: |
           helm dependency build helm/gryvia

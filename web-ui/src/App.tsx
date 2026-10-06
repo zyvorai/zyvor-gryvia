@@ -39,6 +39,7 @@ const ModelFactory = lazy(() => import('./pages/ModelFactory'))
 const Datasets = lazy(() => import('./pages/Datasets'))
 const DataCatalog = lazy(() => import('./pages/DataCatalog'))
 const Copilot = lazy(() => import('./pages/Copilot'))
+const Intelligence = lazy(() => import('./pages/Intelligence'))
 const Audit = lazy(() => import('./pages/Audit'))
 const Lineage = lazy(() => import('./pages/Lineage'))
 const LlmGateway = lazy(() => import('./pages/LlmGateway'))
@@ -158,6 +159,7 @@ function App() {
             <Route element={<ProtectedLayout />}>
               <Route index element={<Navigate to="/dashboard" replace />} />
               <Route path="/dashboard" element={<Dashboard />} />
+              <Route path="/intelligence" element={<Intelligence />} />
               <Route path="/jobs" element={<Jobs />} />
               <Route path="/jobs/new" element={<SubmitJob />} />
               <Route path="/jobs/:name" element={<JobDetails />} />

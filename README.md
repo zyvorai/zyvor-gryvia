@@ -32,6 +32,12 @@
 
 ## What's new
 
+**Workload intelligence:** a dashboard workbench and typed analysis APIs for preflight, training evidence,
+useful-work cost, inference SLO recommendations, model benchmarking, checkpoint compatibility, locality,
+fabric qualification, capacity simulation and sovereign placement. Opt-in operations add durable proposals,
+separate OIDC review, execution preconditions and rollback. Analysis modes and remaining controller/hardware
+limits are explicit in [the guide](docs/workload-intelligence.md).
+
 From the Unreleased section of the [changelog](CHANGELOG.md); each entry there says how it was tested.
 
 | Feature | What it does |

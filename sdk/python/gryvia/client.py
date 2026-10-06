@@ -19,6 +19,7 @@ from gryvia.exceptions import (
     ValidationError,
 )
 from gryvia.jobs import Jobs
+from gryvia.intelligence import Intelligence
 from gryvia.metrics import Metrics
 from gryvia.nodes import Nodes
 from gryvia.quotas import Quotas
@@ -85,6 +86,7 @@ class Gryvia:
         self.nodes = Nodes(self)
         self.metrics = Metrics(self)
         self.costs = Costs(self)
+        self.intelligence = Intelligence(self)
 
     # ------------------------------------------------------------------
     # Context manager

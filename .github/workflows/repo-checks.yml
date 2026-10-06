@@ -24,6 +24,7 @@ jobs:
           python-version: '3.12'
       - run: python3 examples/training/test_checkpoint_worker.py
       - run: python3 examples/training/test_coordinated_checkpoint.py
+      - run: python3 examples/training/test_checkpoint_contract.py
       - run: bash scripts/tests/e2e-kueue-pods.test.sh
 
   model-factory:
@@ -167,6 +168,7 @@ jobs:
           python-version: '3.12'
       - run: pip install -e sdk/python pytest
       - run: python -m pytest -q sdk/python/tests
+      - run: python -m pytest -q scripts/tests/test_benchmark_model.py
 
   sdk-go:
     name: Go SDK tests

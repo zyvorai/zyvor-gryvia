@@ -14,7 +14,7 @@ MODULES = ["network", "security", "workspaces", "jobs", "models", "inference", "
 
 
 def register_routers(app: FastAPI, deps: Deps) -> None:
-    for name in MODULES:
+    for name in [*MODULES, "intelligence", "intelligence_actions"]:
         try:
             mod = importlib.import_module(f"{__name__}.{name}")
         except ModuleNotFoundError as exc:

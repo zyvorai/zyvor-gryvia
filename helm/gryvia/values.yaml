@@ -265,6 +265,8 @@ networkOperator:
 
 # --- API gateway and dashboard -----------------------------------------------
 apiGateway:
+  # Durable two-person OIDC operations. Grants gateway node/quota patches and local ConfigMap storage.
+  intelligenceActions: false
   enabled: true
   image: {name: gryvia-api-gateway, tag: ""}
   replicas: 2

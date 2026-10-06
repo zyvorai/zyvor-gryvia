@@ -29,6 +29,7 @@ const TOOL_LABELS: Record<string, string> = {
   list_datasets: 'datasets',
   list_inference_services: 'inference services',
   get_lineage: 'lineage',
+  propose_operation: 'operation proposal',
 }
 
 /** "Looked at jobs, lineage" for the tools a reply used (each once), or '' when it used none. */
