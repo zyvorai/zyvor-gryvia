@@ -141,7 +141,7 @@ jobs:
         run: |
           echo "${{ secrets.DOCKERHUB_TOKEN }}" | helm registry login registry-1.docker.io -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
           for f in dist/*.tgz; do helm push "$f" oci://registry-1.docker.io/zyvorai; done
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: chart
           path: dist/*.tgz
@@ -167,7 +167,7 @@ jobs:
           mkdir dist
           cp cli/target/release/gryvia "dist/gryvia-${TAG}-${{ matrix.target }}"
           (cd dist && shasum -a 256 "gryvia-${TAG}-${{ matrix.target }}" > "gryvia-${TAG}-${{ matrix.target }}.sha256")
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: cli-${{ matrix.target }}
           path: dist/*
