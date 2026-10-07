@@ -3,7 +3,7 @@ name: Kind e2e (MultiKueue, three clusters, federation failover)
 # Three kind clusters on one docker network: a manager running Gryvia with Kueue (tenant ClusterQueues bound to a
 # MultiKueue admission check via platformCompletion.kueueAdmissionCheck) and two workers running only Kueue. A
 # GryviaAIJob submitted on the manager must run on a worker and report Succeeded back. Then a GryviaFederation with
-# automatic failover watches both workers: a checkpointing job (S3 replica in a MinIO container) runs on one worker,
+# automatic failover watches both workers: a checkpointing job (S3 replica in a versitygw container) runs on one worker,
 # that worker's container is stopped, and the federation must fence it (lease timeout), evict the Workload so
 # MultiKueue redispatches it to the other worker, where the trainer resumes from the replica. CPU pods only; nothing
 # about GPUs or cost. Scenarios: scripts/e2e-multikueue.sh; its ASSUMPTIONS are listed at the top.
@@ -58,17 +58,17 @@ jobs:
           helm install kueue oci://registry.k8s.io/kueue/charts/kueue --version 0.19.6 \
             --namespace kueue-system --create-namespace --kube-context kind-gryvia-worker2 --wait --timeout 300s
           kubectl config use-context kind-gryvia-demo
-      - name: Training image on both workers, MinIO on the kind network (checkpoint replica)
+      - name: Training image on both workers, S3 server on the kind network (checkpoint replica)
         run: |
           docker build -f examples/training/Dockerfile.elastic -t ghcr.io/zyvorai/gryvia-elastic-train:dev examples/training
           kind load docker-image --name gryvia-worker ghcr.io/zyvorai/gryvia-elastic-train:dev
           kind load docker-image --name gryvia-worker2 ghcr.io/zyvorai/gryvia-elastic-train:dev
-          docker run -d --name e2e-minio --network kind -e MINIO_ROOT_USER=e2eaccess -e MINIO_ROOT_PASSWORD=e2esecret123 \
-            minio/minio:latest server /data
+          docker run -d --name e2e-s3 --network kind -e ROOT_ACCESS_KEY_ID=e2eaccess -e ROOT_SECRET_ACCESS_KEY=e2esecret123 \
+            --tmpfs /data --tmpfs /meta versity/versitygw:v1.8.0 --port :9000 posix --sidecar /meta /data
           for _ in $(seq 1 30); do
             docker run --rm --network kind -e AWS_ACCESS_KEY_ID=e2eaccess -e AWS_SECRET_ACCESS_KEY=e2esecret123 \
               -e AWS_DEFAULT_REGION=us-east-1 ghcr.io/zyvorai/gryvia-elastic-train:dev python -c \
-              "import boto3; boto3.client('s3', endpoint_url='http://e2e-minio:9000').create_bucket(Bucket='ckpt')" && break
+              "import boto3; boto3.client('s3', endpoint_url='http://e2e-s3:9000').create_bucket(Bucket='ckpt')" && break
             sleep 2
           done
       - name: Manager - Kueue, per-tenant queues bound to the multikueue admission check
@@ -112,7 +112,7 @@ jobs:
       - name: Manager - GryviaFederation over both workers
         run: ./scripts/e2e-multikueue.sh federation
       - name: A worker stops - fenced, evicted, redispatched, resumed from the S3 replica
-        run: S3_ENDPOINT=http://e2e-minio:9000 ./scripts/e2e-multikueue.sh failover
+        run: S3_ENDPOINT=http://e2e-s3:9000 ./scripts/e2e-multikueue.sh failover
       - name: Dump state on failure
         if: failure()
         run: |
@@ -125,7 +125,7 @@ jobs:
           kubectl --context kind-gryvia-demo get gryviaaijobs,gryviafederations -A -o yaml || true
           kubectl --context kind-gryvia-worker2 -n kueue-system logs deploy/kueue-controller-manager --tail=200 || true
           for ctx in kind-gryvia-worker kind-gryvia-worker2; do kubectl --context $ctx -n tenant-q1 logs -l job-name=ft1 --tail=80 || true; done
-          docker logs e2e-minio --tail=50 || true
+          docker logs e2e-s3 --tail=50 || true
           kubectl --context kind-gryvia-demo -n gryvia-system logs deploy/kueue-controller-manager --tail=300 || true
           kubectl --context kind-gryvia-worker -n kueue-system logs deploy/kueue-controller-manager --tail=200 || true
           kubectl --context kind-gryvia-demo -n gryvia-system logs -l app.kubernetes.io/component=ai-operator --tail=200 || true

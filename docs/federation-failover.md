@@ -88,7 +88,7 @@ copies the Job spec, not the Secrets it references; plain env values or a Secret
   disabled modes, streak reset, assignment by `status.clusterName` and by the admission check message.
 - Helm render test `scripts/tests/federation-chart.test.sh`.
 - Kind e2e `.github/workflows/e2e-multikueue.yml` (manager plus two workers, Kueue 0.19, CPU torch): a checkpointing
-  job with an S3 replica in a MinIO container runs on one worker; that worker's container is stopped; the federation
+  job with an S3 replica in a versitygw S3 container runs on one worker; that worker's container is stopped; the federation
   marks it unhealthy, fences it by lease, evicts and requeues the Workload; MultiKueue runs it on the other worker,
   where the trainer restores the replicated step and finishes; the GryviaAIJob on the manager reaches Succeeded.
 - Not tested: remote-delete fencing against a real outage, GPUs, more than one job per member, partitions where the
