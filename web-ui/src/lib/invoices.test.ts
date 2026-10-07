@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { classLabel, networkRateDisplay, currentMonth, formatMoney, invoiceFilename, invoiceParams, invoiceTotalDisplay, invoiceTotalLabel, isValidMonth, monthLabel, parseMonth, periodLabel } from './invoices'
+import { classLabel, networkRateDisplay, currentMonth, formatMoney, invoiceActions, invoiceBadge, invoiceFilename, voidReasonError, invoiceParams, invoiceTotalDisplay, invoiceTotalLabel, isValidMonth, monthLabel, parseMonth, periodLabel } from './invoices'
 
 describe('months', () => {
   it('validates YYYY-MM', () => {
@@ -48,5 +48,28 @@ describe('network lines', () => {
   it('shows a per GB price or says the class is not priced', () => {
     expect(networkRateDisplay({ rate: 0.09, priced: true, currency: 'USD' })).toBe('$0.09/GB')
     expect(networkRateDisplay({ rate: null, priced: false, currency: 'USD' })).toBe('not priced')
+  })
+})
+
+describe('billing ledger', () => {
+  it('badges each status', () => {
+    expect(invoiceBadge('estimate')).toEqual({ label: 'Estimate', tone: '' })
+    expect(invoiceBadge('finalized')).toEqual({ label: 'Finalized', tone: 'info' })
+    expect(invoiceBadge('paid')).toEqual({ label: 'Paid', tone: 'ok' })
+    expect(invoiceBadge('void')).toEqual({ label: 'Void', tone: 'warn' })
+  })
+  it('offers finalize and void to admins with the ledger only', () => {
+    const on = { admin: true, ledger: true }
+    expect(invoiceActions({ status: 'estimate' }, on)).toEqual({ finalize: true, void: false })
+    expect(invoiceActions({ status: 'estimate', open: true }, on)).toEqual({ finalize: false, void: false })
+    expect(invoiceActions({ status: 'finalized' }, on)).toEqual({ finalize: false, void: true })
+    expect(invoiceActions({ status: 'paid' }, on)).toEqual({ finalize: false, void: false })
+    expect(invoiceActions({ status: 'estimate' }, { admin: false, ledger: true })).toEqual({ finalize: false, void: false })
+    expect(invoiceActions({ status: 'finalized' }, { admin: true, ledger: false })).toEqual({ finalize: false, void: false })
+  })
+  it('validates the void reason', () => {
+    expect(voidReasonError('  ab ')).not.toBeNull()
+    expect(voidReasonError('wrong rate card')).toBeNull()
+    expect(voidReasonError('x'.repeat(501))).not.toBeNull()
   })
 })

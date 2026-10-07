@@ -1,0 +1,139 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.22.0
+  name: gryvialedgerentries.gryvia.io
+spec:
+  group: gryvia.io
+  names:
+    kind: GryviaLedgerEntry
+    listKind: GryviaLedgerEntryList
+    plural: gryvialedgerentries
+    singular: gryvialedgerentry
+  scope: Cluster
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.tenant
+      name: Tenant
+      type: string
+    - jsonPath: .spec.sequence
+      name: Seq
+      type: integer
+    - jsonPath: .spec.job
+      name: Job
+      type: string
+    - jsonPath: .spec.cost
+      name: Cost
+      type: string
+    - jsonPath: .spec.currency
+      name: Currency
+      type: string
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: GryviaLedgerEntry is one immutable, hash-chained billing ledger
+          entry.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: |-
+              GryviaLedgerEntrySpec is an append-only copy of one sealed usage record, chained per tenant: entry N carries the
+              hash of entry N-1. Every field that enters the hash is a string or an integer (amounts are decimal strings), so
+              any verifier can recompute it byte for byte. The quota operator writes entries with --billing-ledger; the
+              webhook rejects every update and delete.
+            properties:
+              cost:
+                type: string
+              currency:
+                description: Currency of rate and cost.
+                type: string
+              end:
+                type: string
+              gpuHours:
+                description: GpuHours, Rate and Cost as decimal strings (6 decimals).
+                type: string
+              hash:
+                description: Hash is the hex SHA-256 of LedgerHashInput(spec).
+                type: string
+              job:
+                description: Job is the job (or llm:<model>, or Slurm job) the usage
+                  belongs to.
+                type: string
+              kind:
+                description: 'Kind of usage: gpu, tokens or slurm.'
+                type: string
+              prevHash:
+                description: PrevHash is the hash of the tenant's previous entry,
+                  empty for sequence 1.
+                type: string
+              rate:
+                type: string
+              recordedAt:
+                description: RecordedAt is when the entry was appended, RFC 3339 UTC
+                  seconds.
+                type: string
+              sequence:
+                description: Sequence is the 1-based position in the tenant's chain.
+                format: int64
+                minimum: 1
+                type: integer
+              sku:
+                description: Sku or GPU type the price came from.
+                type: string
+              start:
+                description: Start and End of the metered run, RFC 3339 UTC seconds.
+                type: string
+              tenant:
+                description: Tenant the usage is attributed to.
+                type: string
+              usageRecord:
+                description: UsageRecord is the sealed record this entry copies.
+                properties:
+                  name:
+                    type: string
+                  namespace:
+                    type: string
+                  uid:
+                    type: string
+                required:
+                - name
+                - namespace
+                - uid
+                type: object
+            required:
+            - cost
+            - currency
+            - end
+            - gpuHours
+            - hash
+            - job
+            - kind
+            - rate
+            - recordedAt
+            - sequence
+            - start
+            - tenant
+            - usageRecord
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources: {}

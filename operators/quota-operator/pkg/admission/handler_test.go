@@ -13,6 +13,10 @@ import (
 )
 
 func review(t *testing.T, op admissionv1.Operation, old, next *gryviav1.GryviaUsageRecord) admission.Response {
+	return reviewWith(t, false, op, old, next)
+}
+
+func reviewWith(t *testing.T, blockSealedDelete bool, op admissionv1.Operation, old, next *gryviav1.GryviaUsageRecord) admission.Response {
 	t.Helper()
 	s := runtime.NewScheme()
 	if err := gryviav1.AddToScheme(s); err != nil {
@@ -27,7 +31,7 @@ func review(t *testing.T, op admissionv1.Operation, old, next *gryviav1.GryviaUs
 		b, _ := json.Marshal(old)
 		req.OldObject = runtime.RawExtension{Raw: b}
 	}
-	return NewUsageRecordHandler(s).Handle(context.Background(), req)
+	return NewUsageRecordHandler(s, blockSealedDelete).Handle(context.Background(), req)
 }
 
 func TestHandlerDeniesSealedMutation(t *testing.T) {
@@ -45,5 +49,14 @@ func TestHandlerAllowsRunningGrowthCreateAndDelete(t *testing.T) {
 	}
 	if r := review(t, admissionv1.Delete, rec(true, 1), nil); !r.Allowed {
 		t.Fatal("delete denied")
+	}
+}
+
+func TestHandlerBlocksSealedDeleteWithLedger(t *testing.T) {
+	if r := reviewWith(t, true, admissionv1.Delete, rec(true, 1), nil); r.Allowed {
+		t.Fatal("deleting a sealed record allowed with the ledger on")
+	}
+	if r := reviewWith(t, true, admissionv1.Delete, rec(false, 1), nil); !r.Allowed {
+		t.Fatal("deleting an open record denied")
 	}
 }

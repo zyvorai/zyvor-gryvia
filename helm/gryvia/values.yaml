@@ -649,6 +649,19 @@ podSecurityContext:
   seccompProfile:
     type: RuntimeDefault
 
+# Immutable billing (off by default). ledger.enabled runs the quota-operator with --billing-ledger: every sealed
+# GryviaUsageRecord gets an append-only, per-tenant hash-chained GryviaLedgerEntry, and the admission webhook rejects
+# edits/deletes of ledger entries, of non-Draft GryviaInvoices and deletes of sealed usage records. The gateway can
+# then finalize (admin), void and verify invoices. Requires webhook.enabled and quotaOperator.usageRecordWebhook.
+# stripe.secretName optionally names a Secret with a Stripe *test-mode* key (sk_test_..., under secretKeyKey) and the
+# webhook signing secret (whsec_..., under webhookSecretKey); live keys are refused and Stripe stays off when empty.
+billing:
+  ledger:
+    enabled: false
+  stripe:
+    secretName: ""
+    secretKeyKey: secret-key
+    webhookSecretKey: webhook-secret
 nameOverride: ""
 fullnameOverride: ""
 imagePullSecrets: []

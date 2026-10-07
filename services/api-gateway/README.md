@@ -119,6 +119,11 @@ GET    /api/usage?tenant=&from=&to=&groupBy=tenant|sku|day   # {items:[{key,gpuH
 GET    /api/usage/export?format=csv|json&tenant=&from=&to=   # per-record rows, attachment download
 GET    /api/invoices?month=YYYY-MM&tenant=                   # {month, items:[invoice]}, one per tenant with usage
 GET    /api/invoices/{tenant}/{YYYY-MM}?format=json|csv      # one invoice; 404 if no usage (csv: INV-<tenant>-<YYYYMM>.csv)
+POST   /api/invoices/{tenant}/{YYYY-MM}/finalize             # admin, GRYVIA_BILLING_LEDGER=1: freeze into a GryviaInvoice
+POST   /api/invoices/{tenant}/{YYYY-MM}/void                 # admin, {"reason"}: void a Finalized invoice (kept)
+GET    /api/ledger/{tenant}/verify                           # recompute the tenant's ledger hash chain
+POST   /api/invoices/{tenant}/{YYYY-MM}/stripe               # admin, sk_test_ key only: send to Stripe test mode
+POST   /api/billing/stripe/webhook                           # Stripe-Signature checked; invoice.paid -> Paid
 ```
 Usage comes from `GryviaUsageRecord` objects (metered estimates from job wall-clock time; no billing). Tenant users are
 always limited to their own tenant, whatever `tenant` says. `/api/metrics/costs` uses usage records when any exist and
@@ -140,6 +145,11 @@ of `spec.start`, one line per SKU (GPU type when the SKU is empty), `status` is 
 that some included record is still running, and `currency` is `MIXED` (with `mixedCurrency: true`) when currencies
 differ. Missing `month` means the current UTC month; a bad one is 400. Tenant users only ever see their own tenant; asking
 for another tenant's invoice is a 404.
+
+With the billing ledger (`GRYVIA_BILLING_LEDGER=1`, chart `billing.ledger.enabled`) a Finalized or Paid `GryviaInvoice`
+replaces the estimate (`status` `finalized`/`paid`, number `INV-<tenant>-<NNNNNN>`) and the list response carries
+`billingLedger: true`. Stripe needs `GRYVIA_STRIPE_SECRET_KEY` starting with `sk_test_` and
+`GRYVIA_STRIPE_WEBHOOK_SECRET`; see [docs/billing-ledger.md](../../docs/billing-ledger.md).
 
 ## Development
 

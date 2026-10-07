@@ -17,7 +17,7 @@
 
 **A Kubernetes-native GPU platform for teams training large models.** GPU-aware job admission, RDMA/NVLink and parallel-filesystem operators, quotas and budgets, and a multi-tenant GPU service with a price catalog and metering, so placement is handled by operators instead of hand-tuned per cluster.
 
-**GPU-aware job admission** · **6 Kubernetes operators** · **47 CRDs** · **Opt-in Kueue gang admission** · **Try it on kind, no GPUs**
+**GPU-aware job admission** · **6 Kubernetes operators** · **49 CRDs** · **Opt-in Kueue gang admission** · **Try it on kind, no GPUs**
 
 [**Quickstart**](#quickstart) · [**Docs**](website/docs/intro.md) · [**Architecture**](#architecture) · [**Demo**](#try-it-in-five-minutes-no-gpus) · [**License**](#license)
 
@@ -109,7 +109,7 @@ NVIDIA feature-discovery labels. Not yet validated on real GPUs.<br>
 
 **Six Kubernetes operators**<br>
 GPU, AI workload and quota operators (plus optional storage and network operators for RDMA/SR-IOV and
-parallel-filesystem CSI backends) in the main chart; network intelligence in its own. 43 of the 47 CRDs have a
+parallel-filesystem CSI backends) in the main chart; network intelligence in its own. 43 of the 49 CRDs have a
 registered runtime controller (some are opt-in).<br>
 [Core components](#core-components)
 
@@ -181,7 +181,7 @@ operator's node selection (filter, score, select), not a separate scheduler.
 ### Core Components
 
 <details>
-<summary><b>47 CRDs, 43 of them with a runtime controller (the CRD reference has the full table)</b></summary>
+<summary><b>49 CRDs, 43 of them with a runtime controller (the CRD reference has the full table)</b></summary>
 
 **Reconciled by a runtime controller (43; some opt-in).**
 GPU operator: `GryviaHealthCheck` (opt-in health/remediation flags), `GryviaGpuNode` (also auto-created from GPU feature-discovery labels), `GryviaGpuMemoryOptimizer`, `GryviaGPUSharingPolicy` (opt-in `--enable-gpu-sharing`, chart `gpuOperator.gpuSharing`: writes the node labels for time-slicing and MIG) ·
@@ -194,7 +194,7 @@ Network-intelligence operator: `GryviaFlowPolicy`, `GryviaTrafficInsight`, `Gryv
 `GryviaServiceGraph`, `GryviaNetworkAnomaly`, `GryviaSecurityPolicy`, `GryviaNetworkCost`, `GryviaTrainingInsight`,
 `GryviaInferenceInsight`.
 
-**Data kinds without a controller (4).** `GryviaGpuSku`, `GryviaNetworkRate`, `GryviaNetworkUsageRecord` and `GryviaNodeFabric` are catalog/telemetry data read by other controllers. The legacy kinds `GryviaAutoScaler`, `GryviaRetryPolicy`, `GryviaSLA`, `GryviaAudit`, `GryviaQuotaPolicy`, `GryviaMetric`, `GryviaBenchmark` and `GryviaDRTest`, which never had a runtime, were removed; see the [CHANGELOG](CHANGELOG.md) for the upgrade steps.
+**Data kinds without a controller (6).** `GryviaGpuSku`, `GryviaNetworkRate`, `GryviaNetworkUsageRecord` and `GryviaNodeFabric` are catalog/telemetry data read by other controllers. `GryviaLedgerEntry` (appended by the quota-operator for each sealed usage record) and `GryviaInvoice` (written by the API gateway) are the opt-in immutable billing records, see [Billing ledger](docs/billing-ledger.md). The legacy kinds `GryviaAutoScaler`, `GryviaRetryPolicy`, `GryviaSLA`, `GryviaAudit`, `GryviaQuotaPolicy`, `GryviaMetric`, `GryviaBenchmark` and `GryviaDRTest`, which never had a runtime, were removed; see the [CHANGELOG](CHANGELOG.md) for the upgrade steps.
 
 </details>
 

@@ -13,14 +13,25 @@ import (
 
 // UsageRecordValidator rejects mutations of a GryviaUsageRecord once spec.final
 // is true. Running records may still grow (end, gpuHours, cost) because the
-// quota operator writes them. Deletes are allowed so operators can GC.
-type UsageRecordValidator struct{}
+// quota operator writes them. Deletes are allowed so operators can GC, unless
+// BlockSealedDelete (the billing ledger is on) protects final records.
+type UsageRecordValidator struct {
+	BlockSealedDelete bool
+}
 
 func (UsageRecordValidator) ValidateCreate(_ runtime.Object) (admission.Warnings, error) {
 	return nil, nil
 }
 
-func (UsageRecordValidator) ValidateDelete(_ runtime.Object) (admission.Warnings, error) {
+func (v UsageRecordValidator) ValidateDelete(obj runtime.Object) (admission.Warnings, error) {
+	rec, ok := obj.(*gryviav1.GryviaUsageRecord)
+	if !ok {
+		return nil, fmt.Errorf("expected GryviaUsageRecord, got %T", obj)
+	}
+	if v.BlockSealedDelete && rec.Spec.Final {
+		return nil, fmt.Errorf("GryviaUsageRecord %s/%s is final and billed through the ledger; it cannot be deleted",
+			rec.Namespace, rec.Name)
+	}
 	return nil, nil
 }
 
