@@ -13,7 +13,9 @@ import (
 	"time"
 )
 
-func (r *GryviaFederationReconciler) probeCluster(ctx context.Context, c gryviav1.FederationCluster) error {
+// restConfigFor validates the member's administrator-allowed server and inline kubeconfig and returns its REST
+// config; the probe and the failover fence both connect only through it.
+func (r *GryviaFederationReconciler) restConfigFor(ctx context.Context, c gryviav1.FederationCluster) (*rest.Config, error) {
 	allowed := false
 	for _, server := range r.AllowedServers {
 		if strings.TrimRight(c.APIServer, "/") == strings.TrimRight(server, "/") {
@@ -21,39 +23,47 @@ func (r *GryviaFederationReconciler) probeCluster(ctx context.Context, c gryviav
 		}
 	}
 	if !allowed || !strings.HasPrefix(c.APIServer, "https://") {
-		return fmt.Errorf("API server is not administrator-allowed HTTPS")
+		return nil, fmt.Errorf("API server is not administrator-allowed HTTPS")
 	}
 	if c.Credentials == nil || c.Credentials.SecretRef == "" {
-		return fmt.Errorf("kubeconfig secret is required")
+		return nil, fmt.Errorf("kubeconfig secret is required")
 	}
 	secret := &corev1.Secret{}
 	if err := r.Get(ctx, types.NamespacedName{Namespace: r.CredentialsNamespace, Name: c.Credentials.SecretRef}, secret); err != nil {
-		return err
+		return nil, err
 	}
 	raw := secret.Data["kubeconfig"]
 	if len(raw) == 0 || len(raw) > 1048576 {
-		return fmt.Errorf("invalid kubeconfig size")
+		return nil, fmt.Errorf("invalid kubeconfig size")
 	}
 	parsed, err := clientcmd.Load(raw)
 	if err != nil {
-		return fmt.Errorf("invalid kubeconfig")
+		return nil, fmt.Errorf("invalid kubeconfig")
 	}
 	for _, auth := range parsed.AuthInfos {
 		if auth.Exec != nil || auth.AuthProvider != nil || auth.ClientKey != "" || auth.ClientCertificate != "" || auth.TokenFile != "" {
-			return fmt.Errorf("kubeconfig must use inline credentials; exec, plugins and file references are rejected")
+			return nil, fmt.Errorf("kubeconfig must use inline credentials; exec, plugins and file references are rejected")
 		}
 	}
 	for _, cluster := range parsed.Clusters {
 		if cluster.CertificateAuthority != "" || cluster.InsecureSkipTLSVerify || cluster.ProxyURL != "" {
-			return fmt.Errorf("kubeconfig must use inline verified CA and no proxy")
+			return nil, fmt.Errorf("kubeconfig must use inline verified CA and no proxy")
 		}
 	}
 	cfg, err := clientcmd.RESTConfigFromKubeConfig(raw)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if strings.TrimRight(cfg.Host, "/") != strings.TrimRight(c.APIServer, "/") {
-		return fmt.Errorf("kubeconfig server does not match allowed server")
+		return nil, fmt.Errorf("kubeconfig server does not match allowed server")
+	}
+	return cfg, nil
+}
+
+func (r *GryviaFederationReconciler) probeCluster(ctx context.Context, c gryviav1.FederationCluster) error {
+	cfg, err := r.restConfigFor(ctx, c)
+	if err != nil {
+		return err
 	}
 	cfg.Timeout = 3 * time.Second
 	transport, err := rest.TransportFor(cfg)

@@ -54,6 +54,7 @@ func main() {
 		return
 	}
 	var federationServers, federationNamespace string
+	var federationFailover bool
 	var reportUnsupportedAPIs bool
 	var metricsAddr string
 	var enableLeaderElection bool
@@ -77,6 +78,7 @@ func main() {
 	var jobHookWorkers int
 
 	flag.StringVar(&federationServers, "federation-allowed-servers", "", "Comma-separated administrator-allowed HTTPS Kubernetes API servers; empty disables federation probes.")
+	flag.BoolVar(&federationFailover, "federation-failover", false, "Let GryviaFederation spec.failover.automatic fence failed members and evict their Kueue MultiKueue Workloads for redispatch (needs Kueue).")
 	flag.StringVar(&federationNamespace, "federation-credentials-namespace", "gryvia-system", "Namespace containing trusted inline federation kubeconfig secrets.")
 	flag.BoolVar(&reportUnsupportedAPIs, "report-unsupported-apis", false, "Report unsupported legacy APIs with Ready=False instead of silently leaving them pending.")
 	flag.BoolVar(&enableJobHooks, "enable-job-hooks", false, "Run the GryviaJobHook controller: webhooks when GryviaAIJobs and GryviaWorkflows change phase.")
@@ -237,7 +239,7 @@ func main() {
 
 	// The ML controllers: their flags and defaults are in ml_controllers.go, docs/ml-controllers.md explains them.
 	if federationServers != "" {
-		if err = (&controllers.GryviaFederationReconciler{Client: mgr.GetClient(), Scheme: mgr.GetScheme(), Log: ctrl.Log.WithName("federation"), AllowedServers: strings.Split(federationServers, ","), CredentialsNamespace: federationNamespace}).SetupWithManager(mgr); err != nil {
+		if err = (&controllers.GryviaFederationReconciler{Client: mgr.GetClient(), Scheme: mgr.GetScheme(), Log: ctrl.Log.WithName("federation"), AllowedServers: strings.Split(federationServers, ","), CredentialsNamespace: federationNamespace, Failover: federationFailover, Recorder: mgr.GetEventRecorderFor("gryvia-federation")}).SetupWithManager(mgr); err != nil {
 			setupLog.Error(err, "federation controller")
 			os.Exit(1)
 		}

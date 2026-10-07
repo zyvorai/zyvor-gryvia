@@ -10,6 +10,7 @@ on:
       - '.github/workflows/helm.yml'
       - 'scripts/tests/chart-reuse-values.test.sh'
       - 'scripts/tests/checkpoint-guard-chart.test.sh'
+      - 'scripts/tests/federation-chart.test.sh'
   pull_request:
     branches: [ main ]
     paths:
@@ -19,6 +20,7 @@ on:
       - '.github/workflows/helm.yml'
       - 'scripts/tests/chart-reuse-values.test.sh'
       - 'scripts/tests/checkpoint-guard-chart.test.sh'
+      - 'scripts/tests/federation-chart.test.sh'
   workflow_dispatch:
 
 permissions:
@@ -59,6 +61,9 @@ jobs:
 
       - name: Checkpoint guard chart switch (flag on the ai-operator, Role/RoleBinding create only when on)
         run: bash scripts/tests/checkpoint-guard-chart.test.sh
+
+      - name: Federation is opt-in (probe flags, failover flag and Workload patch only when enabled)
+        run: bash scripts/tests/federation-chart.test.sh
 
       - name: Head chart renders with the oldest release's values (helm upgrade --reuse-values)
         run: bash scripts/tests/chart-reuse-values.test.sh

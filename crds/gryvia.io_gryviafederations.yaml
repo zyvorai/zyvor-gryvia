@@ -79,6 +79,11 @@ spec:
                     enabled:
                       description: Enabled indicates if the cluster is active
                       type: boolean
+                    multiKueueCluster:
+                      description: |-
+                        MultiKueueCluster is the name of the MultiKueueCluster on this (manager) cluster that dispatches to this
+                        member; failover evicts the Kueue Workloads assigned to it. Defaults to Name.
+                      type: string
                     name:
                       description: Name of the cluster
                       type: string
@@ -188,6 +193,13 @@ spec:
                         description: Timeout for health checks
                         type: string
                     type: object
+                  leaseTimeout:
+                    description: |-
+                      LeaseTimeout is how long a member must have been failing before its workloads count as fenced when its API
+                      server cannot be reached to delete them (Go duration, default 5m). Set it no shorter than the time after which
+                      the member stops its own workloads on its own (for example a node lease or self-fencing timeout): until then
+                      an unreachable member may still be running the job.
+                    type: string
                 type: object
               loadBalancing:
                 description: LoadBalancing defines load balancing policy
@@ -243,6 +255,20 @@ spec:
                 items:
                   description: FederationClusterStatus tracks per-cluster status
                   properties:
+                    consecutiveFailures:
+                      description: ConsecutiveFailures counts failed health checks
+                        in a row; reset by a healthy check.
+                      type: integer
+                    fenceMethod:
+                      type: string
+                    fenced:
+                      description: |-
+                        Fenced is true once the member's workloads were deleted remotely (FenceMethod RemoteDelete) or its lease
+                        timeout expired (LeaseExpired); only then are its workloads evicted for redispatch. Cleared when it is healthy.
+                      type: boolean
+                    fencedAt:
+                      format: date-time
+                      type: string
                     lastHealthCheck:
                       description: LastHealthCheck timestamp
                       format: date-time
@@ -252,6 +278,11 @@ spec:
                       type: string
                     state:
                       description: State of the cluster (healthy, unhealthy, unreachable)
+                      type: string
+                    unhealthySince:
+                      description: UnhealthySince is the first failed check of the
+                        current failure streak.
+                      format: date-time
                       type: string
                     utilization:
                       description: Utilization of the cluster
@@ -320,6 +351,40 @@ spec:
                   - reason
                   - status
                   - type
+                  type: object
+                type: array
+              failovers:
+                description: Failovers lists the most recent workload moves (newest
+                  last, at most 20).
+                items:
+                  description: FederationFailoverRecord is one Kueue Workload moved
+                    off a failed member.
+                  properties:
+                    cluster:
+                      description: Cluster the workload was moved off.
+                      type: string
+                    evictedAt:
+                      description: EvictedAt is when the Workload was deactivated;
+                        RequeuedAt when it was reactivated for redispatch.
+                      format: date-time
+                      type: string
+                    fenceMethod:
+                      description: FenceMethod used for the member (RemoteDelete or
+                        LeaseExpired).
+                      type: string
+                    namespace:
+                      description: Namespace and Workload name on the manager.
+                      type: string
+                    requeuedAt:
+                      format: date-time
+                      type: string
+                    workload:
+                      type: string
+                  required:
+                  - cluster
+                  - evictedAt
+                  - namespace
+                  - workload
                   type: object
                 type: array
               jobDistribution:
