@@ -92,6 +92,8 @@ class Targets(FakeCustomObjects):
         self.patches += 1
         out = super()._patch(plural, ns, name, body)
         obj["metadata"]["resourceVersion"] = str(int(obj["metadata"]["resourceVersion"]) + 1)
+        if "spec" in body and "generation" in obj["metadata"]:
+            obj["metadata"]["generation"] += 1
         return copy.deepcopy(obj)
 
 
@@ -335,3 +337,53 @@ def test_list_sweeps_at_most_hourly():
     assert client.get("/api/intelligence/actions").json()["items"] == []
     _record(core, "b" * 32, state="Applied", completedAt="2000-01-02T00:00:00+00:00")
     assert len(client.get("/api/intelligence/actions").json()["items"]) == 1
+
+
+def elastic_job(name="el", labels=None, phase="Running"):
+    md = {"name": name, "uid": "job-uid", "resourceVersion": "5", "generation": 2}
+    if labels:
+        md["labels"] = labels
+    return {"metadata": md, "status": {"phase": phase},
+            "spec": {"distributed": {"enabled": True, "nodes": 4, "elastic": {"minNodes": 2, "desiredNodes": 2}}}}
+
+
+RESIZE = dict(BODY, kind="aijob-resize", name="el", value=3,
+              reason="Free GPUs on the training pool", evidence="Pool utilisation under 40 percent for an hour")
+
+
+def test_aijob_resize_survives_status_churn_and_rolls_back():
+    client, _, targets, _ = setup()
+    targets.add("gryviaaijobs", elastic_job(), "default")
+    created = client.post("/api/intelligence/actions", json=RESIZE)
+    assert created.status_code == 201, created.text
+    data = created.json()
+    assert data["previousValue"] == 2 and data["targetVersion"] == "2"
+    path = f"/api/intelligence/actions/{data['id']}"
+    assert client.post(path + "/approve", headers=BOB).status_code == 200
+    job = targets.store[("gryviaaijobs", "default", "el")]
+    job["metadata"]["resourceVersion"] = "9"  # the operator updated status; the spec is unchanged
+    applied = client.post(path + "/execute", headers=BOB).json()
+    assert applied["state"] == "Applied" and applied["desiredValueObserved"] == 3 and applied["appliedVersion"] == "3"
+    assert job["spec"]["distributed"]["elastic"] == {"minNodes": 2, "desiredNodes": 3}
+    assert job["spec"]["distributed"]["nodes"] == 4
+    assert client.post(path + "/rollback", headers=BOB).json()["state"] == "RolledBack"
+    assert job["spec"]["distributed"]["elastic"]["desiredNodes"] == 2
+
+
+def test_aijob_resize_refused():
+    client, _, targets, _ = setup()
+    targets.add("gryviaaijobs", elastic_job(), "default")
+    targets.add("gryviaaijobs", elastic_job("kq", labels={"kueue.x-k8s.io/queue-name": "q"}), "default")
+    targets.add("gryviaaijobs", elastic_job("done", phase="Succeeded"), "default")
+    assert client.post("/api/intelligence/actions", json=dict(RESIZE, value=5)).status_code == 400
+    assert client.post("/api/intelligence/actions", json=dict(RESIZE, value=2)).status_code == 409  # unchanged
+    assert client.post("/api/intelligence/actions", json=dict(RESIZE, name="kq")).status_code == 409
+    assert client.post("/api/intelligence/actions", json=dict(RESIZE, name="done")).status_code == 409
+    assert client.post("/api/intelligence/actions", json=dict(RESIZE, value=0)).status_code == 422
+
+    ident = client.post("/api/intelligence/actions", json=RESIZE).json()["id"]
+    path = f"/api/intelligence/actions/{ident}"
+    client.post(path + "/approve", headers=BOB)
+    targets.store[("gryviaaijobs", "default", "el")]["metadata"]["generation"] = 3  # someone edited the spec
+    assert client.post(path + "/execute", headers=BOB).status_code == 409
+    assert targets.patches == 0

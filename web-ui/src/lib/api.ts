@@ -397,6 +397,15 @@ export interface AutoTunerJob {
 }
 
 // Job runtime details (pods, logs, events)
+export interface JobResize {
+  name: string
+  namespace: string
+  desiredNodes: number
+  minNodes: number
+  maxNodes: number
+  currentNodes?: number | null
+}
+
 export interface JobPod {
   name: string
   phase: string
@@ -618,6 +627,11 @@ export const api = {
   getJobEvents: async (name: string): Promise<JobEvent[]> => {
     const { data } = await apiClient.get(`/jobs/${encodeURIComponent(name)}/events`)
     return data.items || []
+  },
+
+  resizeJob: async (name: string, nodes: number): Promise<JobResize> => {
+    const { data } = await apiClient.post(`/jobs/${encodeURIComponent(name)}/resize`, { nodes })
+    return data
   },
 
   deleteJob: async (name: string): Promise<void> => {

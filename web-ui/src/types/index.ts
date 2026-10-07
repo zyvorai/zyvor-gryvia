@@ -24,6 +24,8 @@ export interface GryviaAIJob {
       nodes?: number
       gpusPerNode?: number
       backend?: string
+      /** Elastic torchrun job: runs between minNodes and nodes workers; desiredNodes resizes it live. */
+      elastic?: { minNodes: number; desiredNodes?: number }
     }
     resources?: {
       requests?: { cpu?: string | number; memory?: string }
@@ -35,6 +37,7 @@ export interface GryviaAIJob {
     message?: string
     startTime?: string
     completionTime?: string
+    elastic?: { currentNodes?: number; desiredNodes?: number; resizes?: number; lastResizeTime?: string }
   }
 }
 

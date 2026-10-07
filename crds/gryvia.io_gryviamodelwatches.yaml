@@ -1158,6 +1158,15 @@ spec:
                                     Elastic lets a PyTorch (torchrun / torchelastic) job run with fewer workers than requested.
                                     Run-to-completion Jobs only. See docs/elastic-training.md for what this does and does not do.
                                   properties:
+                                    desiredNodes:
+                                      description: |-
+                                        DesiredNodes is the number of workers to run now, between minNodes and distributed.nodes (0 means
+                                        distributed.nodes). Changing it on a running job resizes its Indexed Job: growing adds the next
+                                        indexes, shrinking removes the highest ones, and torchrun re-forms the group. Not applied to a job
+                                        managed by Kueue (condition ResizeBlocked). See docs/elastic-training.md#live-resize.
+                                      format: int32
+                                      minimum: 0
+                                      type: integer
                                     minNodes:
                                       description: MinNodes is the fewest workers
                                         the training can run with (at least 1, at

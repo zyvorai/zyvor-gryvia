@@ -130,11 +130,31 @@ type DistributedConfig struct {
 
 // ElasticConfig sets the lower bound of an elastic job; the upper bound is distributed.nodes (so
 // quota and admission, which count distributed.nodes, stay correct). The Indexed Job asks for
-// distributed.nodes workers, the launcher gets NNODES=minNodes:nodes, and the Job is declared
-// successful once minNodes indexes have succeeded.
+// desiredNodes workers (default distributed.nodes), the launcher gets NNODES=minNodes:nodes, and the
+// Job is declared successful once minNodes indexes have succeeded.
 type ElasticConfig struct {
 	// MinNodes is the fewest workers the training can run with (at least 1, at most distributed.nodes).
 	MinNodes int32 `json:"minNodes"`
+
+	// DesiredNodes is the number of workers to run now, between minNodes and distributed.nodes (0 means
+	// distributed.nodes). Changing it on a running job resizes its Indexed Job: growing adds the next
+	// indexes, shrinking removes the highest ones, and torchrun re-forms the group. Not applied to a job
+	// managed by Kueue (condition ResizeBlocked). See docs/elastic-training.md#live-resize.
+	// +kubebuilder:validation:Minimum=0
+	// +optional
+	DesiredNodes int32 `json:"desiredNodes,omitempty"`
+}
+
+// ElasticStatus is the size of an elastic job's Indexed Job.
+type ElasticStatus struct {
+	// CurrentNodes is the Indexed Job's parallelism (and completions).
+	CurrentNodes int32 `json:"currentNodes,omitempty"`
+	// DesiredNodes is the size the spec asks for.
+	DesiredNodes int32 `json:"desiredNodes,omitempty"`
+	// Resizes counts resizes of the running Job.
+	Resizes int32 `json:"resizes,omitempty"`
+	// LastResizeTime is when the Job was last resized.
+	LastResizeTime *metav1.Time `json:"lastResizeTime,omitempty"`
 }
 
 // ElasticBounds returns the worker bounds and true when the job is elastic. max is Distributed.Nodes.
@@ -143,6 +163,23 @@ func (d *DistributedConfig) ElasticBounds() (min, max int32, ok bool) {
 		return 0, 0, false
 	}
 	return d.Elastic.MinNodes, d.Nodes, true
+}
+
+// DesiredWorkers is the number of workers an elastic job should run now: elastic.desiredNodes clamped to
+// [minNodes, nodes], or nodes when unset. ok is false when the job is not elastic.
+func (d *DistributedConfig) DesiredWorkers() (n int32, ok bool) {
+	min, max, ok := d.ElasticBounds()
+	if !ok {
+		return 0, false
+	}
+	n = d.Elastic.DesiredNodes
+	switch {
+	case n == 0 || n > max:
+		n = max
+	case n < min:
+		n = min
+	}
+	return n, true
 }
 
 // GryviaAIJobStatus defines the observed state of GryviaAIJob
@@ -197,6 +234,10 @@ type GryviaAIJobStatus struct {
 	// reported as committed, and the pods replaced after node losses.
 	// +optional
 	Checkpoint *AIJobCheckpoint `json:"checkpoint,omitempty"`
+
+	// Elastic is the current and desired size of an elastic job's Indexed Job.
+	// +optional
+	Elastic *ElasticStatus `json:"elastic,omitempty"`
 }
 
 // AIJobDataset is the dataset locality decision for a job.

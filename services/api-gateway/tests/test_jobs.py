@@ -168,3 +168,46 @@ def test_auth_required(fake_k8s, core):
     c = TestClient(app)
     for path in ("pods", "logs", "events"):
         assert c.get(f"/api/jobs/train/{path}").status_code == 401
+
+
+def _elastic(name, nodes=4, min_nodes=1, phase="Running", labels=None):
+    md = {"name": name}
+    if labels:
+        md["labels"] = labels
+    return {"metadata": md, "status": {"phase": phase},
+            "spec": {"distributed": {"enabled": True, "nodes": nodes, "elastic": {"minNodes": min_nodes}}}}
+
+
+def test_resize_sets_desired_nodes(client, fake_k8s):
+    fake_k8s.add("gryviaaijobs", _elastic("el", min_nodes=2), namespace="default")
+    r = client.post("/api/jobs/el/resize", json={"nodes": 3})
+    assert r.status_code == 200, r.text
+    assert r.json() == {"name": "el", "namespace": "default", "desiredNodes": 3, "minNodes": 2, "maxNodes": 4,
+                        "currentNodes": None}
+    stored = fake_k8s.get_namespaced_custom_object("gryvia.io", "v1alpha1", "default", "gryviaaijobs", "el")
+    assert stored["spec"]["distributed"]["elastic"] == {"minNodes": 2, "desiredNodes": 3}
+    assert stored["spec"]["distributed"]["nodes"] == 4
+
+
+@pytest.mark.parametrize("nodes", [1, 5, 0, -1])
+def test_resize_out_of_bounds(client, fake_k8s, nodes):
+    fake_k8s.add("gryviaaijobs", _elastic("el", min_nodes=2), namespace="default")
+    r = client.post("/api/jobs/el/resize", json={"nodes": nodes})
+    assert r.status_code == 400 and "between minNodes (2) and distributed.nodes (4)" in r.json()["detail"]
+
+
+@pytest.mark.parametrize("body", [{}, {"nodes": "3"}, {"nodes": True}, {"nodes": 2.5}, [3]])
+def test_resize_bad_body(client, fake_k8s, body):
+    fake_k8s.add("gryviaaijobs", _elastic("el"), namespace="default")
+    assert client.post("/api/jobs/el/resize", json=body).status_code == 400
+
+
+def test_resize_refuses_non_elastic_finished_and_kueue(client, fake_k8s):
+    fake_k8s.add("gryviaaijobs", _elastic("done", phase="Succeeded"), namespace="default")
+    fake_k8s.add("gryviaaijobs", _elastic("kq", labels={"kueue.x-k8s.io/queue-name": "q"}), namespace="default")
+    assert client.post("/api/jobs/train/resize", json={"nodes": 2}).status_code == 409  # JOB is not elastic
+    assert client.post("/api/jobs/done/resize", json={"nodes": 2}).status_code == 409
+    r = client.post("/api/jobs/kq/resize", json={"nodes": 2})
+    assert r.status_code == 409 and "Kueue" in r.json()["detail"]
+    assert client.post("/api/jobs/nope/resize", json={"nodes": 2}).status_code == 404
+    assert client.post("/api/jobs/Bad_Name/resize", json={"nodes": 2}).status_code == 422

@@ -139,11 +139,12 @@ func (r *GryviaAIJobReconciler) buildJob(job *gryviav1.GryviaAIJob) (*batchv1.Jo
 		suspend = true // Kueue admits (unsuspends) it
 	}
 
+	size := initialJobSize(job, nodes)
 	return &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{Name: job.Name, Namespace: job.Namespace, Labels: jobLabels},
 		Spec: batchv1.JobSpec{
-			Parallelism:           &nodes,
-			Completions:           &nodes,
+			Parallelism:           &size,
+			Completions:           &size,
 			CompletionMode:        &mode,
 			BackoffLimit:          &backoff,
 			ActiveDeadlineSeconds: deadline,
@@ -163,9 +164,9 @@ func (r *GryviaAIJobReconciler) buildJob(job *gryviav1.GryviaAIJob) (*batchv1.Jo
 	}, nil
 }
 
-// reconcileBatchJob creates the Job if needed, keeps spec.suspend in sync (the rest of a
-// Job's spec is immutable, so later spec edits do not reach a created Job) and derives the
-// GryviaAIJob status from the Job.
+// reconcileBatchJob creates the Job if needed, keeps spec.suspend and an elastic job's size in
+// sync (the rest of a Job's spec is immutable, so other spec edits do not reach a created Job) and
+// derives the GryviaAIJob status from the Job.
 func (r *GryviaAIJobReconciler) reconcileBatchJob(ctx context.Context, job *gryviav1.GryviaAIJob) error {
 	bj := &batchv1.Job{}
 	key := types.NamespacedName{Namespace: job.Namespace, Name: job.Name}
@@ -200,6 +201,9 @@ func (r *GryviaAIJobReconciler) reconcileBatchJob(ctx context.Context, job *gryv
 			if err := r.Update(ctx, bj); err != nil {
 				return err
 			}
+		}
+		if err := r.reconcileElasticResize(ctx, job, bj); err != nil {
+			return err
 		}
 	}
 	r.applyJobStatus(job, bj)

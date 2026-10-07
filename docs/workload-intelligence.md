@@ -19,7 +19,7 @@ no new CRDs or scheduling controller are installed. The Python SDK exposes `clie
 | Fabric qualification | Fresh link observations, throughput-ratio and error evaluation; complements `scripts/qualify-platform.py` | Only supplied links are qualified. No automatic NCCL tuning or fabric repair |
 | Capacity simulator | Deterministic GPU-lane reservations, distributed node shape, rates, queue delay and utilization | Fixed-duration heuristic, not a replay of Kueue fairness/preemption or a procurement guarantee |
 | Sovereign fleet placement | Fresh capacity, allowed regions, verified dataset identity, credential readiness and currency filtering | Planner only. Existing MultiKueue remains the dispatch integration. No new replication or failover/fencing controller |
-| Approved operations/copilot | Durable typed proposals, separate OIDC reviewer, target preconditions, execution and explicit rollback | Three supported operations only; uncertain writes require inspection, never replay |
+| Approved operations/copilot | Durable typed proposals, separate OIDC reviewer, target preconditions, execution and explicit rollback | Four supported operations only; uncertain writes require inspection, never replay |
 
 All ten `POST /api/intelligence/{area}` analysis endpoints accept **caller-supplied** data.
 They do not fetch arbitrary URLs or apply changes. Reports identify estimates, supplied observations,
@@ -175,6 +175,11 @@ cordon (`spec.unschedulable=true`). Cordon prevents new placements; it does **no
 reset, reboot or kill current workloads. Inference services managed by HPA or scale-to-zero
 cannot be changed through this path. Cluster objects still require a namespace field for a
 uniform proposal schema; that field is not a namespace boundary for a cluster-scoped object.
+`aijob-resize` sets `spec.distributed.elastic.desiredNodes` of a running elastic `GryviaAIJob` (between
+`minNodes` and `distributed.nodes`; not for Kueue-managed or finished jobs). A running job's status changes
+constantly, so for this kind the captured version is the spec `metadata.generation`, not the resourceVersion: a
+status update does not invalidate the proposal, a spec edit does. The write is still guarded by the
+resourceVersion read just before it. See [elastic training](elastic-training.md#live-resize).
 
 1. Propose: capture target UID, resourceVersion, previous value, reason and evidence.
 2. Another named OIDC administrator approves or rejects within 15 minutes.
