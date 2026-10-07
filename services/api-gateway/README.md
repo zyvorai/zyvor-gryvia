@@ -24,6 +24,7 @@ Returns overall cluster statistics including GPU counts, utilization, and job co
 ```
 GET  /api/jobs              # List jobs (?limit=500&offset=0, limit up to 1000)
 POST /api/jobs              # Create a new job
+POST /api/jobs/preflight    # Dry-run Kubernetes admission for a job (nothing is created)
 GET  /api/jobs/{name}       # Get job details
 DELETE /api/jobs/{name}     # Delete a job
 GET  /api/jobs/{name}/pods   # Pods of the job

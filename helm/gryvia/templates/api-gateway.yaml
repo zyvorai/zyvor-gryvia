@@ -44,6 +44,10 @@ spec:
         - containerPort: 8080
           name: https
         env:
+        {{- if (dig "apiGateway" "submissionAdmission" "enforce" false .Values.AsMap) }}
+        - name: GRYVIA_SUBMISSION_ADMISSION_ENFORCE
+          value: "1"
+        {{- end }}
         {{- if (dig "apiGateway" "intelligenceActions" false .Values.AsMap) }}
         - name: GRYVIA_INTELLIGENCE_ACTIONS
           value: "1"

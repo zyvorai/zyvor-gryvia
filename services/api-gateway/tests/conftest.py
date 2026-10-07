@@ -47,6 +47,10 @@ class FakeCustomObjects:
         return self._create(plural, None, body)
 
     def create_namespaced_custom_object(self, group, version, namespace, plural, body, **kw):
+        if kw.get("dry_run") == "All":
+            if (plural, namespace, body["metadata"]["name"]) in self.store:
+                raise ApiException(status=409, reason="AlreadyExists")
+            return copy.deepcopy(body)
         return self._create(plural, namespace, body)
 
     def delete_cluster_custom_object(self, group, version, plural, name, **kw):

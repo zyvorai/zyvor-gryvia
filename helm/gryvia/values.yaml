@@ -276,6 +276,10 @@ apiGateway:
   # Days to keep finished operation records (Rejected, Applied, RolledBack, expired proposals); 0 keeps all.
   # Executing/RollingBack records (uncertain writes) are never deleted.
   intelligenceRetentionDays: 30
+  # POST /api/jobs/preflight always previews Kubernetes admission (dry run, strict fields). enforce: true makes
+  # every POST /api/jobs pass the same checks first (fail closed, strict fields, no gpuCount alias).
+  submissionAdmission:
+    enforce: false
   enabled: true
   image: {name: gryvia-api-gateway, tag: ""}
   replicas: 2

@@ -25,6 +25,7 @@ from slowapi.errors import RateLimitExceeded
 import logging
 from collections import defaultdict
 
+from routers import submission
 from routers import tenancy
 from routers.phases import count_phases, is_billable, normalize as normalize_phase
 from routers.pricing import load_rates
@@ -537,6 +538,8 @@ deps = Deps(
     sovereign_ca_file=os.environ.get("GRYVIA_SOVEREIGN_CA_FILE", "").strip() or None,
     require_prod_approval=os.environ.get("GRYVIA_REQUIRE_PROD_APPROVAL", "") == "1",
     intelligence_actions=os.environ.get("GRYVIA_INTELLIGENCE_ACTIONS", "") == "1",
+    submission_admission=os.environ.get("GRYVIA_SUBMISSION_ADMISSION_ENFORCE", "")
+    == "1",
     intelligence_retention_days=max(
         0,
         min(
@@ -996,10 +999,46 @@ async def get_job(request: Request, name: str, _=Depends(verify_auth)):
         raise HTTPException(status_code=500, detail="Failed to get job")
 
 
+@app.post("/api/jobs/preflight")
+@limiter.limit("10/minute")
+async def preflight_job(request: Request, _=Depends(verify_auth)):
+    """Preview real Kubernetes admission without persisting a job."""
+    target_ns = _query_namespaces(request)[0]
+    body = await submission.read_job(request, target_ns)
+    return await submission.admit_job(
+        k8s_custom, body, target_ns, enforced=deps.submission_admission
+    )
+
+
 @app.post("/api/jobs")
 @limiter.limit("10/minute")
 async def create_job(request: Request, _=Depends(verify_auth)):
-    """Create a new job"""
+    """Create a new job. With apiGateway.submissionAdmission.enforce every create rechecks admission first."""
+    if not deps.submission_admission:
+        return await _create_job_unchecked(request)
+    target_ns = _query_namespaces(request)[0]
+    body = await submission.read_job(request, target_ns)
+    await submission.admit_job(k8s_custom, body, target_ns)
+    try:
+        return await submission.run(
+            k8s_custom.create_namespaced_custom_object,
+            group="gryvia.io",
+            version="v1alpha1",
+            namespace=target_ns,
+            plural="gryviaaijobs",
+            body=body,
+            field_validation="Strict",
+        )
+    except client.ApiException as exc:
+        raise HTTPException(
+            status_code=exc.status or 500, detail="Failed to create job"
+        ) from None
+    except Exception:
+        logger.exception("Error creating job")
+        raise HTTPException(status_code=503, detail="Failed to create job") from None
+
+
+async def _create_job_unchecked(request: Request):
     try:
         loop = asyncio.get_running_loop()
         body = await request.json()

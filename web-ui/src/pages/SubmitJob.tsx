@@ -71,6 +71,13 @@ export default function SubmitJob() {
     return () => window.removeEventListener('beforeunload', warn)
   }, [dirty])
 
+  const preflightMutation = useMutation({
+    mutationFn: async ({ job, snapshot }: { job: Partial<GryviaAIJob>; snapshot: string }) => ({
+      report: await api.preflightJob(job), snapshot,
+    }),
+  })
+  const currentPreview = preflightMutation.data?.snapshot === JSON.stringify(formData) ? preflightMutation.data.report : undefined
+
   const createJobMutation = useMutation({
     mutationFn: (job: Partial<GryviaAIJob>) => api.createJob(job),
     onSuccess: (_created, job) => {
@@ -109,7 +116,7 @@ export default function SubmitJob() {
 
   const cancel = () => (dirty ? setConfirmLeave(true) : navigate('/jobs'))
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = (e: React.SyntheticEvent, preview = false) => {
     e.preventDefault()
     setError(null)
 
@@ -161,7 +168,8 @@ export default function SubmitJob() {
       } as GryviaAIJob['spec'],
     }
 
-    createJobMutation.mutate(job)
+    if (preview) preflightMutation.mutate({ job, snapshot: JSON.stringify(formData) })
+    else createJobMutation.mutate(job)
   }
 
   const addEnvVar = () => {
@@ -549,11 +557,25 @@ export default function SubmitJob() {
           </p>
         )}
 
+        {currentPreview && <div className="span3" role="status">
+          <p>Kubernetes admission passed for {currentPreview.namespace}/{currentPreview.name}. No job was created.</p>
+          {(currentPreview.warnings ?? []).length > 0 && <>
+            <p className="warning">Admission warnings:</p>
+            <ul>{currentPreview.warnings?.map((w) => <li key={w}>{w}</li>)}</ul>
+          </>}
+          <ul>{currentPreview.limitations.map((limit) => <li key={limit}>{limit}</li>)}</ul>
+        </div>}
+        {preflightMutation.isError && <p className="warning span3" role="alert">
+          Admission preview failed: {errorMessage(preflightMutation.error)}
+        </p>}
         <div className="toolbar span3">
+          <button type="button" className="btn-secondary" onClick={(e) => handleSubmit(e, true)} disabled={preflightMutation.isPending || createJobMutation.isPending}>
+            {preflightMutation.isPending ? 'Checking admission…' : 'Check admission'}
+          </button>
           <button type="button" className="btn-secondary" onClick={cancel}>
             Cancel
           </button>
-          <button type="submit" className="primary" disabled={createJobMutation.isPending}>
+          <button type="submit" className="primary" disabled={createJobMutation.isPending || preflightMutation.isPending}>
             {createJobMutation.isPending ? 'Submitting…' : 'Submit job'}
           </button>
         </div>
