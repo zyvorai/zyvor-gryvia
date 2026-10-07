@@ -378,7 +378,7 @@ verifier on a Linux 7.0 x86_64 host and in CI (arm64 is compile-only). With `-xd
 programs behind one attach instead of one XDP program per interface (tested in CI on loopback only). On the x86_64 host the collector attached the supported
 kprobe/tracepoint subset and decoded TCP flows. GPU, NCCL, RDMA and GPUDirect Storage runtime behavior and the gated
 XDP/TCX/sockops attachments have not been validated on hardware. The collector is disabled by default, privileged and
-`hostNetwork` (its image is built by the release workflow, which has not yet run with it), and most of its endpoints are unauthenticated; see
+`hostNetwork` (its image is in the signed multi-arch release workflow, but no tagged release has published it yet), and most of its endpoints are unauthenticated; see
 [Flight Recorder](docs/flight-recorder.md) for its node-local, job-attributed diagnostic preview (the gateway's
 cluster view, `GET /api/flight/jobs/{job}`, is token-authenticated but has not run on a real cluster). Real network
 flows can instead come from [Netra](https://github.com/zyvorai/zyvor-netra) (`apiGateway.netra.url`). The rest of the platform

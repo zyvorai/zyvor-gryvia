@@ -5,7 +5,8 @@ decodes their events, and serves the result as Prometheus metrics and JSON endpo
 fabric signals, security alerts, training analysis, TCP tuning advice and the Flight Recorder).
 
 **Status: experimental.** It is off by default (`ebpf.enabled=false` in `helm/network-intelligence`), and its image is
-built in CI but is not among the release images, so you build it yourself (`docker build -f collector/Dockerfile .`).
+built in CI and is in the signed release workflow, but no tagged release has published it yet, so for now you build it
+yourself (`docker build -f collector/Dockerfile .`).
 It runs privileged with `hostNetwork` and `hostPID`. On a Linux 7.0 x86_64 host it attached 36 of 83 hooks and decoded
 real TCP flows; GPU, NCCL, RDMA and GPUDirect Storage behaviour, arm64 loading and XDP/TCX/sockops attachment have not
 been verified on real hardware. Most HTTP endpoints below are **unauthenticated**; see [SECURITY.md](../SECURITY.md).

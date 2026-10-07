@@ -89,7 +89,8 @@ penetration tested, and the OIDC and tenant paths have only been tested against 
 
 - **Privileged DaemonSet.** The collector (`helm/network-intelligence`, `ebpf.enabled=true`) runs as root, privileged,
   with `hostPID` and, by default, `hostNetwork`. It loads kernel programs and reads process and connection data for the
-  whole node. Its image is not among the signed release images: you build and vouch for it yourself.
+  whole node. Its image is in the signed release workflow, but no tagged release has published it yet; until one does, you
+  build and vouch for it yourself.
 - **hostNetwork.** With the default `collector.hostNetwork=true` its port 9090 listens on the node's addresses, and a pod
   NetworkPolicy does not apply. Use node firewall rules, or set `collector.hostNetwork=false` before relying on a policy.
 - **Most endpoints are unauthenticated.** `/metrics`, `/healthz`, `/api/v1/ebpf/status`, `/api/v1/graph`,
@@ -115,6 +116,7 @@ penetration tested, and the OIDC and tenant paths have only been tested against 
 ### Supply chain
 
 - **Images and charts.** Release images are signed with cosign (keyless) and carry SBOM and provenance attestations;
-  the OCI Helm charts are signed with cosign. The eBPF collector image is not part of the release.
+  the OCI Helm charts are signed with cosign. The eBPF collector image is part of the release workflow (each
+  architecture built natively), but no tagged release has published it yet.
 
 See [Authentication and TLS](https://zyvorai.github.io/gryvia/docs/guides/AUTH_AND_TLS) for configuration.
