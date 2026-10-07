@@ -27,6 +27,35 @@ jobs:
       - run: python3 examples/training/test_checkpoint_contract.py
       - run: bash scripts/tests/e2e-kueue-pods.test.sh
 
+  dcp-checkpoint:
+    name: DCP checkpoint resharding (CPU torch, gloo)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - run: pip install --index-url https://download.pytorch.org/whl/cpu torch==2.8.0
+      - name: Save at world size 4, load at 2 and 3 (DDP and FSDP2)
+        run: python3 examples/training/test_dcp_checkpoint.py -v
+      - name: elastic_train.py under torchrun, resumed at a smaller world size
+        working-directory: examples/training
+        env:
+          CHECKPOINT_DIR: ${{ runner.temp }}/dcp-elastic
+          STEP_SECONDS: '0'
+          COLLECTIVE_TIMEOUT: '60'
+        run: |
+          TOTAL_STEPS=12 torchrun --nnodes=1 --nproc_per_node=4 --master_addr=127.0.0.1 --master_port=29511 elastic_train.py
+          rm "$CHECKPOINT_DIR/DONE"
+          TOTAL_STEPS=20 torchrun --nnodes=1 --nproc_per_node=2 --master_addr=127.0.0.1 --master_port=29512 elastic_train.py
+          python3 - <<'PY'
+          import json, os
+          done = json.load(open(os.path.join(os.environ['CHECKPOINT_DIR'], 'DONE')))
+          assert done['resumedFrom'] == 10 and done['resumedFromWorld'] == 4 and done['world'] == 2, done
+          print('resumed step 10 saved by world 4 at world 2:', done)
+          PY
+
   model-factory:
     name: Model factory scripts
     runs-on: ubuntu-latest

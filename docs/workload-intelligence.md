@@ -14,7 +14,7 @@ no new CRDs or scheduling controller are installed. The Python SDK exposes `clie
 | Useful-work cost | Per-run/checkpoint/evaluation/token unit costs; live job cost joined by job UID to usage records | Estimates, not payments. Actual job endpoint does not invent checkpoint or delivered-token counts |
 | Inference SLOs | TTFT/inter-token/error policy with queue/KV pressure, fresh-data gate and bounded scale-up recommendation | Advisory, not a continuous SLO controller. No single-sample scale-down. HPA and scale-to-zero retain their ownership |
 | Model laboratory | Executable streaming benchmark harness, quality/latency/error gates, comparable workload digests, Pareto frontier and cost ranking | Quality is normalized exact-match on supplied expected answers. Not an arbitrary quality evaluation framework |
-| Checkpoint recovery | Model/dataset binding, stream-verification of every rank's committed payload, recovery compatibility and lost-step policy | No optimizer resharding or live training resize. Storage durability must be qualified separately |
+| Checkpoint recovery | Model/dataset binding, stream-verification of every rank's committed payload, recovery compatibility and lost-step policy | Optimizer resharding only for DCP checkpoints (`dcp_checkpoint.py`, CPU-tested); no live training resize. Storage durability must be qualified separately |
 | Dataset locality/cache | Digest-aware replica planning, transfer estimates and atomic SHA256 cache for mounted files | No cross-cluster replication, directory cache or automatic dataset-placement controller |
 | Fabric qualification | Fresh link observations, throughput-ratio and error evaluation; complements `scripts/qualify-platform.py` | Only supplied links are qualified. No automatic NCCL tuning or fabric repair |
 | Capacity simulator | Deterministic GPU-lane reservations, distributed node shape, rates, queue delay and utilization | Fixed-duration heuristic, not a replay of Kueue fairness/preemption or a procurement guarantee |
@@ -145,8 +145,9 @@ Package `examples/training/checkpoint_contract.py` and `coordinated_checkpoint.p
 Contracts cannot be rebound or retroactively assigned to an existing committed checkpoint.
 Verification streams every rank's blob and refuses incomplete manifests, mismatched hashes,
 symlinks and oversized payloads. It does not deserialize pickle/torch payloads. The returned
-`durableStorage` and `optimizerReshardable` remain **false**: operators must qualify durability,
-and no resharding adapter is implemented here. Recovery plans require that evidence separately.
+`durableStorage` remains **false**: operators must qualify durability. `optimizerReshardable` is
+**true** only for a DCP checkpoint (`dcp_checkpoint.save`, `format: dcp` in COMMIT), whose files are
+all verified the same way; opaque per-rank blobs stay false. Recovery plans require that evidence separately.
 
 ### Dataset/model file cache
 
@@ -214,6 +215,6 @@ stream. Dashboard tests cover form defaults and actual analysis submission/error
 
 Required hardware qualification remains: actual model engines and token timing, distributed GPU
 checkpoint recovery, NCCL/RDMA measurements and storage durability. Required integration work for
-the broader roadmap remains continuous SLO control, runtime
-optimizer resharding, automatic distributed cache placement and multi-cluster failover/fencing.
+the broader roadmap remains continuous SLO control, automatic distributed cache placement and
+multi-cluster failover/fencing (optimizer resharding is available through DCP checkpoints, CPU-tested only).
 These are not represented as complete by this bundle.
