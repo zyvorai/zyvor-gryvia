@@ -403,8 +403,8 @@ func (r *GryviaDatasetReconciler) buildJob(ds *gryviav1.GryviaDataset, ns, name,
 // copyTarget is where one download Job writes: the primary PVC, or a pool replica pinned by nodeSelector.
 type copyTarget struct {
 	ns, name, version, hash, pvc, current, pool string
-	keep                                       []string
-	nodeSelector                               map[string]string
+	keep                                        []string
+	nodeSelector                                map[string]string
 }
 
 func (r *GryviaDatasetReconciler) buildCopyJob(ds *gryviav1.GryviaDataset, t copyTarget) *batchv1.Job {
