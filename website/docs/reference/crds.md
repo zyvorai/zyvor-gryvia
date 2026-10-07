@@ -18,7 +18,7 @@ Gryvia defines 47 custom resources in the `gryvia.io` API group (version `v1alph
 | `GryviaChargeback` | `gryviachargebacks` | Cluster | quota-operator | none | `allocationModel`, `costCenters`, `mode`, `period`, `pricing`, `reports` |
 | `GryviaCheckpointGuard` | `gryviacheckpointguards` | Namespaced | ai-operator | `checkpointPolicy`, `jobSelector` | `monitoring`, `restore`, `validation` |
 | `GryviaCostPredictor` | `gryviacostpredictors` | Cluster | quota-operator | none | `alternatives`, `historicalData`, `integration`, `models`, `pricing` |
-| `GryviaDataset` | `gryviadatasets` | Cluster | storage-operator | `source` | `access`, `cache`, `description`, `license`, `namespace`, `statistics`, `tags`, `type`, … |
+| `GryviaDataset` | `gryviadatasets` | Cluster | storage-operator | `source` | `access`, `cache`, `description`, `license`, `namespace`, `placement`, `statistics`, `tags`, … |
 | `GryviaFabricSignal` | `gryviafabricsignals` | Namespaced | ai-operator | none | `jobRef`, `observeOnly` |
 | `GryviaFederation` | `gryviafederations` | Cluster | ai-operator | none | `clusters`, `costManagement`, `distribution`, `failover`, `loadBalancing`, `resourceSharing` |
 | `GryviaFlowPolicy` | `gryviaflowpolicies` | Namespaced | network-intelligence | none | `action`, `destination`, `intent`, `priority`, `protocol`, `source` |

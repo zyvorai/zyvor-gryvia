@@ -182,6 +182,27 @@ type GryviaAIJobStatus struct {
 	// how per-node fabric health changed the node ranking (bounded to the top nodes)
 	// +kubebuilder:validation:MaxItems=16
 	PlacementExplanation []PlacementExplanation `json:"placementExplanation,omitempty"`
+
+	// Dataset records how the dataset named by the gryvia.io/dataset annotation was placed, decided once when the
+	// job is scheduled.
+	// +optional
+	Dataset *AIJobDataset `json:"dataset,omitempty"`
+}
+
+// AIJobDataset is the dataset locality decision for a job.
+type AIJobDataset struct {
+	// Name of the GryviaDataset.
+	Name string `json:"name"`
+	// LocalPools are the dataset's pools holding a ready, verified replica; nodes in them are preferred.
+	LocalPools []string `json:"localPools,omitempty"`
+	// Pool, PVCName and SubPath locate the replica mounted read-only at /datasets/<name> (empty when not mounted).
+	Pool    string `json:"pool,omitempty"`
+	PVCName string `json:"pvcName,omitempty"`
+	SubPath string `json:"subPath,omitempty"`
+	// NodeSelectors of the local pools, used for the preferred node affinity.
+	NodeSelectors []map[string]string `json:"nodeSelectors,omitempty"`
+	// Message explains the decision (why the replica is not mounted, for example).
+	Message string `json:"message,omitempty"`
 }
 
 // PlacementExplanation is one node's line of the fabric-aware placement decision.

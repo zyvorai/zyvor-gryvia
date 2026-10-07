@@ -34,6 +34,7 @@ const (
 	DatasetStateError   = "error"
 
 	datasetLabel        = "gryvia.io/dataset"
+	datasetPoolLabel    = "gryvia.io/dataset-pool"
 	datasetDefaultVer   = "latest"
 	datasetMountPath    = "/data"
 	datasetBackoffLimit = int32(2)
@@ -120,6 +121,22 @@ func (r *GryviaDatasetReconciler) reconcileDataset(ctx context.Context, ds *gryv
 	}
 
 	hash := datasetHash(ds, version)
+	res, err := r.reconcilePrimary(ctx, ds, ns, version, hash)
+	if err != nil {
+		return res, err
+	}
+	wait, err := r.reconcileReplicas(ctx, ds, ns, version, hash)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	if wait > 0 && (res.RequeueAfter == 0 || wait < res.RequeueAfter) {
+		res.RequeueAfter = wait
+	}
+	return res, nil
+}
+
+// reconcilePrimary materializes the version into the dataset's own PVC.
+func (r *GryviaDatasetReconciler) reconcilePrimary(ctx context.Context, ds *gryviav1.GryviaDataset, ns, version, hash string) (ctrl.Result, error) {
 	if ds.Status.SourceHash == hash && ds.Status.State == DatasetStateReady {
 		return ctrl.Result{}, nil
 	}
@@ -287,8 +304,17 @@ func datasetHash(ds *gryviav1.GryviaDataset, version string) string {
 }
 
 func (r *GryviaDatasetReconciler) ensurePVC(ctx context.Context, ds *gryviav1.GryviaDataset, ns string) error {
+	var class string
+	if c := ds.Spec.Cache; c != nil {
+		class = c.StorageClass
+	}
+	return r.ensureClaim(ctx, ds, ns, datasetPVCName(ds), class, corev1.ReadWriteOnce, nil)
+}
+
+func (r *GryviaDatasetReconciler) ensureClaim(ctx context.Context, ds *gryviav1.GryviaDataset, ns, name, storageClass string,
+	mode corev1.PersistentVolumeAccessMode, extraLabels map[string]string) error {
 	pvc := &corev1.PersistentVolumeClaim{}
-	err := r.Get(ctx, types.NamespacedName{Namespace: ns, Name: datasetPVCName(ds)}, pvc)
+	err := r.Get(ctx, types.NamespacedName{Namespace: ns, Name: name}, pvc)
 	if err == nil {
 		if !metav1.IsControlledBy(pvc, ds) {
 			return datasetConfigError{fmt.Errorf("PVC %s/%s already exists and is not owned by this dataset", ns, pvc.Name)}
@@ -299,20 +325,21 @@ func (r *GryviaDatasetReconciler) ensurePVC(ctx context.Context, ds *gryviav1.Gr
 		return err
 	}
 	size := r.DefaultSize
+	if c := ds.Spec.Cache; c != nil && c.Size != "" {
+		size = c.Size
+	}
 	var class *string
-	if c := ds.Spec.Cache; c != nil {
-		if c.Size != "" {
-			size = c.Size
-		}
-		if c.StorageClass != "" {
-			sc := c.StorageClass
-			class = &sc
-		}
+	if storageClass != "" {
+		class = &storageClass
+	}
+	labels := map[string]string{datasetLabel: ds.Name}
+	for k, v := range extraLabels {
+		labels[k] = v
 	}
 	pvc = &corev1.PersistentVolumeClaim{
-		ObjectMeta: metav1.ObjectMeta{Name: datasetPVCName(ds), Namespace: ns, Labels: map[string]string{datasetLabel: ds.Name}},
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ns, Labels: labels},
 		Spec: corev1.PersistentVolumeClaimSpec{
-			AccessModes:      []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+			AccessModes:      []corev1.PersistentVolumeAccessMode{mode},
 			StorageClassName: class,
 			Resources:        corev1.VolumeResourceRequirements{Requests: corev1.ResourceList{corev1.ResourceStorage: resource.MustParse(size)}},
 		},
@@ -369,18 +396,31 @@ printf '{"files":%d,"bytes":%d,"sha256":"%s"}' "$files" "$bytes" "$sum" > /dev/t
 `
 
 func (r *GryviaDatasetReconciler) buildJob(ds *gryviav1.GryviaDataset, ns, name, version, hash string) *batchv1.Job {
+	return r.buildCopyJob(ds, copyTarget{ns: ns, name: name, version: version, hash: hash, pvc: datasetPVCName(ds),
+		current: ds.Status.CurrentVersion, keep: keptVersions(ds, version)})
+}
+
+// copyTarget is where one download Job writes: the primary PVC, or a pool replica pinned by nodeSelector.
+type copyTarget struct {
+	ns, name, version, hash, pvc, current, pool string
+	keep                                       []string
+	nodeSelector                               map[string]string
+}
+
+func (r *GryviaDatasetReconciler) buildCopyJob(ds *gryviav1.GryviaDataset, t copyTarget) *batchv1.Job {
+	ns, name, hash := t.ns, t.name, t.hash
 	s := ds.Spec.Source
 	env := []corev1.EnvVar{
 		{Name: "SOURCE", Value: s.Type},
-		{Name: "VERSION", Value: version},
-		{Name: "KEEP", Value: strings.Join(keptVersions(ds, version), " ")},
+		{Name: "VERSION", Value: t.version},
+		{Name: "KEEP", Value: strings.Join(t.keep, " ")},
 		{Name: "HASH", Value: hash},
-		{Name: "CURRENT", Value: ds.Status.CurrentVersion},
+		{Name: "CURRENT", Value: t.current},
 	}
 	image := r.Image
 	var envFrom []corev1.EnvFromSource
 	mounts := []corev1.VolumeMount{{Name: "data", MountPath: datasetMountPath}}
-	volumes := []corev1.Volume{{Name: "data", VolumeSource: corev1.VolumeSource{PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: datasetPVCName(ds)}}}}
+	volumes := []corev1.Volume{{Name: "data", VolumeSource: corev1.VolumeSource{PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: t.pvc}}}}
 	switch s.Type {
 	case "http":
 		env = append(env, corev1.EnvVar{Name: "URL", Value: s.HTTP.URL}, corev1.EnvVar{Name: "CHECKSUM_URL", Value: s.HTTP.ChecksumURL})
@@ -407,6 +447,9 @@ func (r *GryviaDatasetReconciler) buildJob(ds *gryviav1.GryviaDataset, ns, name,
 	noEscalation := false
 	backoff, ttl := datasetBackoffLimit, datasetJobTTL
 	labels := map[string]string{datasetLabel: ds.Name, "gryvia.io/dataset-source-hash": hash}
+	if t.pool != "" {
+		labels[datasetPoolLabel] = t.pool
+	}
 	return &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ns, Labels: labels},
 		Spec: batchv1.JobSpec{
@@ -416,6 +459,7 @@ func (r *GryviaDatasetReconciler) buildJob(ds *gryviav1.GryviaDataset, ns, name,
 				ObjectMeta: metav1.ObjectMeta{Labels: labels},
 				Spec: corev1.PodSpec{
 					RestartPolicy:   corev1.RestartPolicyNever,
+					NodeSelector:    t.nodeSelector,
 					SecurityContext: &corev1.PodSecurityContext{RunAsUser: &uid, RunAsGroup: &uid, FSGroup: &uid, RunAsNonRoot: &nonRoot},
 					Containers: []corev1.Container{{
 						Name:            "download",

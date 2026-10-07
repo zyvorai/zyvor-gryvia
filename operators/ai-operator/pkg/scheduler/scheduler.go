@@ -101,6 +101,7 @@ func findOptimalNodes(ctx context.Context, k8sClient client.Client, job *gryviav
 	} else {
 		scoredNodes, explanation = rankFabric(ctx, k8sClient, scoredNodes, *fab)
 	}
+	scoredNodes = preferLocal(scoredNodes, eligibleNodes, preferredPools(ctx))
 
 	// Determine how many nodes we need
 	requiredNodes := 1

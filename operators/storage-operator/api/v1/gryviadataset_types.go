@@ -40,6 +40,64 @@ type GryviaDatasetSpec struct {
 	// Empty uses the storage-operator's --dataset-namespace.
 	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$`
 	Namespace string `json:"namespace,omitempty"`
+
+	// Placement keeps an extra copy of the current version in each listed node pool, so jobs in that pool read
+	// local data. Each copy is its own PVC, filled by a download Job pinned to the pool, and is verified
+	// against the primary copy's digest.
+	// +optional
+	Placement *DatasetPlacement `json:"placement,omitempty"`
+}
+
+// DatasetPlacement lists the pools that get a copy.
+type DatasetPlacement struct {
+	// Pools each get one replica.
+	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:MaxItems=16
+	Pools []DatasetPool `json:"pools"`
+
+	// StorageClass for the replica PVCs; a node-local class with volumeBindingMode WaitForFirstConsumer binds each
+	// replica inside its pool. Default: spec.cache.storageClass, then the cluster default.
+	// +optional
+	StorageClass string `json:"storageClass,omitempty"`
+
+	// AccessMode of the replica PVCs. ReadWriteOnce (default) volumes can only be mounted by pods on one node, so
+	// jobs mount a ReadWriteOnce replica only when they run on a single node; ReadOnlyMany or ReadWriteMany
+	// replicas are mounted by multi-node jobs too.
+	// +kubebuilder:validation:Enum=ReadWriteOnce;ReadOnlyMany;ReadWriteMany
+	// +optional
+	AccessMode string `json:"accessMode,omitempty"`
+}
+
+// DatasetPool is a set of nodes that shares one replica.
+type DatasetPool struct {
+	// Name identifies the pool (part of the replica PVC name).
+	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]{0,22}[a-z0-9])?$`
+	Name string `json:"name"`
+
+	// NodeSelector picks the pool's nodes (for example topology.kubernetes.io/zone or gryvia.io/rack).
+	// +kubebuilder:validation:MinProperties=1
+	NodeSelector map[string]string `json:"nodeSelector"`
+}
+
+// DatasetReplica is the state of one pool's copy.
+type DatasetReplica struct {
+	Pool         string            `json:"pool"`
+	NodeSelector map[string]string `json:"nodeSelector,omitempty"`
+	PVCName      string            `json:"pvcName,omitempty"`
+	AccessMode   string            `json:"accessMode,omitempty"`
+	// Version is the version directory (PVC SubPath) the replica holds; SourceHash the source it came from.
+	Version    string `json:"version,omitempty"`
+	SourceHash string `json:"sourceHash,omitempty"`
+	// Digest is the sha256 over the replica's files, computed like the primary copy's checksum.
+	Digest string `json:"digest,omitempty"`
+	// Ready is true once the replica holds the current version; Verified once its digest equals the primary's.
+	Ready    bool  `json:"ready"`
+	Verified bool  `json:"verified"`
+	Files    int64 `json:"files,omitempty"`
+	Bytes    int64 `json:"bytes,omitempty"`
+	// LastSynced is when the replica last finished a download.
+	LastSynced *metav1.Time `json:"lastSynced,omitempty"`
+	Message    string       `json:"message,omitempty"`
 }
 
 // DatasetSource defines where the data comes from
@@ -127,7 +185,8 @@ type DatasetCache struct {
 	// Size is the cache size
 	Size string `json:"size,omitempty"`
 
-	// Warmup enables pre-loading cache on first access
+	// Warmup starts the spec.placement replica downloads together with the primary download instead of after it
+	// completes. Replicas are still only marked verified once the primary copy's digest is known.
 	Warmup bool `json:"warmup,omitempty"`
 }
 
@@ -231,6 +290,9 @@ type GryviaDatasetStatus struct {
 
 	// Message explains the state (the download error, for example).
 	Message string `json:"message,omitempty"`
+
+	// Replicas reports the spec.placement copies, one per pool.
+	Replicas []DatasetReplica `json:"replicas,omitempty"`
 }
 
 //+kubebuilder:object:root=true

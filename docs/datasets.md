@@ -13,9 +13,11 @@ version, so training jobs, RAG ingestion and evaluation read the same bytes. It 
 | s3 with the real AWS CLI image (`amazon/aws-cli:2.17.0`) against an S3-compatible server through `source.s3.endpoint`: a prefix with nested keys downloaded, then a new version after one object changed, one was deleted and one was added. The new version has exactly the current objects, the unchanged object is the same inode as in the old version (hard-linked, not downloaded again), the changed one is a new file, and the old version is untouched | The "Datasets - s3 source" step of `.github/workflows/e2e-ml.yml` with versitygw (posix backend) as the server; passed in kind CI on main ([run 36990962579](https://github.com/zyvorai/gryvia/actions/runs/36990962579), 2026-10-02) |
 | nfs on a real cluster: the export mounted read-only by the download Job, nested files copied, a second version after the export changed, retention | The "Datasets - nfs source" step of `.github/workflows/e2e-ml.yml`: a kernel NFS server on the CI runner, the NFS client installed in the kind node; passed in kind CI on main ([run 36990962579](https://github.com/zyvorai/gryvia/actions/runs/36990962579), 2026-10-02) |
 | Gateway routes and tenant scoping | `services/api-gateway/tests/test_datasets.py` |
+| Pool placement: replica PVCs and pool-pinned download Jobs, replicas waiting for the primary (or starting with it under `cache.warmup`), digest verification and a mismatch reported, removed pools pruned, invalid placement reported; on the AI operator side the tie broken toward a pool with a verified replica, the read-only mount, and the cases that do not mount (multi-node with ReadWriteOnce, another namespace, nothing verified, dataset missing) | Unit tests with fake clients (`operators/storage-operator/controllers/dataset_placement_test.go`, `operators/ai-operator/controllers/gryviaaijob_dataset_test.go`) |
 
 | Not verified | Why |
 | --- | --- |
+| Pool placement on a real multi-node cluster with a node-local storage class | Not run yet; the lab host is a single node |
 | Amazon S3 itself, large data, and resuming an interrupted s3 sync | CI uses versitygw with a few small objects; an interrupted sync was only run with a fake `aws` under busybox |
 | NFS servers other than the Linux kernel server, Kerberos or root-squashed exports, large copies | CI exports a few small files read-only with `all_squash` |
 
@@ -49,6 +51,8 @@ The kind is cluster-scoped. The fields the controller reads:
 | `version` | Directory name of this version (default `latest`; letters, digits, `.`, `_`, `-`) |
 | `namespace` | Where the PVC and Jobs live (default `--dataset-namespace`); consumers run there |
 | `cache.size`, `cache.storageClass` | The PVC (ReadWriteOnce) |
+| `placement.pools[]` (`name`, `nodeSelector`), `placement.storageClass`, `placement.accessMode` | One extra copy of the current version per pool; see [Pool placement](#pool-placement) |
+| `cache.warmup` | Start the pool replica downloads together with the primary instead of after it |
 | `versioning.enabled`, `versioning.retentionPolicy.keepLast` | Without versioning only the current version is kept; with it the newest `keepLast` (all when 0) |
 
 `access`, `statistics`, `tags`, `license` and `description` are stored and shown, not enforced.
@@ -82,6 +86,45 @@ volumeMounts: [{name: data, mountPath: /data, subPath: v1, readOnly: true}]
 
 The PVC is ReadWriteOnce: on a multi-node cluster its readers have to run on the node that mounted it, or use a
 storage class with ReadWriteMany.
+
+## Pool placement
+
+`spec.placement` keeps a copy of the current version in each listed node pool, so jobs read local data:
+
+```yaml
+spec:
+  placement:
+    storageClass: local-path         # node-local, volumeBindingMode WaitForFirstConsumer
+    accessMode: ReadWriteOnce        # default; ReadOnlyMany / ReadWriteMany for shared pool storage
+    pools:
+      - {name: zone-a, nodeSelector: {topology.kubernetes.io/zone: a}}
+      - {name: rack-7, nodeSelector: {gryvia.io/rack: r7}}
+```
+
+- Each pool gets PVC `dataset-<name>-<pool>` and its own download Job (`dataset-<name>-<pool>-<hash>`) with the
+  pool's `nodeSelector`, so a WaitForFirstConsumer class binds the volume inside the pool. The Job runs the same
+  script as the primary download (resume, checksum) and keeps only the current version.
+- Replica downloads start once the primary copy is ready, or right away with `cache.warmup: true`.
+- A replica is **verified** when its digest (sha256 over the sorted per-file checksums) equals the primary's. A
+  mismatch (the source changed between the downloads) is reported in the replica's `message` and the replica is
+  not used. `status.replicas[]` reports `pool`, `pvcName`, `version`, `digest`, `ready`, `verified`, `files`,
+  `bytes`, `lastSynced`; condition `Placed` is True when every replica is verified.
+- Removing a pool from the list deletes its replica PVC. Every replica re-downloads when the source or version
+  changes.
+
+### Jobs that use a dataset
+
+Annotate a `GryviaAIJob` with `gryvia.io/dataset: <name>`. When it is scheduled, the AI operator reads the
+dataset's verified replicas of the current version and:
+
+- ranks eligible nodes in those pools first (ties only; it never makes an ineligible node eligible) and adds soft
+  preferred node affinity (weight 50) toward them;
+- mounts the replica of the chosen node's pool read-only at `/datasets/<name>` (version subPath) and sets
+  `GRYVIA_DATASET_PATH`, when the job runs in the dataset's namespace and either runs on a single node or the
+  replica is ReadOnlyMany / ReadWriteMany. A ReadWriteOnce volume can only be attached on one node.
+
+The decision is made once and recorded in `status.dataset` (`localPools`, `pool`, `pvcName`, `subPath`,
+`message`). A missing dataset, no verified replica or a lookup error leaves scheduling unchanged.
 
 ## Surfaces
 
