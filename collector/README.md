@@ -8,8 +8,8 @@ fabric signals, security alerts, training analysis, TCP tuning advice and the Fl
 built in CI and is in the signed release workflow, but no tagged release has published it yet, so for now you build it
 yourself (`docker build -f collector/Dockerfile .`).
 It runs privileged with `hostNetwork` and `hostPID`. On a Linux 7.0 x86_64 host it attached 36 of 83 hooks and decoded
-real TCP flows; GPU, NCCL, RDMA and GPUDirect Storage behaviour, arm64 loading and XDP/TCX/sockops attachment have not
-been verified on real hardware. Most HTTP endpoints below are **unauthenticated**; see [SECURITY.md](../SECURITY.md).
+real TCP flows; GPU, NCCL, RDMA and GPUDirect Storage behaviour, attachment on arm64 (the objects pass the verifier on an arm64
+CI runner) and XDP/TCX/sockops attachment have not been verified on real hardware. Most HTTP endpoints below are **unauthenticated**; see [SECURITY.md](../SECURITY.md).
 
 ## Architecture
 

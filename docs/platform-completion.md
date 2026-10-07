@@ -102,6 +102,8 @@ Federation probes are enabled only with administrator-configured
 inline kubeconfigs matching allowlisted HTTPS endpoints. Exec plugins, auth providers,
 file-based credentials, proxy URLs and insecure TLS are rejected. Readiness is an actual
 three-second `/readyz` probe; declared inventory is not presented as measured utilization.
+Opt-in failover on top of these probes (fencing, MultiKueue redispatch, checkpoint resume) is described in
+[federation failover](federation-failover.md).
 
 ## Health and cost controls
 

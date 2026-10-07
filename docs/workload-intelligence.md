@@ -12,7 +12,7 @@ no new CRDs or scheduling controller are installed. The Python SDK exposes `clie
 | Scheduling explanations | Reads namespace/marking-filtered job conditions and pod scheduling failures | Recorded selection is not pod placement; queue wait-time predictions are not fabricated |
 | Training bottlenecks | Framework timing adapter, per-rank data/collective ratios, straggler comparisons and missing observations | Heuristic analysis; GPU utilization must come from a real measurement. GPU/NCCL qualification still required |
 | Useful-work cost | Per-run/checkpoint/evaluation/token unit costs; live job cost joined by job UID to usage records | Estimates, not payments. Actual job endpoint does not invent checkpoint or delivered-token counts |
-| Inference SLOs | TTFT/inter-token/error policy with queue/KV pressure, fresh-data gate and bounded scale-up recommendation | Advisory, not a continuous SLO controller. No single-sample scale-down. HPA and scale-to-zero retain their ownership |
+| Inference SLOs | TTFT/inter-token/error policy with queue/KV pressure, fresh-data gate and bounded scale-up recommendation | Advisory here. Continuous control is the opt-in `spec.slo` on `GryviaInferenceService`, which raises the HPA floor ([inference serving](inference-serving.md#continuous-slo-control)). No single-sample scale-down. HPA and scale-to-zero retain their ownership |
 | Model laboratory | Executable streaming benchmark harness, quality/latency/error gates, comparable workload digests, Pareto frontier and cost ranking | Quality is normalized exact-match on supplied expected answers. Not an arbitrary quality evaluation framework |
 | Checkpoint recovery | Model/dataset binding, stream-verification of every rank's committed payload, recovery compatibility and lost-step policy | Optimizer resharding only for DCP checkpoints (`dcp_checkpoint.py`, CPU-tested); no live training resize. Storage durability must be qualified separately |
 | Dataset locality/cache | Digest-aware replica planning, transfer estimates and atomic SHA256 cache for mounted files | No cross-cluster replication, directory cache or automatic dataset-placement controller |
@@ -219,7 +219,8 @@ exercise timing/cache adapters; checkpoint tests verify every rank; benchmark te
 stream. Dashboard tests cover form defaults and actual analysis submission/error behavior.
 
 Required hardware qualification remains: actual model engines and token timing, distributed GPU
-checkpoint recovery, NCCL/RDMA measurements and storage durability. Required integration work for
-the broader roadmap remains continuous SLO control, automatic distributed cache placement and
-multi-cluster failover/fencing (optimizer resharding is available through DCP checkpoints, CPU-tested only).
-These are not represented as complete by this bundle.
+checkpoint recovery, NCCL/RDMA measurements and storage durability. Integration work has
+since landed outside this bundle: continuous SLO control ([inference serving](inference-serving.md#continuous-slo-control)),
+per-pool dataset placement ([datasets](datasets.md)), optimizer resharding through DCP checkpoints (CPU-tested), and
+multi-cluster failover with fencing ([federation failover](federation-failover.md), kind e2e). Still open:
+choosing cache placement automatically, and running any of these on GPUs.
