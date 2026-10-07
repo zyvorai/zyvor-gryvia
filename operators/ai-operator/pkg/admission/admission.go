@@ -19,11 +19,13 @@ import (
 	"strings"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	gryviav1 "github.com/zyvorai/gryvia/operators/ai-operator/api/v1"
+	"github.com/zyvorai/gryvia/operators/ai-operator/pkg/preflight"
 	"github.com/zyvorai/gryvia/operators/ai-operator/pkg/webhook"
 )
 
@@ -361,4 +363,29 @@ func limitWord(r budgetRule) string {
 		return fmt.Sprintf("the block point (%.0f%% of the limit) ", r.blockPercent)
 	}
 	return "the limit "
+}
+
+// CodePreflight is the reason code when the preflight estimate finds no node pool for the job.
+const CodePreflight = "PreflightBlocked"
+
+// Preflight evaluates the job's preflight annotations against the cluster's nodes (operator flag
+// --preflight-enforce). A job without gryvia.io/model-params-billions, an empty cluster and unknown
+// GPU memory all allow the job; only Blocked refuses it. A returned error means "could not decide".
+func (g *Gate) Preflight(ctx context.Context, job *gryviav1.GryviaAIJob) (Decision, error) {
+	in, ok, errs := preflight.FromJob(job)
+	if !ok || len(errs) > 0 {
+		return Decision{Allow: true}, nil
+	}
+	nodes := &corev1.NodeList{}
+	if err := g.Client.List(ctx, nodes); err != nil {
+		return Decision{}, fmt.Errorf("node lookup: %w", err)
+	}
+	r := preflight.Evaluate(in, preflight.PoolsFromNodes(nodes.Items))
+	switch r.State {
+	case preflight.StateBlocked:
+		return Decision{Code: CodePreflight, Reasons: []string{r.Summary()}}, nil
+	case preflight.StateIncomplete:
+		return Decision{Allow: true, Warnings: []string{r.Summary()}}, nil
+	}
+	return Decision{Allow: true}, nil
 }

@@ -5,10 +5,12 @@ on:
     branches: [ main, develop ]
     paths:
       - 'services/api-gateway/**'
+      - 'operators/ai-operator/pkg/preflight/testdata/**'
   pull_request:
     branches: [ main ]
     paths:
       - 'services/api-gateway/**'
+      - 'operators/ai-operator/pkg/preflight/testdata/**'
 
 permissions:
   contents: read

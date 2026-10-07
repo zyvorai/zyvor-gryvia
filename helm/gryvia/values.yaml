@@ -80,6 +80,12 @@ aiOperator:
   admissionGate: false
   # Hours assumed for a job without spec.timeout in the gate's cost forecast (--admission-default-hours).
   admissionDefaultHours: 1
+  # Preflight enforcement (--preflight-enforce): reject a Pending job whose preflight annotations
+  # (gryvia.io/model-params-billions, weight-bits, tensor-parallel, extra-memory-gib, require-fast-interconnect) fit
+  # no node pool by GPU type, node shape, estimated memory per GPU (label gryvia.io/gpu-memory), RDMA or
+  # interconnect. Without it the webhook only warns. Jobs without the annotations, an empty cluster and unknown GPU
+  # memory are allowed; fails OPEN on lookup errors. See docs/workload-intelligence.md.
+  preflightEnforce: false
   # Extra command-line flags for the ai-operator manager, one string each. The ML controllers (GryviaWorkspace,
   # GryviaInferenceService, GryviaModelRegistry, GryviaWorkflow, GryviaAutoTuner) take their default images and limits
   # here, e.g. ["--workspace-code-image=nginxinc/nginx-unprivileged:stable-alpine", "--inference-image-vllm=...",
