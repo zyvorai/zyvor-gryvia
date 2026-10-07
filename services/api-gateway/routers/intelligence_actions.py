@@ -19,6 +19,7 @@ from intelligence.models import Input, Name
 from .common import Deps, GROUP, VERSION, get_item, require_admin, run
 from .tenancy import is_admin
 from .intelligence_http import BoundedRoute
+from .jobs import resize_bounds
 
 LABEL = "gryvia.io/intelligence-action"
 ANNOTATION = "gryvia.io/intelligence-action"
@@ -28,11 +29,13 @@ TARGETS = {
     "inference-replicas": ("gryviainferenceservices", "replicas"),
     "quota-max-gpus": ("gryviaquotas", "maxGPUs"),
     "node-quarantine": (None, "unschedulable"),
+    "aijob-resize": ("gryviaaijobs", "desiredNodes"),
 }
+NAMESPACED = {"inference-replicas", "aijob-resize"}
 
 
 class Proposal(Input):
-    kind: str = Field(pattern="^(inference-replicas|quota-max-gpus|node-quarantine)$")
+    kind: str = Field(pattern="^(inference-replicas|quota-max-gpus|node-quarantine|aijob-resize)$")
     name: Name
     namespace: Name
     value: int = Field(ge=0, le=1048576, strict=True)
@@ -43,6 +46,8 @@ class Proposal(Input):
     def range(self):
         if self.kind == "inference-replicas" and not 1 <= self.value <= 100:
             raise ValueError("replicas must be 1-100")
+        if self.kind == "aijob-resize" and not 1 <= self.value <= 1024:
+            raise ValueError("workers must be 1-1024")
         if self.kind == "node-quarantine" and self.value != 1:
             raise ValueError("quarantine only allows cordon=true; uncordon is deliberately not supported")
         return self
@@ -131,6 +136,9 @@ def value_of(obj, kind):
         return (spec.get("gpuQuota") or {}).get("maxGPUs")
     if kind == "node-quarantine":
         return bool(spec.get("unschedulable", False))
+    if kind == "aijob-resize":
+        dist = spec.get("distributed") or {}
+        return (dist.get("elastic") or {}).get("desiredNodes") or dist.get("nodes")
     return spec.get("replicas")
 
 
@@ -141,7 +149,25 @@ def check_identity(obj):
     return md
 
 
-def managed_elsewhere(obj, kind):
+def version(obj, kind):
+    """What must not change between proposal and execution. A running job's status changes all the time, so for
+    a resize it is the spec generation; the write itself is still guarded by the resourceVersion just read."""
+    md = check_identity(obj)
+    if kind == "aijob-resize":
+        if not md.get("generation"):
+            raise HTTPException(status_code=409, detail="target generation unavailable")
+        return str(md["generation"])
+    return md["resourceVersion"]
+
+
+def managed_elsewhere(obj, kind, value=None):
+    if kind == "aijob-resize":
+        low, high = resize_bounds(obj)
+        if value is not None and not low <= value <= high:
+            raise HTTPException(
+                status_code=400, detail=f"workers must be between minNodes ({low}) and distributed.nodes ({high})"
+            )
+        return
     if kind != "inference-replicas":
         return
     spec = obj.get("spec") or {}
@@ -158,7 +184,7 @@ async def propose(request, deps, body):
     who = actor(request)
     obj = await target(deps, body.model_dump())
     md = check_identity(obj)
-    managed_elsewhere(obj, body.kind)
+    managed_elsewhere(obj, body.kind, body.value)
     old = value_of(obj, body.kind)
     desired = True if body.kind == "node-quarantine" else body.value
     if old == desired:
@@ -173,7 +199,7 @@ async def propose(request, deps, body):
         "createdAt": now.isoformat(),
         "expiresAt": (now + timedelta(minutes=15)).isoformat(),
         "targetUID": md["uid"],
-        "targetVersion": md["resourceVersion"],
+        "targetVersion": version(obj, body.kind),
         "previousValue": old,
     }
     cm = {
@@ -189,13 +215,21 @@ async def propose(request, deps, body):
     return data
 
 
+def spec_patch(kind, key, desired):
+    if kind == "quota-max-gpus":
+        return {"gpuQuota": {key: desired}}
+    if kind == "aijob-resize":
+        return {"distributed": {"elastic": {key: desired}}}
+    return {key: desired}
+
+
 async def apply(deps, data, obj, rollback=False):
     proposal = data["proposal"]
     md = check_identity(obj)
     if md["uid"] != data["targetUID"]:
         raise HTTPException(status_code=409, detail="target was replaced")
     expected = data.get("appliedVersion") if rollback else data["targetVersion"]
-    if md["resourceVersion"] != expected:
+    if version(obj, proposal["kind"]) != expected:
         raise HTTPException(status_code=409, detail="target changed since proposal or execution")
     managed_elsewhere(obj, proposal["kind"])
     desired = (
@@ -204,10 +238,10 @@ async def apply(deps, data, obj, rollback=False):
     key = TARGETS[proposal["kind"]][1]
     patch = {
         "metadata": {
-            "resourceVersion": expected,
+            "resourceVersion": md["resourceVersion"],
             "annotations": {ANNOTATION: data["id"] + ("-rollback" if rollback else "")},
         },
-        "spec": {"gpuQuota": {key: desired}} if proposal["kind"] == "quota-max-gpus" else {key: desired},
+        "spec": spec_patch(proposal["kind"], key, desired),
     }
     try:
         if proposal["kind"] == "node-quarantine":
@@ -216,10 +250,10 @@ async def apply(deps, data, obj, rollback=False):
             result = await run(
                 (
                     deps.k8s_custom.patch_namespaced_custom_object
-                    if proposal["kind"] == "inference-replicas"
+                    if proposal["kind"] in NAMESPACED
                     else deps.k8s_custom.patch_cluster_custom_object
                 ),
-                **({"namespace": proposal["namespace"]} if proposal["kind"] == "inference-replicas" else {}),
+                **({"namespace": proposal["namespace"]} if proposal["kind"] in NAMESPACED else {}),
                 group=GROUP,
                 version=VERSION,
                 plural=TARGETS[proposal["kind"]][0],
@@ -416,7 +450,7 @@ def build_router(deps: Deps) -> APIRouter:
         obj = await target(deps, data["proposal"])
         # Check everything before acquiring execution ownership.
         md = check_identity(obj)
-        if md["uid"] != data["targetUID"] or md["resourceVersion"] != (
+        if md["uid"] != data["targetUID"] or version(obj, data["proposal"]["kind"]) != (
             data.get("appliedVersion") if rollback else data["targetVersion"]
         ):
             raise HTTPException(status_code=409, detail="target changed; create a fresh proposal")
@@ -427,7 +461,7 @@ def build_router(deps: Deps) -> APIRouter:
         data.update(
             state="RolledBack" if rollback else "Applied",
             completedAt=datetime.now(timezone.utc).isoformat(),
-            appliedVersion=check_identity(result)["resourceVersion"],
+            appliedVersion=version(result, data["proposal"]["kind"]),
             desiredValueObserved=value_of(result, data["proposal"]["kind"]),
         )
         # If this persistence fails, record remains uncertain and cannot be executed again.

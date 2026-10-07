@@ -97,6 +97,7 @@ In the tables below **Access** means:
 | `GET /api/jobs/{name}/pods` | any (scoped) | Pods labelled `gryvia.io/job=<name>` |
 | `GET /api/jobs/{name}/logs?pod=&tail=200` | any (scoped) | JSON `{pod, container, lines, truncated}`; `tail` 1 to 2000. It is a snapshot, not a stream |
 | `GET /api/jobs/{name}/events` | any (scoped) | Kubernetes events for the job and its pods |
+| `POST /api/jobs/{name}/resize` | any (scoped) | `{"nodes": N}`: set `spec.distributed.elastic.desiredNodes` of a running elastic job (between `minNodes` and `distributed.nodes`); 409 for non-elastic, finished or Kueue-managed jobs |
 
 The log and event routes need the gateway service account to read `pods/log` and `events`; the chart grants that.
 

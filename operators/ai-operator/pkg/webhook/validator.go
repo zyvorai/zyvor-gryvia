@@ -245,6 +245,10 @@ func validateDistributedConfig(job *gryviav1.GryviaAIJob) error {
 		if e.MinNodes < 1 || e.MinNodes > dist.Nodes {
 			return fmt.Errorf("distributed.elastic.minNodes must be between 1 and distributed.nodes (%d), got %d", dist.Nodes, e.MinNodes)
 		}
+		if e.DesiredNodes != 0 && (e.DesiredNodes < e.MinNodes || e.DesiredNodes > dist.Nodes) {
+			return fmt.Errorf("distributed.elastic.desiredNodes must be between minNodes (%d) and distributed.nodes (%d), got %d",
+				e.MinNodes, dist.Nodes, e.DesiredNodes)
+		}
 		if dist.Framework != "" && dist.Framework != "pytorch" {
 			return fmt.Errorf("distributed.elastic is for PyTorch (torchrun); framework %q is not supported", dist.Framework)
 		}

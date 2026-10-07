@@ -69,6 +69,15 @@ func TestValidateJob(t *testing.T) {
 		{"elastic min above nodes", func(j *gryviav1.GryviaAIJob) {
 			j.Spec.Distributed = &gryviav1.DistributedConfig{Enabled: true, Nodes: 4, Elastic: &gryviav1.ElasticConfig{MinNodes: 5}}
 		}, "distributed.elastic.minNodes must be between 1 and distributed.nodes (4)"},
+		{"elastic desired ok", func(j *gryviav1.GryviaAIJob) {
+			j.Spec.Distributed = &gryviav1.DistributedConfig{Enabled: true, Nodes: 4, Elastic: &gryviav1.ElasticConfig{MinNodes: 2, DesiredNodes: 3}}
+		}, ""},
+		{"elastic desired below min", func(j *gryviav1.GryviaAIJob) {
+			j.Spec.Distributed = &gryviav1.DistributedConfig{Enabled: true, Nodes: 4, Elastic: &gryviav1.ElasticConfig{MinNodes: 2, DesiredNodes: 1}}
+		}, "distributed.elastic.desiredNodes must be between minNodes (2) and distributed.nodes (4)"},
+		{"elastic desired above nodes", func(j *gryviav1.GryviaAIJob) {
+			j.Spec.Distributed = &gryviav1.DistributedConfig{Enabled: true, Nodes: 4, Elastic: &gryviav1.ElasticConfig{MinNodes: 2, DesiredNodes: 5}}
+		}, "distributed.elastic.desiredNodes must be between minNodes (2) and distributed.nodes (4)"},
 		{"elastic tensorflow", func(j *gryviav1.GryviaAIJob) {
 			j.Spec.Distributed = &gryviav1.DistributedConfig{Enabled: true, Nodes: 4, Framework: "tensorflow", Elastic: &gryviav1.ElasticConfig{MinNodes: 1}}
 		}, "distributed.elastic is for PyTorch"},

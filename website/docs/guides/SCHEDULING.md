@@ -168,7 +168,7 @@ spec:
     checkpointOnScale: true
 ```
 
-Intended behaviour of the full design: scale workers up when GPUs are free, scale down instead of killing the job when GPUs are needed elsewhere, and checkpoint before removing a worker. This would need a controller that resizes the workload, the checkpoint machinery (see `GryviaCheckpointGuard` and the coordinated-checkpoint example) and a rendezvous backend in the cluster.
+Intended behaviour of the full design: scale workers up when GPUs are free, scale down instead of killing the job when GPUs are needed elsewhere, and checkpoint before removing a worker. Implemented today: an elastic `GryviaAIJob` resizes live on request (`spec.distributed.elastic.desiredNodes`, `POST /api/jobs/{name}/resize`, the dashboard), torchrun re-forms the group and DCP checkpoints reshard ([elastic training](https://github.com/zyvorai/gryvia/blob/main/docs/elastic-training.md#live-resize)). Not implemented: choosing the size automatically from free capacity.
 
 ---
 

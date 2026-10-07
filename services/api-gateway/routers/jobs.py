@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request
 from kubernetes.client.exceptions import ApiException
 
-from .common import Deps, http_error, run
+from .common import Deps, http_error, patch_item, run
 from .uiutil import NAME_MAX, NAME_PATTERN, find_one, prune
 
 PLURAL = "gryviaaijobs"
@@ -16,6 +16,22 @@ MAX_EVENTS = 100
 MAX_EVENT_PODS = 20
 MAX_LINE = 4096
 _CTRL_RE = re.compile(r"[\x00-\x08\x0a-\x1f\x7f]")  # all control chars except \t
+TERMINAL_PHASES = {"Succeeded", "Failed", "Cancelled", "Rejected"}
+KUEUE_QUEUE_LABEL = "kueue.x-k8s.io/queue-name"
+
+
+def resize_bounds(job: Dict[str, Any]) -> Tuple[int, int]:
+    """(minNodes, nodes) of an elastic job that can be resized now; HTTPException 409 otherwise."""
+    dist = (job.get("spec") or {}).get("distributed") or {}
+    elastic = dist.get("elastic")
+    if not dist.get("enabled") or not isinstance(elastic, dict):
+        raise HTTPException(status_code=409, detail="only elastic jobs (spec.distributed.elastic) can be resized")
+    phase = (job.get("status") or {}).get("phase")
+    if phase in TERMINAL_PHASES:
+        raise HTTPException(status_code=409, detail=f"job is {phase}")
+    if ((job.get("metadata") or {}).get("labels") or {}).get(KUEUE_QUEUE_LABEL):
+        raise HTTPException(status_code=409, detail="Kueue picks the size of a Kueue-managed job")
+    return int(elastic.get("minNodes") or 1), int(dist.get("nodes") or 0)
 
 
 def _ts(value: Any) -> Optional[str]:
@@ -114,6 +130,28 @@ def build_router(deps: Deps) -> APIRouter:
     async def job_pods(request: Request, name: str = JobName, _=Depends(deps.verify_auth)):
         _ns, pods = await _job_pods(request, name)
         return {"items": [_pod_ui(p) for p in pods]}
+
+    @router.post("/api/jobs/{name}/resize")
+    @deps.limiter.limit("10/minute")
+    async def resize_job(request: Request, name: str = JobName, _=Depends(deps.verify_auth)):
+        """Set spec.distributed.elastic.desiredNodes; the ai-operator resizes the job's Indexed Job."""
+        try:
+            body = await request.json()
+        except ValueError:
+            raise HTTPException(status_code=400, detail="request body must be JSON")
+        nodes = body.get("nodes") if isinstance(body, dict) else None
+        if not isinstance(nodes, int) or isinstance(nodes, bool):
+            raise HTTPException(status_code=400, detail="nodes must be an integer")
+        job, ns = await find_one(request, deps, PLURAL, name)
+        low, high = resize_bounds(job)
+        if not low <= nodes <= high:
+            raise HTTPException(status_code=400,
+                                detail=f"nodes must be between minNodes ({low}) and distributed.nodes ({high})")
+        patch = {"spec": {"distributed": {"elastic": {"desiredNodes": nodes}}}}
+        updated = await patch_item(deps, PLURAL, name, patch, ns)
+        current = ((updated.get("status") or {}).get("elastic") or {}).get("currentNodes")
+        return {"name": name, "namespace": ns, "desiredNodes": nodes, "minNodes": low, "maxNodes": high,
+                "currentNodes": current}
 
     @router.get("/api/jobs/{name}/logs")
     @deps.limiter.limit("60/minute")

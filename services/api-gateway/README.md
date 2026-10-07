@@ -30,6 +30,7 @@ DELETE /api/jobs/{name}     # Delete a job
 GET  /api/jobs/{name}/pods   # Pods of the job
 GET  /api/jobs/{name}/logs   # Pod log (?pod=&tail=200, max 2000)
 GET  /api/jobs/{name}/events # Events for the job and its pods
+POST /api/jobs/{name}/resize # {"nodes": N}: resize a running elastic job
 ```
 
 - `create_job` (POST) validates `apiVersion` and `kind` against known Gryvia types and enforces the namespace server-side.

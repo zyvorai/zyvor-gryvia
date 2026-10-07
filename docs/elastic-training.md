@@ -138,12 +138,30 @@ State dicts come from `get_state_dict` / `set_state_dict`, so a plain module, DD
 
 Tested: `examples/training/test_dcp_checkpoint.py` spawns gloo processes on CPU, saves at world size 4 and loads at 2 and 3 with DDP and with FSDP2. It compares every parameter and optimizer tensor and the Adam step counters with the saved state, checks that the ranks stay identical after one more step, ignores a half-written step and rejects a corrupted shard. The "DCP checkpoint resharding" job in `repo-checks.yml` runs it and also runs `elastic_train.py` under `torchrun` at 4 processes, then resumes it at 2. Not run on GPUs or with NCCL. Data-loader state is not resharded: the trainer must derive its data position from the step, as `elastic_train.py` does.
 
+## Live resize
+
+`spec.distributed.elastic.desiredNodes` (between `minNodes` and `distributed.nodes`, default `distributed.nodes`) is the number of workers to run now. A new job starts with that many; changing it on a running job resizes it:
+
+```bash
+kubectl patch gryviaaijob/train --type merge -p '{"spec":{"distributed":{"elastic":{"desiredNodes":3}}}}'
+# or through the gateway (the dashboard's job page has a Workers card that calls it)
+curl -X POST "$GRYVIA/api/jobs/train/resize" -H "Authorization: Bearer $TOKEN" -d '{"nodes": 3}'
+```
+
+The operator sets the Indexed Job's `parallelism` and `completions` together (Kubernetes elastic Indexed Jobs, 1.27 and later). Growing starts the next indexes; shrinking makes the Job controller remove the **highest** indexes, so index 0 (and a rendezvous it hosts) stays. The torchrun agents notice the new member, or the lost one, re-form the group within `NNODES=min:max`, and every rank loads the last committed DCP checkpoint at the new world size ([DCP](#dcp-checkpoints-and-resharding)); steps after that commit are redone. A shrink looks like a lost member to the survivors: their collective times out and counts as one launcher restart (`--max_restarts`).
+
+`distributed.nodes` stays the upper bound, so quota and admission, which count it, stay correct; a job cannot grow past what it was admitted for. The job reports `status.elastic` (`currentNodes`, `desiredNodes`, `resizes`, `lastResizeTime`), a `Resized` condition (`Grown` or `Shrunk`) and a `Resized` event. A job managed by Kueue is not resized (Kueue's partial admission chose its size): it gets `ResizeBlocked` (`KueueManaged`); a value out of bounds gets `ResizeBlocked` (`OutOfBounds`), and the webhook rejects one. A finished job is left alone.
+
+Approved operations (`apiGateway.intelligenceActions`) have a typed `aijob-resize` kind for a two-person resize ([workload intelligence](workload-intelligence.md#approved-operations)).
+
+Tested: ai-operator unit tests (initial size, grow, shrink, no-op, Kueue, finished and out-of-bounds jobs, through `reconcileBatchJob`); gateway tests for the endpoint and the operation (status churn does not invalidate a proposal, a spec edit does, rollback); a vitest for the dashboard card. The kind job `resize` in `e2e-elastic.yml` runs a real torchrun job with `nodes: 3, minNodes: 1, desiredNodes: 2`, grows it to 3 after a world-2 commit, shrinks it to 2 after a world-3 commit, and checks that index 2 is the one removed, that each group re-forms from a committed step, and that the job finishes with world 2 after resuming from the world-3 checkpoint. It runs in CI; it has not been run locally. Not run on GPUs or with NCCL.
+
 ## What it does not do
 
-- **It does not add or remove workers while the job runs.** The Indexed Job's `completions` is fixed at creation. Workers lost to a node failure are replaced by the Job controller (same index, same DNS name) when capacity exists; if it does not, the others carry on only if the launcher's rendezvous accepts a smaller group. There is no controller loop that resizes the Job.
+- **It does not grow a job past `distributed.nodes`, and resizes only by request.** There is no autoscaler that picks `desiredNodes` from free capacity. Workers lost to a node failure are replaced by the Job controller (same index, same DNS name) when capacity exists; if it does not, the others carry on only if the launcher's rendezvous accepts a smaller group.
 - **Losing index 0 needs a standalone rendezvous store.** With the default `MASTER_ADDR` endpoint the store is in pod 0 and losing it ends the job. See [Losing index 0](#losing-index-0).
 - **The Job can finish early.** Once `minNodes` indexes succeed the remaining pods are removed. In a healthy elastic run all workers finish together; if some finish a moment later they may be stopped mid-exit.
-- No resharding of data-loader state (optimizer and model state reshard through [DCP](#dcp-checkpoints-and-resharding)), no scale-up of a running job, no resize of a Kueue-admitted job after admission (Kueue's partial admission picks the size once, at admission).
+- No resharding of data-loader state (optimizer and model state reshard through [DCP](#dcp-checkpoints-and-resharding)), no resize of a Kueue-admitted job after admission (Kueue's partial admission picks the size once, at admission).
 - Node-loss pod replacement by the operator is for non-elastic jobs only ([checkpoint guard](checkpoint-guard.md)); elastic survivors re-form the group themselves.
 - Unverified: etcd with TLS (`protocol=https`, `ssl_cert`), storage other than NFS, and any NCCL behaviour on a resized group.
 

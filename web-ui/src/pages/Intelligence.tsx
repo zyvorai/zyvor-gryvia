@@ -438,6 +438,7 @@ export default function Intelligence() {
                 </option>
                 <option value="quota-max-gpus">Set quota GPU limit</option>
                 <option value="node-quarantine">Cordon node</option>
+                <option value="aijob-resize">Resize elastic job (workers)</option>
               </select>
             </label>
             <label>
@@ -471,7 +472,9 @@ export default function Intelligence() {
                     ? 1
                     : proposal.kind === 'inference-replicas'
                       ? 100
-                      : 1048576
+                      : proposal.kind === 'aijob-resize'
+                        ? 1024
+                        : 1048576
                 }
                 value={proposal.value}
                 onChange={(e) =>

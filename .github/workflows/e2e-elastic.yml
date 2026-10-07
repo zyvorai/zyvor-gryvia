@@ -17,6 +17,9 @@ name: Kind e2e (elastic training across nodes)
 # status.checkpoint, then its node's container is stopped (the node stays, NotReady). After the guard's grace the
 # operator force-deletes the stuck pod, the Indexed Job recreates it on the other training node, and the trainer
 # resumes from the last committed step.
+# The resize job grows a running elastic job (nodes 3, minNodes 1) from 2 to 3 workers and shrinks it back to 2 by
+# patching spec.distributed.elastic.desiredNodes: the operator changes the Indexed Job's parallelism and
+# completions together, torchrun re-forms the group each time, and DCP reshards the checkpoint to the new world size.
 
 on:
   pull_request:
@@ -505,3 +508,157 @@ jobs:
           kubectl get pv,pvc -A || true
           kubectl -n gryvia-system get events --sort-by=.lastTimestamp | tail -60 || true
           sudo ls -laR /srv/e2e-ckpt | head -60 || true
+
+  resize:
+    name: live resize (grow 2 to 3, shrink 3 to 2)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v5
+      - uses: helm/kind-action@v1
+        with:
+          install_only: true
+
+      - name: Create a 4-node kind cluster (two tainted training workers)
+        run: |
+          kind create cluster --name "$KIND_CLUSTER" --config scripts/kind-elastic.yaml --wait 120s
+          [ "$(kubectl get nodes -l e2e.gryvia.io/train=true -o name | wc -l)" -eq 2 ]
+
+      - name: NFS export on the runner, NFS client in the kind nodes
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq nfs-kernel-server >/dev/null
+          sudo mkdir -p /srv/e2e-resize /etc/exports.d
+          sudo chown 65534:65534 /srv/e2e-resize
+          echo '/srv/e2e-resize *(rw,sync,insecure,no_subtree_check,all_squash,anonuid=65534,anongid=65534)' \
+            | sudo tee /etc/exports.d/e2e-resize.exports >/dev/null
+          sudo exportfs -ra
+          sudo systemctl restart nfs-kernel-server
+          for node in $(kind get nodes --name "$KIND_CLUSTER"); do
+            docker exec "$node" sh -c 'apt-get update -qq && apt-get install -y -qq nfs-common >/dev/null'
+          done
+          echo "NFS_SERVER=$(hostname -I | awk '{print $1}')" >> "$GITHUB_ENV"
+
+      - name: Install Gryvia on kind (local images)
+        run: GRYVIA_LOCAL_IMAGES=1 ./scripts/kind-demo.sh
+
+      - name: Trainer image and the ReadWriteMany checkpoint volume
+        run: |
+          docker build -f examples/training/Dockerfile.elastic -t ghcr.io/zyvorai/gryvia-elastic-train:dev examples/training
+          kind load docker-image --name "$KIND_CLUSTER" ghcr.io/zyvorai/gryvia-elastic-train:dev
+          cat <<EOF | kubectl apply -f -
+          apiVersion: v1
+          kind: PersistentVolume
+          metadata: {name: e2e-resize-rwx}
+          spec:
+            capacity: {storage: 1Gi}
+            accessModes: [ReadWriteMany]
+            persistentVolumeReclaimPolicy: Retain
+            storageClassName: ""
+            mountOptions: [nfsvers=4.2, noac, lookupcache=none]
+            nfs: {server: "${NFS_SERVER}", path: /srv/e2e-resize}
+          ---
+          apiVersion: v1
+          kind: PersistentVolumeClaim
+          metadata: {name: e2e-resize-rwx, namespace: gryvia-system}
+          spec:
+            accessModes: [ReadWriteMany]
+            storageClassName: ""
+            volumeName: e2e-resize-rwx
+            resources: {requests: {storage: 1Gi}}
+          EOF
+          source scripts/e2e-ml-lib.sh
+          wait_for "PVC bound" 60 field_is pvc/e2e-resize-rwx '{.status.phase}' Bound
+
+      - name: Grow a running elastic job from 2 to 3 workers, then shrink it to 2
+        run: |
+          source scripts/e2e-ml-lib.sh
+          cat <<'EOF' | tee /dev/stderr | kubectl apply -f -
+          apiVersion: gryvia.io/v1alpha1
+          kind: GryviaAIJob
+          metadata: {name: e2e-rs, namespace: gryvia-system}
+          spec:
+            type: training
+            gpus: 0
+            image: ghcr.io/zyvorai/gryvia-elastic-train:dev
+            imagePullPolicy: IfNotPresent
+            retryLimit: 6
+            timeout: 25m
+            distributed: {enabled: true, framework: pytorch, backend: gloo, nodes: 3, elastic: {minNodes: 1, desiredNodes: 2}}
+            command: [torchrun]
+            args:
+              - --nnodes=$(NNODES)
+              - --nproc_per_node=$(NPROC_PER_NODE)
+              - --rdzv_backend=c10d
+              - --rdzv_endpoint=$(MASTER_ADDR):$(MASTER_PORT)
+              - --rdzv_conf=join_timeout=600
+              - --rdzv_id=e2e-rs
+              - --max_restarts=6
+              - /app/elastic_train.py
+            env:
+              - {name: CHECKPOINT_DIR, value: /ckpt}
+              - {name: TOTAL_STEPS, value: "240"}
+              - {name: STEP_SECONDS, value: "1"}
+              - {name: COLLECTIVE_TIMEOUT, value: "30"}
+            resources:
+              requests: {cpu: 200m, memory: 512Mi}
+              limits: {cpu: "1", memory: 2Gi}
+            nodeSelector: {e2e.gryvia.io/train: "true"}
+            tolerations: [{key: e2e.gryvia.io/train, operator: Equal, value: "true", effect: NoSchedule}]
+            volumes: [{name: ckpt, persistentVolumeClaim: {claimName: e2e-resize-rwx}}]
+            volumeMounts: [{name: ckpt, mountPath: /ckpt}]
+          EOF
+          wait_for "Job created" 120 kubectl -n "$NS" get job/e2e-rs
+          assert_eq "starts with desiredNodes workers" "$(jp job/e2e-rs '{.spec.parallelism}/{.spec.completions}')" 2/2
+          assert_eq "launcher bounds" \
+            "$(jp job/e2e-rs '{.spec.template.spec.containers[0].env[?(@.name=="NNODES")].value}')" 1:3
+
+          logs() { kubectl -n "$NS" logs -l job-name=e2e-rs --tail=-1 --max-log-requests=10 --prefix 2>/dev/null; }
+          index0() { kubectl -n "$NS" logs -l "job-name=e2e-rs,batch.kubernetes.io/job-completion-index=0" --tail=-1 2>/dev/null; }
+          last_start() { index0 | grep "starting after step" | tail -1; }
+          committed_with() { logs | grep -qE "committed step [0-9]+ \(world $1"; }
+          formed() { index0 | grep -q "of 2: starting after step"; }
+          wait_for "group of 2 formed" 300 formed
+          wait_for "a commit with world 2" 240 committed_with 2
+
+          kubectl -n "$NS" patch gryviaaijob/e2e-rs --type merge -p '{"spec":{"distributed":{"elastic":{"desiredNodes":3}}}}'
+          wait_for "Job grown to 3" 120 field_is job/e2e-rs '{.spec.parallelism}/{.spec.completions}' 3/3
+          index2_running() {
+            kubectl -n "$NS" get pod -l job-name=e2e-rs,batch.kubernetes.io/job-completion-index=2 \
+              -o jsonpath='{range .items[*]}{.status.phase}{"\n"}{end}' | grep -qx Running
+          }
+          wait_for "index 2 running" 180 index2_running
+          grown() { last_start | grep -qE "of 3: starting after step [1-9][0-9]* "; }
+          wait_for "group re-formed with 3 from a committed step" 300 grown
+          wait_for "a commit with world 3" 240 committed_with 3
+          assert_eq "Resized Grown" "$(jp gryviaaijob/e2e-rs '{.status.conditions[?(@.type=="Resized")].reason}')" Grown
+
+          kubectl -n "$NS" patch gryviaaijob/e2e-rs --type merge -p '{"spec":{"distributed":{"elastic":{"desiredNodes":2}}}}'
+          wait_for "Job shrunk to 2" 120 field_is job/e2e-rs '{.spec.parallelism}/{.spec.completions}' 2/2
+          gone() { [ -z "$(kubectl -n "$NS" get pod -l job-name=e2e-rs,batch.kubernetes.io/job-completion-index=2 \
+            --field-selector=status.phase=Running -o name)" ]; }
+          wait_for "index 2 (the highest) removed" 180 gone
+          shrunk() { last_start | grep -qE "of 2: starting after step [1-9][0-9]* "; }
+          wait_for "group re-formed with 2 from a committed step" 300 shrunk
+
+          wait_for "AIJob Succeeded" 900 field_is gryviaaijob/e2e-rs '{.status.phase}' Succeeded
+          logs | grep -E "starting after|done:|Timed out|restart" || true
+          assert_eq "two resizes" "$(jp gryviaaijob/e2e-rs '{.status.elastic.resizes}')" 2
+          assert_eq "Resized Shrunk" "$(jp gryviaaijob/e2e-rs '{.status.conditions[?(@.type=="Resized")].reason}')" Shrunk
+          done_json="$(sudo cat /srv/e2e-resize/DONE)"
+          echo "$done_json"
+          assert_eq "trained every step" "$(jq -r .steps <<<"$done_json")" 240
+          assert_eq "finished with 2 workers" "$(jq -r .world <<<"$done_json")" 2
+          assert_eq "resumed from a world-3 checkpoint" "$(jq -r .resumedFromWorld <<<"$done_json")" 3
+
+      - name: Dump state on failure
+        if: failure()
+        run: |
+          kubectl get nodes -o wide || true
+          kubectl get pods -A -o wide || true
+          kubectl -n gryvia-system get gryviaaijob/e2e-rs job/e2e-rs -o yaml || true
+          kubectl -n gryvia-system describe pods -l job-name=e2e-rs || true
+          kubectl -n gryvia-system logs -l job-name=e2e-rs --tail=200 --max-log-requests=10 --prefix || true
+          kubectl -n gryvia-system logs -l app.kubernetes.io/component=ai-operator --tail=200 || true
+          kubectl -n gryvia-system get events --sort-by=.lastTimestamp | tail -60 || true
+          sudo ls -laR /srv/e2e-resize | head -60 || true
