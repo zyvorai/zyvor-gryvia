@@ -25,14 +25,14 @@ For such a job the operator:
 
 Validation (webhook and controller): `1 <= minNodes <= nodes`, PyTorch only, batch Job only (an inference StatefulSet has a fixed replica set). A bad spec fails the job with `InvalidElasticConfig`.
 
-Your training script must be elastic itself: launch it with `torchrun --nnodes=$NNODES --nproc-per-node=$NPROC_PER_NODE --rdzv-backend=c10d --rdzv-endpoint=$MASTER_ADDR:$MASTER_PORT ...`, restart from a checkpoint on each membership change, and use [coordinated checkpoints](../examples/training/coordinated_checkpoint.py) so all ranks resume the same step.
+Your training script must be elastic itself: launch it with `torchrun --nnodes=$NNODES --nproc-per-node=$NPROC_PER_NODE --rdzv-backend=c10d --rdzv-endpoint=$MASTER_ADDR:$MASTER_PORT ...`, restart from a checkpoint on each membership change, and use [coordinated checkpoints](../examples/training/coordinated_checkpoint.py) so all ranks resume the same step. For model and optimizer state that must load at another world size (sharded optimizers, FSDP), use [DCP checkpoints](#dcp-checkpoints-and-resharding).
 
 ## Reference trainer
 
 [`examples/training/elastic_train.py`](../examples/training/elastic_train.py) (image: `examples/training/Dockerfile.elastic`, CPU torch) is a small data-parallel trainer that does all three:
 
-- every `CHECKPOINT_EVERY` steps all ranks call `save_global`; a step counts only once rank 0 wrote its COMMIT record;
-- on (re)start rank 0 deletes half-written steps above the committed one (`discard_uncommitted`), then every rank loads rank 0's blob of the committed step (`load_replicated`), so the group may resume with another world size;
+- it trains with `DistributedDataParallel` and Adam; every `CHECKPOINT_EVERY` steps all ranks call `dcp_checkpoint.save`; a step counts only once rank 0 wrote its COMMIT record;
+- on (re)start rank 0 deletes half-written steps above the committed one (`discard_uncommitted`), then every rank loads the committed step with `dcp_checkpoint.load`, resharded to the current world size, so the group may resume with another world size (a directory holding an older opaque-blob checkpoint is resumed from rank 0's blob with `load_replicated`). `DONE` records `resumedFromWorld`;
 - the process group gets a short timeout (`COLLECTIVE_TIMEOUT`, default 60s). A peer that disappears in the middle of an all-reduce otherwise only surfaces after gloo's default of 30 minutes, and torchrun cannot restart the workers before that.
 
 ```yaml
@@ -123,14 +123,29 @@ torchrun takes whatever group size forms within `NNODES=min:max`. The Ready cond
 - With 2 workers admitted and `minNodes: 1`, index 0 finishes and index 1 would sleep for 10 minutes. The success policy completes the Job (`SuccessCriteriaMet`, 1 succeeded) and the running pod is stopped. Kueue marks the Workload Finished and the ClusterQueue goes idle.
 - `scripts/e2e-kueue.sh elastic-torchrun` uses the real trainer. A `torchrun` job asking for 4 workers (`minNodes: 2`) against 2 slots runs with 2 workers. `NNODES=2:4` forms a group of 2, both ranks commit every checkpoint up to the final step 20 on a shared volume, and rank 0 reports `world 2`.
 
+## DCP checkpoints and resharding
+
+[`examples/training/dcp_checkpoint.py`](../examples/training/dcp_checkpoint.py) stores model and optimizer state with `torch.distributed.checkpoint` under `steps/<S>/dcp/` and commits the step with the same COMMIT/COMMITTED protocol: rank 0 writes `COMMIT` (`format: dcp`, the saving world size and the sha256 of every DCP file) only after every rank's shards and the `.metadata` file exist. Loading reads the regions each rank now needs from the DCP metadata, so a step saved by 4 ranks loads at 2 or 3, and FSDP-sharded parameters and Adam moments are resharded rather than copied.
+
+```python
+import dcp_checkpoint
+step_and_world = dcp_checkpoint.load(root, model, optimizer)   # None when nothing is committed
+...
+dcp_checkpoint.save(root, step, model, optimizer)              # collective, at the same step on every rank
+```
+
+State dicts come from `get_state_dict` / `set_state_dict`, so a plain module, DDP and FSDP2 (`fully_shard`) all work, and the names are fully qualified. A checkpoint written under DDP therefore loads into a differently wrapped model. With `verify` (the default), rank 0 checks every file against `COMMIT` before anyone loads. `checkpoint_contract.verify_committed` reports `optimizerReshardable: true` only for these checkpoints.
+
+Tested: `examples/training/test_dcp_checkpoint.py` spawns gloo processes on CPU, saves at world size 4 and loads at 2 and 3 with DDP and with FSDP2. It compares every parameter and optimizer tensor and the Adam step counters with the saved state, checks that the ranks stay identical after one more step, ignores a half-written step and rejects a corrupted shard. The "DCP checkpoint resharding" job in `repo-checks.yml` runs it and also runs `elastic_train.py` under `torchrun` at 4 processes, then resumes it at 2. Not run on GPUs or with NCCL. Data-loader state is not resharded: the trainer must derive its data position from the step, as `elastic_train.py` does.
+
 ## What it does not do
 
 - **It does not add or remove workers while the job runs.** The Indexed Job's `completions` is fixed at creation. Workers lost to a node failure are replaced by the Job controller (same index, same DNS name) when capacity exists; if it does not, the others carry on only if the launcher's rendezvous accepts a smaller group. There is no controller loop that resizes the Job.
 - **Losing index 0 needs a standalone rendezvous store.** With the default `MASTER_ADDR` endpoint the store is in pod 0 and losing it ends the job. See [Losing index 0](#losing-index-0).
 - **The Job can finish early.** Once `minNodes` indexes succeed the remaining pods are removed. In a healthy elastic run all workers finish together; if some finish a moment later they may be stopped mid-exit.
-- No resharding of optimizer or data-loader state, no scale-up of a running job, no resize of a Kueue-admitted job after admission (Kueue's partial admission picks the size once, at admission).
+- No resharding of data-loader state (optimizer and model state reshard through [DCP](#dcp-checkpoints-and-resharding)), no scale-up of a running job, no resize of a Kueue-admitted job after admission (Kueue's partial admission picks the size once, at admission).
 - Unverified: etcd with TLS (`protocol=https`, `ssl_cert`), storage other than NFS, and any NCCL behaviour on a resized group.
 
 ## Tests
 
-`controllers/gryviaaijob_elastic_test.go` (Job shape, env, success policy, defaults, validation), `pkg/scheduler/holds_test.go` (placement between min and max), `pkg/webhook/validator_test.go`, `examples/training/test_coordinated_checkpoint.py` (commit protocol, `load_replicated`, `discard_uncommitted`), the "Elastic training" step of `e2e-ml.yml` (one node, a deleted pod) and `e2e-elastic.yml` (two nodes, NFS, losing the node of index 1 or of index 0).
+`controllers/gryviaaijob_elastic_test.go` (Job shape, env, success policy, defaults, validation), `pkg/scheduler/holds_test.go` (placement between min and max), `pkg/webhook/validator_test.go`, `examples/training/test_coordinated_checkpoint.py` (commit protocol, `load_replicated`, `discard_uncommitted`), `examples/training/test_dcp_checkpoint.py` (DCP save at 4, load at 2 and 3, DDP and FSDP2), the "Elastic training" step of `e2e-ml.yml` (one node, a deleted pod) and `e2e-elastic.yml` (two nodes, NFS, losing the node of index 1 or of index 0).

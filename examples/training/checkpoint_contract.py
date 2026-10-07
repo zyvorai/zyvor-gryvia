@@ -1,8 +1,9 @@
 """Verify the existing all-ranks checkpoint against immutable model/dataset identity.
 
-This checks bytes and identity without deserializing framework payloads. It never asserts
-that sharded optimizer state can be resharded. A trainer binds this contract once before
-calling coordinated_checkpoint.save_global; consumers verify it before recovery.
+This checks bytes and identity without deserializing framework payloads. A trainer binds this contract once
+before calling coordinated_checkpoint.save_global or dcp_checkpoint.save; consumers verify it before recovery.
+optimizerReshardable is true only for DCP checkpoints (dcp_checkpoint.py), whose metadata lets a different world
+size load the optimizer state; opaque per-rank blobs are never reported as reshardable.
 """
 from datetime import datetime, timezone
 import fcntl
@@ -34,6 +35,46 @@ def _read(path, max_bytes):
         if len(data) > max_bytes:
             raise ValueError('checkpoint metadata exceeds limit')
         return json.loads(data)
+
+
+def file_digest(path, max_bytes):
+    """Return (size, sha256 hex) of a regular file, refusing symlinks and files over max_bytes."""
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+    with os.fdopen(fd, 'rb') as stream:
+        if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
+            raise ValueError('checkpoint file %s is not a regular file' % Path(path).name)
+        size, digest = 0, hashlib.sha256()
+        for chunk in iter(lambda: stream.read(1024 * 1024), b''):
+            size += len(chunk)
+            if size > max_bytes:
+                raise ValueError('checkpoint file %s exceeds the size limit' % Path(path).name)
+            digest.update(chunk)
+    return size, digest.hexdigest()
+
+
+def verify_dcp_files(ddir, files, max_bytes=1024 ** 4):
+    """Check that a DCP directory holds exactly the committed files with their sizes and sha256."""
+    ddir = Path(ddir)
+    if ddir.is_symlink() or not ddir.is_dir():
+        raise ValueError('DCP directory is missing or a symlink')
+    if not isinstance(files, list) or not files:
+        raise ValueError('commit record lists no DCP files')
+    names = []
+    for f in files:
+        name = f.get('name') if isinstance(f, dict) else None
+        if not isinstance(name, str) or not name or '/' in name or name in ('.', '..'):
+            raise ValueError('invalid DCP file name in commit record')
+        if type(f.get('bytes')) is not int or f['bytes'] < 0 or not isinstance(f.get('sha256'), str):
+            raise ValueError('invalid DCP file entry %s' % name)
+        names.append(name)
+    if len(set(names)) != len(names) or '.metadata' not in names:
+        raise ValueError('commit record must list .metadata and each DCP file once')
+    if sorted(p.name for p in ddir.iterdir()) != sorted(names):
+        raise ValueError('DCP directory does not hold exactly the committed files')
+    for f in files:
+        size, sha = file_digest(ddir / f['name'], max_bytes)
+        if size != f['bytes'] or sha != f['sha256']:
+            raise ValueError('checkpoint checksum mismatch for %s' % f['name'])
 
 
 def bind_contract(root, model_digest, dataset_digest, framework='pytorch'):
@@ -92,6 +133,19 @@ def verify_committed(root, model_digest, dataset_digest, framework='pytorch', ma
     if (isinstance(world, bool) or not isinstance(world, int) or not 1 <= world <= 65536
             or record.get('version') != 1 or type(record.get('step')) is not int or record.get('step') != step):
         raise ValueError('invalid checkpoint commit')
+    if type(max_rank_bytes) is not int or max_rank_bytes <= 0:
+        raise ValueError('invalid checkpoint size limit')
+    result = {'step': step, 'modelDigest': model_digest, 'datasetDigest': dataset_digest,
+              'framework': framework, 'worldSize': world, 'ranks': list(range(world)),
+              'integrityVerified': True, 'globallyCommitted': True, 'durableStorage': False,
+              'optimizerReshardable': False,
+              'committedAt': datetime.fromtimestamp(path.stat().st_mtime, timezone.utc).isoformat()}
+    if record.get('format') == 'dcp':
+        verify_dcp_files(directory / 'dcp', record.get('files'), max_rank_bytes)
+        result.update(format='dcp', optimizerReshardable=True)
+        return result
+    if 'format' in record:
+        raise ValueError('unknown checkpoint format')
     ranks = record.get('ranks')
     if not isinstance(ranks, list) or len(ranks) != world:
         raise ValueError('incomplete rank commit')
@@ -99,8 +153,6 @@ def verify_committed(root, model_digest, dataset_digest, framework='pytorch', ma
         raise ValueError('invalid rank manifest')
     if {r['rank'] for r in ranks} != set(range(world)):
         raise ValueError('missing or duplicate rank')
-    if type(max_rank_bytes) is not int or max_rank_bytes <= 0:
-        raise ValueError('invalid checkpoint size limit')
     for r in ranks:
         if type(r.get('bytes')) is not int or r['bytes'] < 0:
             raise ValueError('invalid rank payload size')
@@ -116,8 +168,4 @@ def verify_committed(root, model_digest, dataset_digest, framework='pytorch', ma
                 digest.update(chunk)
             if size != r.get('bytes') or digest.hexdigest() != r.get('sha256'):
                 raise ValueError('checkpoint rank checksum mismatch')
-    return {'step': step, 'modelDigest': model_digest, 'datasetDigest': dataset_digest,
-            'framework': framework, 'worldSize': world, 'ranks': list(range(world)),
-            'integrityVerified': True, 'globallyCommitted': True, 'durableStorage': False,
-            'optimizerReshardable': False,
-            'committedAt': datetime.fromtimestamp(path.stat().st_mtime, timezone.utc).isoformat()}
+    return result
