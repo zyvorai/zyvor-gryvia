@@ -5,6 +5,6 @@ ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 HOME=/tmp
 RUN pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu torch==2.8.0 \
  && pip install --no-cache-dir python-etcd==0.4.5
 WORKDIR /app
-COPY coordinated_checkpoint.py elastic_train.py rendezvous_store.py ./
+COPY checkpoint_contract.py coordinated_checkpoint.py dcp_checkpoint.py elastic_train.py rendezvous_store.py ./
 USER 65534
 CMD ["torchrun", "--help"]

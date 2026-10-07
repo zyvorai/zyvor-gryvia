@@ -48,6 +48,37 @@ class ContractTest(unittest.TestCase):
             with self.assertRaises(ValueError):
                 verify_committed(tmp, DIGEST, DIGEST)
 
+    def test_dcp_record_is_reshardable_and_verified(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            bind_contract(tmp, DIGEST, DIGEST)
+            ddir = Path(tmp) / 'steps/5/dcp'
+            ddir.mkdir(parents=True)
+            files = []
+            for name, data in (('.metadata', b'meta'), ('__0_0.distcp', b'shard0'), ('__1_0.distcp', b'shard1')):
+                (ddir / name).write_bytes(data)
+                files.append({'name': name, 'bytes': len(data), 'sha256': hashlib.sha256(data).hexdigest()})
+            record = {'version': 1, 'format': 'dcp', 'step': 5, 'world_size': 2, 'files': files}
+            (ddir.parent / 'COMMIT').write_text(json.dumps(record))
+            (Path(tmp) / 'COMMITTED').write_text(json.dumps({'step': 5}))
+            out = verify_committed(tmp, DIGEST, DIGEST)
+            self.assertTrue(out['optimizerReshardable'])
+            self.assertEqual((out['format'], out['worldSize']), ('dcp', 2))
+            (ddir / 'stray.distcp').write_bytes(b'x')
+            with self.assertRaisesRegex(ValueError, 'exactly the committed files'):
+                verify_committed(tmp, DIGEST, DIGEST)
+            (ddir / 'stray.distcp').unlink()
+            (ddir / '__1_0.distcp').write_bytes(b'shardX')
+            with self.assertRaisesRegex(ValueError, 'checksum'):
+                verify_committed(tmp, DIGEST, DIGEST)
+            record['files'][1]['name'] = '../COMMIT'
+            (ddir.parent / 'COMMIT').write_text(json.dumps(record))
+            with self.assertRaisesRegex(ValueError, 'invalid DCP file name'):
+                verify_committed(tmp, DIGEST, DIGEST)
+            record['format'] = 'zip'
+            (ddir.parent / 'COMMIT').write_text(json.dumps(record))
+            with self.assertRaisesRegex(ValueError, 'unknown checkpoint format'):
+                verify_committed(tmp, DIGEST, DIGEST)
+
 
 if __name__ == '__main__':
     unittest.main()

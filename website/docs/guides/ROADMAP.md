@@ -43,7 +43,7 @@ The legacy kinds without a runtime, `GryviaSLA`, `GryviaAutoScaler`, `GryviaRetr
 
 ### Not implemented
 
-- Live resizing of a running job, elastic rank resharding and guaranteed checkpoints on abrupt node loss. Cooperative preStop requests, a durable single-process recovery example and a file-based all-ranks commit protocol (`examples/training/coordinated_checkpoint.py`, multi-process tested on CPU, not wired into a real distributed trainer) are implemented.
+- Live resizing of a running job and guaranteed checkpoints on abrupt node loss. Cooperative preStop requests, a durable single-process recovery example, a file-based all-ranks commit protocol (`examples/training/coordinated_checkpoint.py`) and DCP checkpoints that reshard model and optimizer state to another world size (`examples/training/dcp_checkpoint.py`, used by the elastic `torchrun` trainer; multi-process tested on CPU with DDP and FSDP2, never on GPUs) are implemented.
 - A separate hierarchical/DRF/global scheduler. Native Kueue fair-sharing, topology and MultiKueue configuration is available; a two-kind-cluster MultiKueue e2e with CPU pods passes in CI (a job submitted on the manager runs on the worker and reports back); GPU placement, data replication and failover across clusters remain unverified and unimplemented.
 - Cilium as the default CNI or any cluster-wide CNI replacement
 - Multi-cluster control plane and global scheduler
