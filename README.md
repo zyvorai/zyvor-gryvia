@@ -342,6 +342,7 @@ Storage and network throughput depend on the hardware, filesystem and fabric you
 | GPU nodes (NVIDIA GPU Operator, k3s bootstrap) | [guides/GPU_NODES.md](website/docs/guides/GPU_NODES.md) · [docs/gpu-validation.md](docs/gpu-validation.md) |
 | NVIDIA one-click (RDMA, GDS, MIG, Network and NIM operators) | [guides/NVIDIA_ONE_CLICK.md](website/docs/guides/NVIDIA_ONE_CLICK.md) |
 | Admission and recovery (strict Kueue admission, checkpoint hooks) | [docs/admission-recovery.md](docs/admission-recovery.md) |
+| Job submission preflight (dry-run admission preview, opt-in enforce on create) | [docs/job-submission-preflight.md](docs/job-submission-preflight.md) |
 | Inference serving (GPU/RPS autoscaling, Gateway canaries, SLO gating) | [docs/inference-serving.md](docs/inference-serving.md) |
 | Operations (upgrade, uninstall, backup) | [guides/OPERATIONS.md](website/docs/guides/OPERATIONS.md) |
 | CRD reference (all 54 kinds and their controllers) | [reference/crds.md](website/docs/reference/crds.md) |

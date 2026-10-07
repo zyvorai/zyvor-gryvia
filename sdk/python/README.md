@@ -204,3 +204,18 @@ All exceptions inherit from `GryviaError`:
 pip install -e ".[dev]"
 pytest
 ```
+
+### Admission preview
+
+```python
+report = await client.jobs.preflight("job.yaml")
+# No job or GPU reservation was created.
+job = await client.jobs.submit("job.yaml")
+```
+
+The gateway binds the tenant namespace, rejects server metadata and unsupported
+`gpuCount`, and checks Kubernetes admission with a dry run and strict field validation.
+A rejection names the failing fields; `report["warnings"]` carries admission webhook
+warnings such as the job webhook's feasibility findings. `report["enforcedOnCreate"]` says whether `submit`
+repeats the check (Helm `apiGateway.submissionAdmission.enforce`). An accepted preview
+cannot guarantee asynchronous quota or scheduling success.

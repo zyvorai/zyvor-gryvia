@@ -65,6 +65,7 @@ class Deps:
     require_prod_approval: bool = False                                        # GRYVIA_REQUIRE_PROD_APPROVAL=1
     intelligence_actions: bool = False                                        # GRYVIA_INTELLIGENCE_ACTIONS=1
     intelligence_retention_days: int = 30                                     # GRYVIA_INTELLIGENCE_RETENTION_DAYS (0 keeps all)
+    submission_admission: bool = False                                        # GRYVIA_SUBMISSION_ADMISSION_ENFORCE=1
     # tests inject this: returns a list of bodies, or (bodies, total_collectors)
     collector_fetch: Optional[Callable[[str], Awaitable[Any]]] = None
     # tests inject this: (agent chat URL, body) -> (status, JSON body)

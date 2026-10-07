@@ -595,6 +595,11 @@ export const api = {
     return data
   },
 
+  preflightJob: async (job: Partial<GryviaAIJob>): Promise<{ admitted: boolean; persisted: boolean; namespace: string; name: string; enforcedOnCreate?: boolean; warnings?: string[]; limitations: string[] }> => {
+    const { data } = await apiClient.post('/jobs/preflight', job)
+    return data
+  },
+
   createJob: async (job: Partial<GryviaAIJob>): Promise<GryviaAIJob> => {
     const { data } = await apiClient.post('/jobs', job)
     return data

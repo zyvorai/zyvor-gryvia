@@ -90,7 +90,8 @@ In the tables below **Access** means:
 | Method and path | Access | Purpose |
 |---|---|---|
 | `GET /api/jobs` | any (scoped) | `GryviaAIJob`s (`?limit=500&offset=0`, limit up to 1000) |
-| `POST /api/jobs` | any (scoped) | Create a job. The body must be a `GryviaAIJob` with `apiVersion: gryvia.io/v1alpha1`, `spec.image` and `spec.gpus`; the gateway sets the namespace itself (the caller's first namespace). 10/minute |
+| `POST /api/jobs` | any (scoped) | Create a job. The body must be a `GryviaAIJob` with `apiVersion: gryvia.io/v1alpha1`, `spec.image` and `spec.gpus`; the gateway sets the namespace itself (the caller's first namespace). With `apiGateway.submissionAdmission.enforce` it first runs the same checks as `/api/jobs/preflight` and fails closed (unknown fields and `gpuCount` are rejected). 10/minute |
+| `POST /api/jobs/preflight` | any (scoped) | Preview Kubernetes admission for the same body: gateway input checks (512 KiB, DNS-label name, string labels/annotations, integer `spec.gpus`, no server metadata or `gpuCount`), then a `dryRun=All` create with strict field validation in the caller's namespace. Returns `{admitted, persisted: false, namespace, name, checks, enforcedOnCreate, limitations}`; a rejection keeps the Kubernetes status code and names failing fields and reason codes, never values. Persists nothing, reserves no GPUs. 10/minute |
 | `GET /api/jobs/{name}` | any (scoped) | One job |
 | `DELETE /api/jobs/{name}` | any (scoped) | Delete a job. 10/minute |
 | `GET /api/jobs/{name}/pods` | any (scoped) | Pods labelled `gryvia.io/job=<name>` |

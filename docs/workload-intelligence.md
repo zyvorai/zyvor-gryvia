@@ -8,7 +8,7 @@ no new CRDs or scheduling controller are installed. The Python SDK exposes `clie
 
 | Roadmap area | Implementation in this change | Limit |
 |---|---|---|
-| Workload preflight | Weight-memory estimate, explicit extra memory, node shape, reservations, quota, storage, RDMA/interconnect and budget checks | Supplied snapshots; not a compatibility certification. Submit-time: the job webhook warns and opt-in `aiOperator.preflightEnforce` rejects (see below) |
+| Workload preflight | Weight-memory estimate, explicit extra memory, node shape, reservations, quota, storage, RDMA/interconnect and budget checks | Supplied snapshots; not a compatibility certification. Submit-time: the job webhook warns and opt-in `aiOperator.preflightEnforce` rejects (see below); `POST /api/jobs/preflight` previews those warnings with a dry run ([job submission preflight](job-submission-preflight.md)) |
 | Scheduling explanations | Reads namespace/marking-filtered job conditions and pod scheduling failures | Recorded selection is not pod placement; queue wait-time predictions are not fabricated |
 | Training bottlenecks | Framework timing adapter, per-rank data/collective ratios, straggler comparisons and missing observations | Heuristic analysis; GPU utilization must come from a real measurement. GPU/NCCL qualification still required |
 | Useful-work cost | Per-run/checkpoint/evaluation/token unit costs; live job cost joined by job UID to usage records | Estimates, not payments. Actual job endpoint does not invent checkpoint or delivered-token counts |

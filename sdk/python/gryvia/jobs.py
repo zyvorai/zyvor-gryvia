@@ -43,6 +43,14 @@ class Jobs:
         )
         return JobListResponse.model_validate(data)
 
+    async def preflight(self, job: dict[str, Any] | str | Path) -> dict[str, Any]:
+        """Preview Kubernetes admission without creation or GPU reservation.
+
+        Accepts the same manifest or YAML path as submit. Submit repeats the check only when the
+        gateway enforces it (``enforcedOnCreate`` in the report).
+        """
+        return await self._client._post("/api/jobs/preflight", json=self._resolve_body(job))
+
     async def get(self, name: str) -> Job:
         """Get a single job by name.
 
