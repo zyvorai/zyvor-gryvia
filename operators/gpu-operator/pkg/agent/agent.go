@@ -36,6 +36,8 @@ const (
 	AnnGPUs     = "gryvia.io/gpu-reset-gpus"
 	AnnObserved = "gryvia.io/gpu-reset-observed"
 	AnnResult   = "gryvia.io/gpu-reset-result"
+	// AnnAction picks reset (default), driver-reload or reboot.
+	AnnAction = "gryvia.io/gpu-reset-action"
 
 	// ResetTimeout bounds one nvidia-smi invocation.
 	ResetTimeout = 120 * time.Second
@@ -57,6 +59,11 @@ type Result struct {
 	State   string `json:"state"`
 	Message string `json:"message,omitempty"`
 	At      string `json:"at"`
+	// Action, Started, BootID and Apps track an InProgress driver reload or reboot.
+	Action  string   `json:"action,omitempty"`
+	Started string   `json:"started,omitempty"`
+	BootID  string   `json:"bootID,omitempty"`
+	Apps    []string `json:"apps,omitempty"`
 }
 
 // Runner runs the reset command; tests replace it.
@@ -85,6 +92,16 @@ type Agent struct {
 	Execute bool   // false = dry-run
 	Runner  Runner // nil = SMIRunner{"nvidia-smi"}
 	Now     func() time.Time
+
+	// AllowDriverReload and AllowReboot permit the driver-reload and reboot actions (both off by default).
+	AllowDriverReload bool
+	AllowReboot       bool
+	// RebootMethod is kured (default: write RebootSentinel and let kured reboot) or nsenter.
+	RebootMethod   string
+	RebootSentinel string
+	Rebooter       Rebooter // nil = HostRebooter
+	// LeaseNamespace holds the one-node-at-a-time lease for driver reloads and reboots ("" = no lease).
+	LeaseNamespace string
 }
 
 func (a *Agent) now() time.Time {
@@ -189,12 +206,16 @@ func (a *Agent) Reconcile(ctx context.Context) (string, error) {
 	if id == "" || id == node.Annotations[AnnObserved] {
 		return "", nil
 	}
-	res := a.decide(ctx, node, id)
-	prev := node.Annotations[AnnResult]
 	var prevRes Result
-	_ = json.Unmarshal([]byte(prev), &prevRes)
-	if prevRes.ID == id && prevRes.State == res.State && prevRes.Message == res.Message && res.State == StateBlocked {
-		return "", nil // still blocked for the same reason: do not rewrite the annotation every poll
+	_ = json.Unmarshal([]byte(node.Annotations[AnnResult]), &prevRes)
+	var res Result
+	if prevRes.ID == id && prevRes.State == StateInProgress {
+		res = a.progress(ctx, node, prevRes)
+	} else {
+		res = a.decide(ctx, node, id)
+	}
+	if prevRes.ID == id && prevRes.State == res.State && prevRes.Message == res.Message && (res.State == StateBlocked || res.State == StateInProgress) {
+		return "", nil // unchanged: do not rewrite the annotation every poll
 	}
 	body, _ := json.Marshal(res)
 	base := node.DeepCopy()
@@ -202,7 +223,7 @@ func (a *Agent) Reconcile(ctx context.Context) (string, error) {
 		node.Annotations = map[string]string{}
 	}
 	node.Annotations[AnnResult] = string(body)
-	if res.State != StateBlocked { // terminal: this request id is done, whatever happened
+	if res.State != StateBlocked && res.State != StateInProgress { // terminal: this request id is done, whatever happened
 		node.Annotations[AnnObserved] = id
 	}
 	if err := a.Client.Patch(ctx, node, client.MergeFrom(base)); err != nil {
@@ -234,6 +255,13 @@ func (a *Agent) decide(ctx context.Context, node *corev1.Node, id string) Result
 			busy = append(busy[:3], fmt.Sprintf("and %d more", len(busy)-3))
 		}
 		return mk(StateBlocked, "GPU pods still on the node: "+strings.Join(busy, ", "))
+	}
+	switch action := requestedAction(node); action {
+	case ActionReset:
+	case ActionDriverReload, ActionReboot:
+		return a.decideRecovery(ctx, node, action, mk)
+	default:
+		return mk(StateInvalid, fmt.Sprintf("unknown action %q (reset, driver-reload or reboot)", action))
 	}
 	target := "all GPUs"
 	if len(gpus) > 0 {

@@ -111,6 +111,7 @@ serving certificate, generated once and reused on upgrades; independent of `tls.
 | `webhook.enabled` | `true` by default; `false` removes the webhook objects and the operator's extra port, volume and flag |
 | `webhook.failurePolicy` | `Ignore` (default): if the operator is down, jobs are still admitted. `Fail`: jobs are rejected while the webhook is unreachable (hardening) |
 | `webhook.timeoutSeconds` | Admission call timeout (default 5) |
+| `gpuOperator.resetAgent.*` (`execute`, `allowDriverReload`, `allowReboot`, `rebootMethod`) | Node-local GPU reset agent; with `platformCompletion.gpuRemediation` and a health check's `spec.remediation`, escalates quarantined nodes through GPU reset, driver reload and reboot (kured or nsenter, one node at a time) and uncordons after a passing check. Dry-run by default | [gpu-reset-agent](../../docs/gpu-reset-agent.md) |
 | `aiOperator.federation.allowedServers`, `aiOperator.federation.failover` | Federation probes for the listed HTTPS API servers; `failover` (needs `aiOperator.kueueIntegration`) fences a member that keeps failing and evicts its Kueue MultiKueue Workloads for redispatch, granting patch on Workloads | [federation-failover](../../docs/federation-failover.md) |
 | `quotaOperator.usageRecordWebhook.enabled` | `true` by default, needs `webhook.enabled`: the usage-record webhook below |
 
