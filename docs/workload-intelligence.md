@@ -50,7 +50,8 @@ and are not stored. Live job reads use the same namespace and data markings as t
 | `GET /api/intelligence/jobs/{name}/explain` | Scoped job conditions and real pod scheduling failures |
 | `GET /api/intelligence/jobs/{name}/economics` | Scoped UID-attributed usage estimates; rejects mixed currencies and invalid records |
 | `GET /api/intelligence/inventory` | Provider admin; registered GPU capacity, explicitly unknown free capacity |
-| `GET/POST /api/intelligence/actions` | Opt-in named provider admin; list/create durable proposals |
+| `GET/POST /api/intelligence/actions` | Opt-in named provider admin; list (paged) / create durable proposals |
+| `GET /api/intelligence/actions/export`, `POST /api/intelligence/actions/sweep` | Opt-in named provider admin; export all records, apply retention now |
 | `GET /api/intelligence/actions/{id}` | Opt-in named provider admin; inspect operation |
 | `POST /api/intelligence/actions/{id}/{approve,reject,execute,rollback}` | Opt-in named provider admin; state transition |
 
@@ -165,8 +166,14 @@ actor and timestamps. ConfigMaps survive gateway restarts and coordinate multipl
 If a process crashes after claiming execution, a transport fails during the write, or final
 record persistence fails, the operation remains `Executing` / `RollingBack`. Inspect the target's
 `gryvia.io/intelligence-action` annotation and Kubernetes audit history; do not replay it.
-Reconcile manually and create a fresh proposal if needed. Record listing is capped at 100;
-archive reviewed ConfigMaps through administrator tooling. Automatic retention is not implemented.
+Reconcile manually and create a fresh proposal if needed.
+
+Listing is paged (`?limit=` up to 500, then `?continue=<token>` from the previous page).
+`GET /api/intelligence/actions/export` returns up to 10,000 records for archiving.
+Finished records (`Rejected`, `Applied`, `RolledBack`, and expired `Proposed`/`Approved`) older than
+`apiGateway.intelligenceRetentionDays` (default 30, `0` keeps all) are deleted at most once an hour
+by each gateway replica, on a list request, or immediately with `POST /api/intelligence/actions/sweep`.
+Deletes carry a resourceVersion precondition. `Executing`/`RollingBack` records are never deleted.
 
 The copilot receives `propose_operation` only for an OIDC provider administrator when this
 option is enabled. It can create a typed proposal, never approve, execute or roll back one.

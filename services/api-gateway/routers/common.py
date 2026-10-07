@@ -62,6 +62,7 @@ class Deps:
     sovereign_client: Optional[Callable[[Any], Any]] = None                    # tests: verify -> an httpx.AsyncClient
     require_prod_approval: bool = False                                        # GRYVIA_REQUIRE_PROD_APPROVAL=1
     intelligence_actions: bool = False                                        # GRYVIA_INTELLIGENCE_ACTIONS=1
+    intelligence_retention_days: int = 30                                     # GRYVIA_INTELLIGENCE_RETENTION_DAYS (0 keeps all)
     # tests inject this: returns a list of bodies, or (bodies, total_collectors)
     collector_fetch: Optional[Callable[[str], Awaitable[Any]]] = None
     # tests inject this: (agent chat URL, body) -> (status, JSON body)

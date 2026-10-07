@@ -267,6 +267,9 @@ networkOperator:
 apiGateway:
   # Durable two-person OIDC operations. Grants gateway node/quota patches and local ConfigMap storage.
   intelligenceActions: false
+  # Days to keep finished operation records (Rejected, Applied, RolledBack, expired proposals); 0 keeps all.
+  # Executing/RollingBack records (uncertain writes) are never deleted.
+  intelligenceRetentionDays: 30
   enabled: true
   image: {name: gryvia-api-gateway, tag: ""}
   replicas: 2
