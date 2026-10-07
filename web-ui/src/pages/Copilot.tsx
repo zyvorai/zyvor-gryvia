@@ -23,7 +23,7 @@ export default function Copilot() {
     <PageHero
       eyebrow="Copilot"
       title="Ask about your platform."
-      lede="Plain-language questions about your jobs, models, datasets and services. It reads only what you can open yourself, never changes anything, and runs on a model from your LLM gateway, so it counts against your token quota."
+      lede="Ask about your jobs, models, datasets and services. It reads what you can open yourself. When approved operations are enabled, named administrators can request proposals for separate human review in Intelligence. It never approves or executes them."
     />
   )
   if (models.isLoading) {

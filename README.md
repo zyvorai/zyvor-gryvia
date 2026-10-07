@@ -36,6 +36,7 @@ From the Unreleased section of the [changelog](CHANGELOG.md); each entry there s
 
 | Feature | What it does |
 |---|---|
+| **Workload intelligence** | A dashboard workbench and typed analysis APIs for preflight, training evidence, useful-work cost, inference SLO recommendations, model benchmarking, checkpoint compatibility, locality, fabric qualification, capacity simulation and sovereign placement. Opt-in operations add durable proposals, separate OIDC review, execution preconditions and rollback ([guide](docs/workload-intelligence.md)) |
 | **Operator copilot** | `POST /api/copilot/chat` and a dashboard page answer plain-language questions about jobs, models, datasets, inference services and lineage over five read-only tools, with the caller's own LLM key |
 | **Data catalog and markings** | Document and search `GryviaDataset`s (owner, tags, column schema); label-based markings hide datasets and models from users outside the marking's OIDC group |
 | **Lineage and audit** | `GET /api/lineage` draws dataset → job → model → inference service; the gateway audit trail can be durable on SQLite with filters and CSV export |

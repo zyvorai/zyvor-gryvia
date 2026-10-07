@@ -15,6 +15,7 @@ export const NAVIGATION: NavItem[] = [
     name: 'Work',
     children: [
       { name: 'Jobs', href: '/jobs', blurb: 'Submit and track training jobs' },
+      { name: 'Intelligence', href: '/intelligence', blurb: 'Preflight, evidence, cost and recovery' },
       { name: 'Workflows', href: '/workflows', blurb: 'Multi-step pipelines' },
       { name: 'Tuner', href: '/tuner', blurb: 'Hyperparameter search' },
       { name: 'Experiments', href: '/experiments', blurb: 'Leaderboards for compared runs' },

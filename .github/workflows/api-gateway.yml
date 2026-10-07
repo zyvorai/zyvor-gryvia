@@ -46,6 +46,7 @@ jobs:
         working-directory: services/api-gateway
         run: |
           flake8 main.py --max-line-length=120
+          flake8 intelligence routers/intelligence.py routers/intelligence_actions.py routers/intelligence_http.py --max-line-length=120
           black --check main.py
 
       - name: Run tests

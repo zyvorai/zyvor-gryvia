@@ -44,6 +44,10 @@ spec:
         - containerPort: 8080
           name: https
         env:
+        {{- if (dig "apiGateway" "intelligenceActions" false .Values.AsMap) }}
+        - name: GRYVIA_INTELLIGENCE_ACTIONS
+          value: "1"
+        {{- end }}
         - name: GRYVIA_FLIGHT_COLLECTOR_NAMESPACE
           value: {{ .Values.apiGateway.flightCollectorNamespace | quote }}
         {{- if .Values.apiGateway.flightTokenSecret }}
@@ -354,6 +358,15 @@ rules:
 - apiGroups: [""]
   resources: ["events"]
   verbs: ["get", "list"]
+{{- if (dig "apiGateway" "intelligenceActions" false .Values.AsMap) }}
+# Opt-in typed operations only. Node mutation is cordon, never reset/reboot.
+- apiGroups: [""]
+  resources: ["nodes"]
+  verbs: ["patch"]
+- apiGroups: ["gryvia.io"]
+  resources: ["gryviaquotas"]
+  verbs: ["patch"]
+{{- end }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -369,6 +382,32 @@ subjects:
 - kind: ServiceAccount
   name: gryvia-api-gateway
   namespace: {{ include "gryvia.namespace" . }}
+{{- if (dig "apiGateway" "intelligenceActions" false .Values.AsMap) }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "gryvia.fullname" . }}-intelligence-actions
+  namespace: {{ include "gryvia.namespace" . }}
+rules:
+- apiGroups: [""]
+  resources: ["configmaps"]
+  verbs: ["create", "get", "list", "update"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "gryvia.fullname" . }}-intelligence-actions
+  namespace: {{ include "gryvia.namespace" . }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "gryvia.fullname" . }}-intelligence-actions
+subjects:
+- kind: ServiceAccount
+  name: gryvia-api-gateway
+  namespace: {{ include "gryvia.namespace" . }}
+{{- end }}
 {{- end }}
 {{- if and .Values.podDisruptionBudget.enabled (gt (int .Values.apiGateway.replicas) 1) }}
 ---

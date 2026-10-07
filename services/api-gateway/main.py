@@ -536,6 +536,7 @@ deps = Deps(
     or None,
     sovereign_ca_file=os.environ.get("GRYVIA_SOVEREIGN_CA_FILE", "").strip() or None,
     require_prod_approval=os.environ.get("GRYVIA_REQUIRE_PROD_APPROVAL", "") == "1",
+    intelligence_actions=os.environ.get("GRYVIA_INTELLIGENCE_ACTIONS", "") == "1",
 )
 register_routers(app, deps)
 
