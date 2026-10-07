@@ -123,6 +123,12 @@ func findOptimalNodes(ctx context.Context, k8sClient client.Client, job *gryviav
 		return Placement{}, fmt.Errorf("not enough nodes: need %d, found %d", requiredNodes, len(scoredNodes))
 	}
 
+	if _, _, elastic := job.Spec.Distributed.ElasticBounds(); topologyPlacement(ctx) && !elastic && job.Annotations[AnnotationTopologyPlacement] != "false" {
+		if picked, _, _, ok := groupPlacement(scoredNodes, eligibleNodes, requiredNodes); ok {
+			scoredNodes = picked
+		}
+	}
+
 	// Select top N nodes
 	selectedNodes := make([]string, requiredNodes)
 	for i := 0; i < requiredNodes; i++ {

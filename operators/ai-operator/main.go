@@ -60,7 +60,7 @@ func main() {
 	var probeAddr string
 	var enableWebhooks bool
 	var webhookCertDir string
-	var fabricAware bool
+	var fabricAware, topologyPlacement bool
 	var fabricMaxPenalty float64
 	var kueueIntegration bool
 	var kueueStrictAdmission bool
@@ -92,6 +92,8 @@ func main() {
 
 	flag.BoolVar(&fabricAware, "fabric-aware-scheduling", false,
 		"Rank nodes with the fresh per-node fabric health published by the collector (GryviaNodeFabric). Per-job override: annotation gryvia.io/fabric-aware=true|false. Off by default.")
+	flag.BoolVar(&topologyPlacement, "topology-placement", false,
+		"Keep a multi-node job's nodes inside one gryvia.io/ib-block, else one gryvia.io/rack, when such a group has enough eligible nodes. Per-job opt-out: annotation gryvia.io/topology-placement=false. Off by default.")
 	flag.Float64Var(&fabricMaxPenalty, "fabric-max-penalty", 25,
 		"Most points fabric health may subtract from a node score (0 or above 25 means 25).")
 
@@ -152,6 +154,7 @@ func main() {
 
 		FabricAware:          fabricAware,
 		FabricMaxPenalty:     fabricMaxPenalty,
+		TopologyPlacement:    topologyPlacement,
 		KueueIntegration:     kueueIntegration,
 		KueueStrictAdmission: kueueStrictAdmission,
 		KueueDefaultQueue:    kueueDefaultQueue,

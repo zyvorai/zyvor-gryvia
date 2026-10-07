@@ -86,9 +86,15 @@ With `--placement-holds` (chart `aiOperator.placementHolds`, off by default) the
 
 **Limit.** The operator's choice is advisory. The pods carry a label node selector (GPU type, RDMA, your own `spec.nodeSelector`), not the names of the chosen nodes, and kube-scheduler decides among the nodes that match. When free GPUs are scarce the pods can only go to the nodes the operator picked, and the hold is accurate. With spare matching nodes the pods may land elsewhere, and two jobs can still compete for the same ones. Annotate the job `gryvia.io/pin-placement: "true"` to make it binding: the pods then get a required node affinity (`metadata.name` in the chosen nodes, added to every term of your own required affinity). The cost is that if a chosen node disappears the pods stay Pending until the job is rescheduled. Unit-tested with fake clients; not run on GPUs.
 
+### Topology-aware group placement (opt-in)
+
+With `--topology-placement` (chart `aiOperator.topologyPlacement`, off by default) a multi-node job is kept inside one InfiniBand block, else one rack. Label the nodes `gryvia.io/ib-block` and `gryvia.io/rack`. After filtering and ranking (fabric-aware ranking, dataset locality and holds included), the operator groups the eligible nodes by `gryvia.io/ib-block` and takes the **smallest** block with at least `distributed.nodes` eligible nodes, so larger blocks stay free for larger jobs. Ties go to the block whose best nodes score highest, then to the block name. Within the block it keeps the ranking order. If no block fits, racks are tried the same way; if no rack fits either, the plain ranking places the job as before.
+
+The group is recorded in `status.placementTopology` (`gryvia.io/ib-block=b2`) and in the `Scheduled` condition message, and the pods get soft preferred node affinity (weight 80) toward it. Like the rest of the operator's placement it is advisory unless `gryvia.io/pin-placement: "true"` is set. Elastic jobs and Kueue-managed jobs are not grouped (Kueue's own topology-aware scheduling does that: see [platform completion](https://github.com/zyvorai/gryvia/blob/main/docs/platform-completion.md#scheduling-and-federation)). Per-job opt-out: annotation `gryvia.io/topology-placement: "false"`. Unit-tested with fake clients (`pkg/scheduler/topology_test.go`, `controllers/gryviaaijob_topology_test.go`); not run on an InfiniBand fabric.
+
 ### Design sketch
 
-Design sketch, not accepted by the current CRD schema (there is no `scheduling` field). Topology preference values (`same-node`, `same-rack`, `same-zone`, `any`) are not implemented and Kueue's topology-aware scheduling is not wired; the only topology signal in the real scorer is the `gryvia.io/interconnect` node label (NVSwitch, NVLink).
+Design sketch, not accepted by the current CRD schema (there is no `scheduling` field). Topology preference values (`same-node`, `same-rack`, `same-zone`, `any`) are not implemented as such; the opt-in group placement above and Kueue's topology-aware scheduling cover the block and rack cases.
 
 ```text
 spec:

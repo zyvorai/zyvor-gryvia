@@ -98,12 +98,16 @@ type GryviaKueueReconciler struct {
 	GPUTypeFlavors bool
 	FairSharing    bool
 	TopologyName   string
-	AdmissionCheck string
+	// GenerateTopology also creates the Topology TopologyName (levels gryvia.io/ib-block, gryvia.io/rack,
+	// kubernetes.io/hostname) when it does not exist. An existing Topology not labelled as Gryvia's is left alone.
+	GenerateTopology bool
+	AdmissionCheck   string
 }
 
 //+kubebuilder:rbac:groups=gryvia.io,resources=gryviatenants,verbs=get;list;watch;update;patch
 //+kubebuilder:rbac:groups=gryvia.io,resources=gryviaquotas;gryviagpuskus,verbs=get;list;watch
 //+kubebuilder:rbac:groups=kueue.x-k8s.io,resources=clusterqueues;resourceflavors;localqueues,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=kueue.x-k8s.io,resources=topologies,verbs=get;create;update
 
 func kueueGVK(kind string) schema.GroupVersionKind {
 	return schema.GroupVersionKind{Group: kueueGroup, Version: "v1beta1", Kind: kind}
@@ -187,6 +191,18 @@ func newObject(kind, name, namespace string, labels map[string]interface{}, spec
 		obj["spec"] = spec
 	}
 	return &unstructured.Unstructured{Object: obj}
+}
+
+// TopologyLevels are the node labels of a generated Kueue Topology, from the widest domain to the node.
+var TopologyLevels = []string{"gryvia.io/ib-block", "gryvia.io/rack", "kubernetes.io/hostname"}
+
+// BuildTopology returns the cluster-scoped Kueue Topology Gryvia generates for topology-aware scheduling.
+func BuildTopology(name string) *unstructured.Unstructured {
+	levels := []interface{}{}
+	for _, l := range TopologyLevels {
+		levels = append(levels, map[string]interface{}{"nodeLabel": l})
+	}
+	return newObject("Topology", name, "", map[string]interface{}{kueueManagedByLabel: kueueManagedBy}, map[string]interface{}{"levels": levels})
 }
 
 // BuildFlavors returns the ResourceFlavors of a tenant's queue: the default one and, when types are
@@ -282,8 +298,14 @@ func (r *GryviaKueueReconciler) desired(tenant *gryviav1.GryviaTenant, quotas []
 		typeNames = gpuTypes(skus)
 	}
 	objs := BuildFlavors(typeNames)
+	if r.TopologyName != "" && r.GenerateTopology {
+		objs = append([]*unstructured.Unstructured{BuildTopology(r.TopologyName)}, objs...)
+	}
 	if r.TopologyName != "" {
 		for _, f := range objs {
+			if f.GetKind() != "ResourceFlavor" {
+				continue
+			}
 			_ = unstructured.SetNestedField(f.Object, r.TopologyName, "spec", "topologyName")
 			labels, _, _ := unstructured.NestedStringMap(f.Object, "spec", "nodeLabels")
 			if labels == nil {

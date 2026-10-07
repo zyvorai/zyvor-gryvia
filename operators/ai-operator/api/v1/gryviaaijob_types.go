@@ -183,6 +183,11 @@ type GryviaAIJobStatus struct {
 	// +kubebuilder:validation:MaxItems=16
 	PlacementExplanation []PlacementExplanation `json:"placementExplanation,omitempty"`
 
+	// PlacementTopology is the topology group the operator kept a multi-node job in ("gryvia.io/ib-block=b1"),
+	// set only with topology placement on; pods get soft node affinity toward it.
+	// +optional
+	PlacementTopology string `json:"placementTopology,omitempty"`
+
 	// Dataset records how the dataset named by the gryvia.io/dataset annotation was placed, decided once when the
 	// job is scheduled.
 	// +optional

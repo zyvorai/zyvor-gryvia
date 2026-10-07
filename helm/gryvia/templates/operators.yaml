@@ -82,6 +82,9 @@ spec:
             {{- if and (eq $name "quota-operator") (dig "platformCompletion" "kueueTopologyName" nil $.Values.AsMap) }}
             - {{ printf "--kueue-topology-name=%s" (dig "platformCompletion" "kueueTopologyName" nil $.Values.AsMap) | quote }}
             {{- end }}
+            {{- if and (eq $name "quota-operator") (dig "platformCompletion" "kueueTopologyName" nil $.Values.AsMap) (dig "platformCompletion" "kueueGenerateTopology" false $.Values.AsMap) }}
+            - --kueue-generate-topology=true
+            {{- end }}
             {{- if and (eq $name "quota-operator") (dig "platformCompletion" "kueueAdmissionCheck" nil $.Values.AsMap) }}
             - {{ printf "--kueue-admission-check=%s" (dig "platformCompletion" "kueueAdmissionCheck" nil $.Values.AsMap) | quote }}
             {{- end }}
@@ -137,6 +140,9 @@ spec:
             {{- end }}
             {{- if and (eq $name "ai-operator") $.Values.aiOperator.placementHolds }}
             - --placement-holds=true
+            {{- end }}
+            {{- if and (eq $name "ai-operator") (dig "aiOperator" "topologyPlacement" false $.Values.AsMap) }}
+            - --topology-placement=true
             {{- end }}
             {{- if and (eq $name "ai-operator") $.Values.aiOperator.fabricAwareScheduling }}
             - --fabric-aware-scheduling=true

@@ -57,6 +57,11 @@ aiOperator:
   # fabric, and record why in status.placementExplanation. Off by default; adds get/list/watch on
   # gryvianodefabrics to the operators ClusterRole. Per-job override: annotation gryvia.io/fabric-aware.
   fabricAwareScheduling: false
+  # Topology-aware group placement (--topology-placement): keep a multi-node job's nodes inside one
+  # gryvia.io/ib-block, else one gryvia.io/rack, when such a group has enough eligible nodes (smallest fitting group
+  # first), record it in status.placementTopology and add soft node affinity toward it. Off by default. Per-job
+  # opt-out: annotation gryvia.io/topology-placement=false. Not used for elastic jobs or Kueue-managed placement.
+  topologyPlacement: false
   # Hold the GPUs of a job's chosen nodes until its pods are up (--placement-holds), so two jobs placed in the
   # same window cannot pick the same free GPUs. A single job is already placed all-or-nothing (too few nodes means it
   # stays Pending); this closes the race between jobs. In memory, expires after 5 minutes. Unverified on GPUs.
@@ -676,4 +681,7 @@ platformCompletion:
   kueueFairSharing: false
   # Existing administrator-created Topology and AdmissionCheck objects.
   kueueTopologyName: ""
+  # With kueueTopologyName and quotaOperator.kueueIntegration: create that Topology (levels gryvia.io/ib-block,
+  # gryvia.io/rack, kubernetes.io/hostname) when it does not exist (--kueue-generate-topology).
+  kueueGenerateTopology: false
   kueueAdmissionCheck: ""

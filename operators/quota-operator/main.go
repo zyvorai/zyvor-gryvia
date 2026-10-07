@@ -42,7 +42,7 @@ func main() {
 	var probeAddr string
 	var kueueIntegration, kueueGPUTypeFlavors bool
 	var kueueQuotaResources, kueueTopology, kueueAdmissionCheck string
-	var kueueFairSharing bool
+	var kueueFairSharing, kueueGenerateTopology bool
 	var tenantRBAC, enableReservations bool
 	var enableWebhooks, billingLedger bool
 	var webhookCertDir string
@@ -60,7 +60,8 @@ func main() {
 	flag.BoolVar(&kueueIntegration, "kueue-integration", false,
 		"Create a Kueue LocalQueue (tenant-<name>/gryvia), ClusterQueue (gryvia-<tenant>, cohort gryvia) and ResourceFlavors for every GryviaTenant. Needs Kueue installed. Off by default.")
 	flag.BoolVar(&kueueFairSharing, "kueue-fair-sharing", false, "Configure equal-weight Kueue fair sharing; enable fairSharing in Kueue manager configuration too.")
-	flag.StringVar(&kueueTopology, "kueue-topology-name", "", "Existing Kueue Topology for managed ResourceFlavors.")
+	flag.StringVar(&kueueTopology, "kueue-topology-name", "", "Kueue Topology for managed ResourceFlavors (existing, or generated with --kueue-generate-topology).")
+	flag.BoolVar(&kueueGenerateTopology, "kueue-generate-topology", false, "Create the --kueue-topology-name Topology (levels gryvia.io/ib-block, gryvia.io/rack, kubernetes.io/hostname) when it does not exist.")
 	flag.StringVar(&kueueAdmissionCheck, "kueue-admission-check", "", "Existing administrator-owned admission check, e.g. MultiKueue dispatcher.")
 	flag.StringVar(&kueueQuotaResources, "kueue-quota-resources", controllers.DefaultKueueQuotaResources,
 		"With --kueue-integration: comma-separated resources the tenant's nominal quota (concurrentGPUs, else the GryviaQuota maxGPUs) is applied to. The kind e2e sets cpu.")
@@ -172,6 +173,7 @@ func main() {
 			QuotaResources: resources,
 			GPUTypeFlavors: kueueGPUTypeFlavors,
 			FairSharing:    kueueFairSharing, TopologyName: kueueTopology, AdmissionCheck: kueueAdmissionCheck,
+			GenerateTopology: kueueGenerateTopology,
 		}).SetupWithManager(mgr); err != nil {
 			setupLog.Error(err, "unable to create controller", "controller", "GryviaKueue")
 			os.Exit(1)
