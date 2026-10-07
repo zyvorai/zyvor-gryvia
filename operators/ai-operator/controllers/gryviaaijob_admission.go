@@ -28,9 +28,29 @@ type Decision = admission.Decision
 // limits (allowed GPU types and SKUs, max GPUs per job, concurrent GPUs) and hard budgets
 // against the metered spend plus a forecast for this job. An error means the gate could not
 // decide; the caller fails open.
+//
+// With --preflight-enforce the job's preflight estimate (pkg/preflight) is checked too, with or
+// without --admission-gate: a job that no node pool can hold is rejected (PreflightBlocked).
 func (r *GryviaAIJobReconciler) admit(ctx context.Context, job *gryviav1.GryviaAIJob) (Decision, error) {
 	g := &admission.Gate{Client: r.Client, DefaultHours: r.AdmissionDefaultHours}
-	return g.Evaluate(ctx, job)
+	d := Decision{Allow: true}
+	if r.AdmissionGate {
+		var err error
+		if d, err = g.Evaluate(ctx, job); err != nil || !d.Allow {
+			return d, err
+		}
+	}
+	if r.PreflightEnforce {
+		p, err := g.Preflight(ctx, job)
+		if err != nil {
+			return Decision{}, err
+		}
+		if !p.Allow {
+			return p, nil
+		}
+		d.Warnings = append(d.Warnings, p.Warnings...)
+	}
+	return d, nil
 }
 
 // admissionGate is the single call site in reconcileAIJob. It runs only for jobs that have not
@@ -39,7 +59,7 @@ func (r *GryviaAIJobReconciler) admit(ctx context.Context, job *gryviav1.GryviaA
 // sticky, so a rejected job is never re-evaluated). Failing open: any lookup error lets the
 // job through with a Warning event and an AdmissionUnchecked condition.
 func (r *GryviaAIJobReconciler) admissionGate(ctx context.Context, job *gryviav1.GryviaAIJob) (bool, ctrl.Result, error) {
-	if !r.AdmissionGate || job.Status.Phase != PhasePending {
+	if (!r.AdmissionGate && !r.PreflightEnforce) || job.Status.Phase != PhasePending {
 		return false, ctrl.Result{}, nil
 	}
 	log := r.Log.WithValues("gryviaaijob", job.Namespace+"/"+job.Name)

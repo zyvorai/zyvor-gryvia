@@ -66,6 +66,7 @@ func main() {
 	var kueueStrictAdmission bool
 	var kueueDefaultQueue string
 	var admissionGate bool
+	var preflightEnforce bool
 	var admissionDefaultHours float64
 	var ml mlOptions
 	var mergeFabricSignals bool
@@ -101,6 +102,8 @@ func main() {
 		"With --kueue-integration: LocalQueue used by jobs in tenant-* namespaces that name no queue (only if that LocalQueue exists).")
 	flag.BoolVar(&admissionGate, "admission-gate", false,
 		"Before creating a job's workload, check the quotas and hard budgets covering its namespace (spend from usage records plus a forecast for the job) and reject it instead of creating it. Fails open on lookup errors. Off by default.")
+	flag.BoolVar(&preflightEnforce, "preflight-enforce", false,
+		"Before creating a job's workload, reject a job whose preflight annotations (gryvia.io/model-params-billions and friends) fit no node pool by GPU type, node shape, estimated memory per GPU, RDMA or interconnect. Jobs without the annotations, an empty cluster and unknown GPU memory are allowed. Fails open on lookup errors. Off by default.")
 	flag.Float64Var(&admissionDefaultHours, "admission-default-hours", 1,
 		"Hours a job without spec.timeout is assumed to run for the admission gate's cost forecast.")
 	flag.BoolVar(&placementHolds, "placement-holds", false,
@@ -155,6 +158,7 @@ func main() {
 		Recorder:             mgr.GetEventRecorderFor("gryviaaijob-controller"),
 
 		AdmissionGate:         admissionGate,
+		PreflightEnforce:      preflightEnforce,
 		AdmissionDefaultHours: admissionDefaultHours,
 		PlacementHolds:        placementHolds,
 	}).SetupWithManager(mgr); err != nil {

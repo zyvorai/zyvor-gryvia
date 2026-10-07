@@ -1,0 +1,54 @@
+[
+  {
+    "name": "7B fp16 fits one 80 GiB GPU",
+    "input": {"gpuType": "A100", "nodes": 1, "gpusPerNode": 1, "parametersBillions": 7, "weightBits": 16,
+              "tensorParallel": 1, "extraMemoryGiBPerGPU": 10},
+    "pools": [{"name": "a100-x8", "gpuType": "A100", "nodes": 2, "gpusPerNode": 8, "memoryGiB": 80}],
+    "expect": {"state": "Candidate", "perGPU": 23.039, "eligible": ["a100-x8"]}
+  },
+  {
+    "name": "70B fp16 without tensor parallelism exceeds 80 GiB",
+    "input": {"gpuType": "A100", "nodes": 1, "gpusPerNode": 1, "parametersBillions": 70, "weightBits": 16,
+              "tensorParallel": 1, "extraMemoryGiBPerGPU": 0},
+    "pools": [{"name": "a100-x8", "gpuType": "A100", "nodes": 2, "gpusPerNode": 8, "memoryGiB": 80}],
+    "expect": {"state": "Blocked", "perGPU": 130.385, "eligible": []}
+  },
+  {
+    "name": "70B fp16 tensor parallel 8 needs an 8-GPU node",
+    "input": {"gpuType": "H100", "nodes": 1, "gpusPerNode": 8, "parametersBillions": 70, "weightBits": 16,
+              "tensorParallel": 8, "extraMemoryGiBPerGPU": 4},
+    "pools": [
+      {"name": "h100-x4", "gpuType": "H100", "nodes": 4, "gpusPerNode": 4, "memoryGiB": 80},
+      {"name": "h100-x8", "gpuType": "H100", "nodes": 1, "gpusPerNode": 8, "memoryGiB": 80}
+    ],
+    "expect": {"state": "Candidate", "perGPU": 20.298, "eligible": ["h100-x8"]}
+  },
+  {
+    "name": "GPU type and RDMA requirements",
+    "input": {"gpuType": "H100", "nodes": 2, "gpusPerNode": 8, "parametersBillions": 8, "weightBits": 16,
+              "tensorParallel": 1, "extraMemoryGiBPerGPU": 20, "requireRDMA": true},
+    "pools": [
+      {"name": "a100-x8", "gpuType": "A100", "nodes": 4, "gpusPerNode": 8, "memoryGiB": 80, "rdma": true},
+      {"name": "h100-x8", "gpuType": "H100", "nodes": 4, "gpusPerNode": 8, "memoryGiB": 80, "rdma": false},
+      {"name": "h100-x8-ib", "gpuType": "H100", "nodes": 2, "gpusPerNode": 8, "memoryGiB": 80, "rdma": true}
+    ],
+    "expect": {"state": "Candidate", "perGPU": 34.901, "eligible": ["h100-x8-ib"]}
+  },
+  {
+    "name": "fast interconnect required",
+    "input": {"gpuType": "A100", "nodes": 1, "gpusPerNode": 4, "parametersBillions": 13, "weightBits": 16,
+              "tensorParallel": 4, "extraMemoryGiBPerGPU": 8, "requireFastInterconnect": true},
+    "pools": [
+      {"name": "a100-pcie", "gpuType": "A100", "nodes": 2, "gpusPerNode": 4, "memoryGiB": 40, "interconnect": "none"},
+      {"name": "a100-nvlink", "gpuType": "A100", "nodes": 1, "gpusPerNode": 4, "memoryGiB": 40, "interconnect": "nvlink"}
+    ],
+    "expect": {"state": "Candidate", "perGPU": 14.054, "eligible": ["a100-nvlink"]}
+  },
+  {
+    "name": "405B 4-bit across 8 GPUs, too few nodes",
+    "input": {"gpuType": "H100", "nodes": 4, "gpusPerNode": 8, "parametersBillions": 405, "weightBits": 4,
+              "tensorParallel": 8, "extraMemoryGiBPerGPU": 30},
+    "pools": [{"name": "h100-x8", "gpuType": "H100", "nodes": 2, "gpusPerNode": 8, "memoryGiB": 80}],
+    "expect": {"state": "Blocked", "perGPU": 53.573, "eligible": []}
+  }
+]

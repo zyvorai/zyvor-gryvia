@@ -76,6 +76,9 @@ type GryviaAIJobReconciler struct {
 	// AdmissionGate enables the quota and budget gate before a job's workload is created
 	// (operator flag --admission-gate, default false). See gryviaaijob_admission.go.
 	AdmissionGate bool
+	// PreflightEnforce rejects a Pending job whose preflight annotations fit no node pool
+	// (operator flag --preflight-enforce, default false). See pkg/preflight.
+	PreflightEnforce bool
 	// AdmissionDefaultHours is the forecast duration of a job without spec.timeout (0 = 1h).
 	AdmissionDefaultHours float64
 	// PlacementHolds (flag --placement-holds, default false) holds the GPUs of a job's chosen

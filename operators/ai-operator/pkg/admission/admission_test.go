@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -393,5 +395,40 @@ func TestCustomPeriodBudget(t *testing.T) {
 	g = gate(b, cur)
 	if d := eval(t, g, mkJob("tenant-a", "T4", 1)); d.Allow {
 		t.Errorf("spend inside the custom window must count: %+v", d)
+	}
+}
+
+func TestPreflightEnforcement(t *testing.T) {
+	s := newScheme()
+	_ = corev1.AddToScheme(s)
+	n := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{Name: "n1", Labels: map[string]string{"gryvia.io/gpu": "A100", "gryvia.io/gpu-memory": "80"}},
+		Status: corev1.NodeStatus{Allocatable: corev1.ResourceList{
+			"nvidia.com/gpu": *resource.NewQuantity(8, resource.DecimalSI)}},
+	}
+	g := &Gate{Client: fake.NewClientBuilder().WithScheme(s).WithObjects(n).Build()}
+	job := &gryviav1.GryviaAIJob{ObjectMeta: metav1.ObjectMeta{Name: "j", Namespace: "ns"},
+		Spec: gryviav1.GryviaAIJobSpec{GPUs: 1, GpuType: "A100"}}
+
+	if d, err := g.Preflight(context.Background(), job); err != nil || !d.Allow {
+		t.Fatalf("no annotations: %+v %v", d, err)
+	}
+	job.Annotations = map[string]string{"gryvia.io/model-params-billions": "70"}
+	d, err := g.Preflight(context.Background(), job)
+	if err != nil || d.Allow || d.Code != CodePreflight || !strings.Contains(d.Message(), "memory") {
+		t.Fatalf("70B fp16 on one GPU: %+v %v", d, err)
+	}
+	job.Annotations["gryvia.io/tensor-parallel"] = "8"
+	job.Spec.GPUs = 8
+	if d, err := g.Preflight(context.Background(), job); err != nil || !d.Allow {
+		t.Fatalf("tensor parallel 8 fits: %+v %v", d, err)
+	}
+
+	failing := &Gate{Client: interceptor.NewClient(fake.NewClientBuilder().WithScheme(s).Build(), interceptor.Funcs{
+		List: func(context.Context, client.WithWatch, client.ObjectList, ...client.ListOption) error {
+			return errors.New("boom")
+		}})}
+	if _, err := failing.Preflight(context.Background(), job); err == nil {
+		t.Fatal("a node lookup failure must be returned so the caller fails open")
 	}
 }

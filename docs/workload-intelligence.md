@@ -8,7 +8,7 @@ no new CRDs or scheduling controller are installed. The Python SDK exposes `clie
 
 | Roadmap area | Implementation in this change | Limit |
 |---|---|---|
-| Workload preflight | Weight-memory estimate, explicit extra memory, node shape, reservations, quota, storage, RDMA/interconnect and budget checks | Supplied snapshots; not admission or a compatibility certification. Not automatically a submit-time gate |
+| Workload preflight | Weight-memory estimate, explicit extra memory, node shape, reservations, quota, storage, RDMA/interconnect and budget checks | Supplied snapshots; not a compatibility certification. Submit-time: the job webhook warns and opt-in `aiOperator.preflightEnforce` rejects (see below) |
 | Scheduling explanations | Reads namespace/marking-filtered job conditions and pod scheduling failures | Recorded selection is not pod placement; queue wait-time predictions are not fabricated |
 | Training bottlenecks | Framework timing adapter, per-rank data/collective ratios, straggler comparisons and missing observations | Heuristic analysis; GPU utilization must come from a real measurement. GPU/NCCL qualification still required |
 | Useful-work cost | Per-run/checkpoint/evaluation/token unit costs; live job cost joined by job UID to usage records | Estimates, not payments. Actual job endpoint does not invent checkpoint or delivered-token counts |
@@ -54,6 +54,31 @@ and are not stored. Live job reads use the same namespace and data markings as t
 | `GET /api/intelligence/actions/export`, `POST /api/intelligence/actions/sweep` | Opt-in named provider admin; export all records, apply retention now |
 | `GET /api/intelligence/actions/{id}` | Opt-in named provider admin; inspect operation |
 | `POST /api/intelligence/actions/{id}/{approve,reject,execute,rollback}` | Opt-in named provider admin; state transition |
+
+### Submit-time preflight
+
+A `GryviaAIJob` opts in with annotations; the ai-operator evaluates them against pools built from
+the cluster's GPU nodes (grouped by `gryvia.io/gpu`, GPUs per node, `gryvia.io/gpu-memory` in GiB
+or `nvidia.com/gpu.memory` in MiB, `gryvia.io/rdma=true` and `gryvia.io/interconnect`). Cordoned
+nodes are not counted.
+
+```yaml
+metadata:
+  annotations:
+    gryvia.io/model-params-billions: "70"
+    gryvia.io/weight-bits: "16"              # 4, 8, 16 (default) or 32
+    gryvia.io/tensor-parallel: "8"           # default 1, at most GPUs per node
+    gryvia.io/extra-memory-gib: "12"         # activations, optimizer, KV cache, runtime
+    gryvia.io/require-fast-interconnect: "true"
+```
+
+`spec.network: rdma` requires RDMA. Malformed annotations are denied by the webhook. Otherwise the
+webhook only adds a warning when no pool fits (`Blocked`) or memory is unknown (`Incomplete`).
+With `aiOperator.preflightEnforce=true` (operator flag `--preflight-enforce`, independent of the
+admission gate) a Pending job that is `Blocked` is rejected with reason `PreflightBlocked`.
+An empty cluster, unknown GPU memory and lookup errors allow the job. Quota and budget are the
+admission gate's checks, not preflight's. The Go port (`operators/ai-operator/pkg/preflight`) and
+the gateway engine are kept equal by shared golden cases (`pkg/preflight/testdata/golden.json`).
 
 ### Framework timings
 
@@ -189,6 +214,6 @@ stream. Dashboard tests cover form defaults and actual analysis submission/error
 
 Required hardware qualification remains: actual model engines and token timing, distributed GPU
 checkpoint recovery, NCCL/RDMA measurements and storage durability. Required integration work for
-the broader roadmap remains continuous SLO control, submit-time preflight enforcement, runtime
+the broader roadmap remains continuous SLO control, runtime
 optimizer resharding, automatic distributed cache placement and multi-cluster failover/fencing.
 These are not represented as complete by this bundle.

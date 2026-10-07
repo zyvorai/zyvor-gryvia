@@ -19,6 +19,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	gryviav1 "github.com/zyvorai/gryvia/operators/ai-operator/api/v1"
+	"github.com/zyvorai/gryvia/operators/ai-operator/pkg/preflight"
 )
 
 // ValidatePath is the URL path the validating handler is served on.
@@ -120,6 +121,9 @@ func ValidateJob(job *gryviav1.GryviaAIJob) []string {
 	add(validatePriority(job))
 	add(validateDistributedConfig(job))
 	add(validateResourceRequests(job))
+	if _, _, perrs := preflight.FromJob(job); len(perrs) > 0 {
+		errs = append(errs, perrs...)
+	}
 	return errs
 }
 
@@ -212,6 +216,11 @@ func (v *GryviaAIJobValidator) clusterWarnings(ctx context.Context, job *gryviav
 	}
 	if t := job.Spec.GpuType; t != "" && t != "any" && len(types) > 0 && !types[t] {
 		warnings = append(warnings, fmt.Sprintf("no node currently carries GPU type %q (label gryvia.io/gpu)", t))
+	}
+	if in, ok, errs := preflight.FromJob(job); ok && len(errs) == 0 {
+		if r := preflight.Evaluate(in, preflight.PoolsFromNodes(nodes.Items)); r.State != preflight.StateCandidate {
+			warnings = append(warnings, r.Summary())
+		}
 	}
 	return warnings
 }
