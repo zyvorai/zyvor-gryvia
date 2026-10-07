@@ -23,11 +23,11 @@ gpuOperator:
   # ConfigMap (nvidiaPlatform.timeSlicing.configName, in the release namespace) and label nodes with it, so a policy's
   # maxPodsPerGPU is what the plugin is told. Off: nodes get the fixed key gryvia-time-slicing (the chart's replicas).
   devicePluginConfig: false
-  # Node-local GPU reset agent (DaemonSet on nodes labelled nvidia.com/gpu.present=true). A person annotates a cordoned,
+  # Node-local GPU reset agent (DaemonSet on nodes labelled nvidia.com/gpu.present=true). A person or the health-check escalation ladder annotates a cordoned,
   # drained node with gryvia.io/gpu-reset-request=<id> (and optionally gryvia.io/gpu-reset-gpus=0,1); the agent records
   # the outcome in gryvia.io/gpu-reset-result. DRY-RUN unless execute is true: then it runs `<nvidiaSmi> --gpu-reset`,
   # which needs a runnable nvidia-smi (hostPath driverRoot) and a privileged container. Never cordons, drains or
-  # uncordons. Unverified on real GPUs. See docs/gpu-reset-agent.md.
+  # uncordons (the health-check controller does). Unverified on real GPUs. See docs/gpu-reset-agent.md.
   resetAgent:
     enabled: false
     execute: false
@@ -35,6 +35,14 @@ gpuOperator:
     # With execute: path of nvidia-smi inside the container and the host directory that provides it (mounted read-only).
     nvidiaSmi: ""
     driverRoot: ""
+    # Recovery actions the health-check escalation ladder may request (spec.remediation driverReload / nodeReboot).
+    # allowDriverReload lets the agent delete this node's GPU Operator driver and device-plugin pods.
+    # allowReboot reboots the node: kured (write <rebootSentinelDir>/reboot-required; kured must watch that path)
+    # or nsenter (systemctl reboot through hostPID). One node at a time via a Lease. Unverified on real GPUs.
+    allowDriverReload: false
+    allowReboot: false
+    rebootMethod: kured
+    rebootSentinelDir: /var/run/gryvia
   image: {name: gryvia-gpu-operator, tag: ""}
   replicas: 1
   resources:

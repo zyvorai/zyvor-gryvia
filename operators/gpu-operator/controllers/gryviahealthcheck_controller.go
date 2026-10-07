@@ -38,6 +38,7 @@ type GryviaHealthCheckReconciler struct {
 	Scheme            *runtime.Scheme
 	Log               logr.Logger
 	EnableRemediation bool
+	Now               func() time.Time // nil = time.Now
 }
 
 //+kubebuilder:rbac:groups=gryvia.io,resources=gryviahealthchecks,verbs=get;list;watch;create;update;patch;delete
@@ -112,6 +113,9 @@ func (r *GryviaHealthCheckReconciler) reconcileHealthCheck(ctx context.Context, 
 		overallHealth = healthUnknown
 	}
 	now := metav1.Now()
+	if r.Now != nil {
+		now = metav1.NewTime(r.Now())
+	}
 
 	for _, node := range nodes {
 		// Find matching GPU node
@@ -171,16 +175,36 @@ func (r *GryviaHealthCheckReconciler) reconcileHealthCheck(ctx context.Context, 
 		}
 	}
 
+	bad := map[string]bool{}
+	for _, res := range affectedResources {
+		if res.Type == "node" {
+			bad[res.Name] = true
+		}
+	}
+	recovery, recoveryErr := r.reconcileRecovery(ctx, hc, nodes, bad, now.Time)
+	if recoveryErr != nil {
+		log.Error(recoveryErr, "Failed to drive GPU recovery")
+		if remediationErr == nil {
+			remediationErr = recoveryErr
+		}
+	}
+
 	if hc.Spec.OnFailure != nil {
 		status, reason, msg := metav1.ConditionTrue, "NoActionRequired", "No remediation failure observed"
 		if !r.EnableRemediation {
 			status, reason, msg = metav1.ConditionFalse, "Disabled", "Enable operator GPU remediation capability before requesting mutations"
 		}
-		if remediationErr != nil {
+		switch {
+		case remediationErr != nil:
 			status, reason, msg = metav1.ConditionFalse, "DrainBlocked", remediationErr.Error()
-		}
-		if a := hc.Spec.Remediation; a != nil && hc.Spec.OnFailure.AutoRemediate && (a.GpuReset || a.DriverReload || a.NodeReboot) {
-			status, reason, msg = metav1.ConditionFalse, "UnsupportedAction", "GPU reset/driver reload/reboot require a verified node agent"
+		case len(recovery.exhausted) > 0:
+			status, reason, msg = metav1.ConditionFalse, "RemediationExhausted", strings.Join(recovery.exhausted, "; ")
+		case len(recovery.recovering) > 0:
+			status, reason, msg = metav1.ConditionFalse, "Recovering", strings.Join(recovery.recovering, "; ")
+		case len(recovery.dryRun) > 0:
+			status, reason, msg = metav1.ConditionFalse, "AgentDryRun", "reset agent is in dry-run: "+strings.Join(recovery.dryRun, "; ")
+		case len(recovery.recovered) > 0:
+			status, reason, msg = metav1.ConditionTrue, "Recovered", "quarantine lifted: "+strings.Join(recovery.recovered, ", ")
 		}
 		meta.SetStatusCondition(&hc.Status.Conditions, metav1.Condition{Type: "RemediationReady", Status: status, Reason: reason, Message: msg, ObservedGeneration: hc.Generation})
 	}

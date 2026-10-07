@@ -9,6 +9,7 @@ on:
       - 'operators/storage-operator/**'
       - 'examples/training/**'
       - 'scripts/tests/platform-completion-chart.test.sh'
+      - 'scripts/tests/gpu-recovery-chart.test.sh'
       - 'helm/gryvia/**'
       - 'crds/**'
       - 'scripts/tests/inference-serving-chart.test.sh'
@@ -63,6 +64,7 @@ jobs:
           helm dependency build helm/gryvia
           bash scripts/tests/inference-serving-chart.test.sh
           bash scripts/tests/platform-completion-chart.test.sh
+          bash scripts/tests/gpu-recovery-chart.test.sh
       - name: Validate advanced fields against pinned Kueue API schema
         run: |
           helm template qualification helm/gryvia --set kueue.enabled=true --include-crds > "$RUNNER_TEMP/kueue-rendered.yaml"

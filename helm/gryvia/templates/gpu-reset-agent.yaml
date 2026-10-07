@@ -2,6 +2,14 @@
 {{- if and (dig "gpuOperator" "resetAgent" "execute" nil .Values.AsMap) (not (dig "gpuOperator" "resetAgent" "nvidiaSmi" nil .Values.AsMap)) }}
 {{- fail "gpuOperator.resetAgent.execute requires gpuOperator.resetAgent.nvidiaSmi (and driverRoot to provide it)" }}
 {{- end }}
+{{- $execute := dig "gpuOperator" "resetAgent" "execute" nil .Values.AsMap }}
+{{- $reload := dig "gpuOperator" "resetAgent" "allowDriverReload" nil .Values.AsMap }}
+{{- $reboot := dig "gpuOperator" "resetAgent" "allowReboot" nil .Values.AsMap }}
+{{- $method := dig "gpuOperator" "resetAgent" "rebootMethod" "kured" .Values.AsMap }}
+{{- $sentinelDir := dig "gpuOperator" "resetAgent" "rebootSentinelDir" "/var/run/gryvia" .Values.AsMap }}
+{{- if not (has $method (list "kured" "nsenter")) }}
+{{- fail "gpuOperator.resetAgent.rebootMethod must be kured or nsenter" }}
+{{- end }}
 # Node-local GPU reset agent. Dry-run unless resetAgent.execute. See docs/gpu-reset-agent.md.
 apiVersion: v1
 kind: ServiceAccount
@@ -25,7 +33,7 @@ rules:
     verbs: ["get", "patch"]
   - apiGroups: [""]
     resources: ["pods"]
-    verbs: ["list"]
+    verbs: {{ if $reload }}["list", "delete"]{{ else }}["list"]{{ end }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -42,6 +50,39 @@ subjects:
   - kind: ServiceAccount
     name: {{ include "gryvia.fullname" . }}-gpu-reset-agent
     namespace: {{ include "gryvia.namespace" . }}
+{{- if or $reload $reboot }}
+---
+# One node at a time: driver reloads and reboots hold this lease while they run.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "gryvia.fullname" . }}-gpu-reset-agent
+  namespace: {{ include "gryvia.namespace" . }}
+  labels:
+    {{- include "gryvia.labels" . | nindent 4 }}
+    app.kubernetes.io/component: gpu-reset-agent
+rules:
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["get", "create", "update"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "gryvia.fullname" . }}-gpu-reset-agent
+  namespace: {{ include "gryvia.namespace" . }}
+  labels:
+    {{- include "gryvia.labels" . | nindent 4 }}
+    app.kubernetes.io/component: gpu-reset-agent
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "gryvia.fullname" . }}-gpu-reset-agent
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "gryvia.fullname" . }}-gpu-reset-agent
+    namespace: {{ include "gryvia.namespace" . }}
+{{- end }}
 ---
 apiVersion: apps/v1
 kind: DaemonSet
@@ -63,6 +104,9 @@ spec:
         app.kubernetes.io/component: gpu-reset-agent
     spec:
       serviceAccountName: {{ include "gryvia.fullname" . }}-gpu-reset-agent
+      {{- if and $execute $reboot (eq $method "nsenter") }}
+      hostPID: true
+      {{- end }}
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
@@ -84,11 +128,23 @@ spec:
             - --execute=true
             - {{ printf "--nvidia-smi=%s" (dig "gpuOperator" "resetAgent" "nvidiaSmi" nil .Values.AsMap) | quote }}
             {{- end }}
+            {{- if $reload }}
+            - --allow-driver-reload=true
+            {{- end }}
+            {{- if $reboot }}
+            - --allow-reboot=true
+            - {{ printf "--reboot-method=%s" $method | quote }}
+            - {{ printf "--reboot-sentinel=%s/reboot-required" $sentinelDir | quote }}
+            {{- end }}
           env:
             - name: NODE_NAME
               valueFrom:
                 fieldRef:
                   fieldPath: spec.nodeName
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
           resources:
             limits: {cpu: 100m, memory: 64Mi}
             requests: {cpu: 10m, memory: 32Mi}
@@ -102,16 +158,33 @@ spec:
             capabilities:
               drop: ["ALL"]
             {{- end }}
-          {{- if and (dig "gpuOperator" "resetAgent" "execute" nil .Values.AsMap) (dig "gpuOperator" "resetAgent" "driverRoot" nil .Values.AsMap) }}
+          {{- $driverRoot := and $execute (dig "gpuOperator" "resetAgent" "driverRoot" nil .Values.AsMap) }}
+          {{- $sentinel := and $execute $reboot (eq $method "kured") }}
+          {{- if or $driverRoot $sentinel }}
           volumeMounts:
+            {{- if $driverRoot }}
             - name: driver-root
-              mountPath: {{ (dig "gpuOperator" "resetAgent" "driverRoot" nil .Values.AsMap) | quote }}
+              mountPath: {{ $driverRoot | quote }}
               readOnly: true
+            {{- end }}
+            {{- if $sentinel }}
+            - name: reboot-sentinel
+              mountPath: {{ $sentinelDir | quote }}
+            {{- end }}
           {{- end }}
-      {{- if and (dig "gpuOperator" "resetAgent" "execute" nil .Values.AsMap) (dig "gpuOperator" "resetAgent" "driverRoot" nil .Values.AsMap) }}
+      {{- if or $driverRoot $sentinel }}
       volumes:
+        {{- if $driverRoot }}
         - name: driver-root
           hostPath:
-            path: {{ (dig "gpuOperator" "resetAgent" "driverRoot" nil .Values.AsMap) | quote }}
+            path: {{ $driverRoot | quote }}
+        {{- end }}
+        {{- if $sentinel }}
+        # kured on the host must watch <rebootSentinelDir>/reboot-required (kured --reboot-sentinel)
+        - name: reboot-sentinel
+          hostPath:
+            path: {{ $sentinelDir | quote }}
+            type: DirectoryOrCreate
+        {{- end }}
       {{- end }}
 {{- end }}
