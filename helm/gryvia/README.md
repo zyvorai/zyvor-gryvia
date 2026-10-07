@@ -136,6 +136,7 @@ Off by default unless noted. None of them has been run on real GPUs or fabrics; 
 | `aiOperator.placementHolds` | Hold the GPUs of a job's chosen nodes while its pods come up, so two jobs placed at the same moment do not count the same free GPUs (advisory, in memory, 5-minute expiry) | [SCHEDULING](../../website/docs/guides/SCHEDULING.md#placement-holds-opt-in) |
 | `aiOperator.inferenceGatewayRouting`, `aiOperator.inferencePrometheusURL` | Weighted Gateway API canaries; Prometheus error-rate and latency gating of canary promotion | [inference-serving](../../docs/inference-serving.md) |
 | `nvidia.*`, `nvidiaPlatform.*`, `nvidiaNetwork.*`, `nvidiaNim.*` | GPU Operator (RDMA, GDS, MIG), time-slicing config and validator job, Network Operator (optional `NicClusterPolicy`), NIM Operator | [NVIDIA one-click](../../website/docs/guides/NVIDIA_ONE_CLICK.md) |
+| `apiGateway.intelligenceActions` | Two-person approved operations (inference replicas, quota GPU limit, node cordon) for named OIDC admins. Grants the gateway node and `GryviaQuota` patch, and a Role for operation ConfigMaps in its own namespace | [workload-intelligence](../../docs/workload-intelligence.md#approved-operations) |
 | `quotaOperator.usageRecordWebhook.enabled` | **On by default.** Sealed usage records cannot be edited | above |
 
 ## Common settings

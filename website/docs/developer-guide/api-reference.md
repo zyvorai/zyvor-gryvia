@@ -164,6 +164,25 @@ The response carries `coverage` (`total`, `reachable`, `reporting`, `complete`),
 [docs/flight-recorder.md](https://github.com/zyvorai/gryvia/blob/main/docs/flight-recorder.md). Unit-tested; not run on a
 real cluster with GPUs.
 
+## Workload intelligence
+
+Analysis endpoints take **caller-supplied** data, store nothing and never apply changes; request bodies are capped at
+512 KiB. Live job reads use the same namespace and marking filtering as the job routes. Details, limits and the
+operation lifecycle: [workload intelligence](https://github.com/zyvorai/gryvia/blob/main/docs/workload-intelligence.md).
+
+| Method and path | Access | Purpose |
+|---|---|---|
+| `GET /api/intelligence/capabilities`, `GET /api/intelligence/schemas` | any | Analysis areas, whether operations are enabled, limits, and the JSON schema of each analysis input |
+| `POST /api/intelligence/{area}` | any | One analysis over the supplied input; `area` is `preflight`, `training`, `economics`, `serving`, `laboratory`, `recovery`, `locality`, `fabric`, `capacity` or `federation` |
+| `GET /api/intelligence/jobs/{name}/explain` | any (scoped) | Job conditions and real pod scheduling failures |
+| `GET /api/intelligence/jobs/{name}/economics` | any (scoped) | Usage-record cost estimate joined by job UID; rejects mixed currencies |
+| `GET /api/intelligence/inventory` | admin | Registered GPU capacity; free capacity is reported as unknown |
+| `GET/POST /api/intelligence/actions`, `GET /api/intelligence/actions/{id}` | admin, OIDC only | List, create and inspect operation proposals. 503 unless `apiGateway.intelligenceActions` is on |
+| `POST /api/intelligence/actions/{id}/{approve,reject,execute,rollback}` | admin, OIDC only | Lifecycle transition; the proposer cannot review, execute or roll back their own operation |
+
+Operations cover inference replicas, `GryviaQuota` GPU limits and node cordon only. Shared API keys and dashboard key
+sessions cannot propose or review them.
+
 ## Collector endpoints (not on the gateway)
 
 The eBPF collector (`collector/`, off by default) has its own HTTP listener on `:9090`: `/metrics`, `/healthz`,
@@ -175,7 +194,8 @@ gateway); the rest is served without authentication, so keep the collector reach
 ## SDKs
 
 - **Python** (`sdk/python`): an async REST client of this API for jobs, nodes, quotas, costs and metrics. It does not
-  cover SKUs, tenants, usage, invoices or the Flight Recorder. Install from source (`pip install -e sdk/python`).
+  cover SKUs, tenants, usage, invoices or the Flight Recorder. `client.intelligence` wraps the workload intelligence
+  routes. Install from source (`pip install -e sdk/python`).
   See its [README](https://github.com/zyvorai/gryvia/blob/main/sdk/python/README.md).
 - **Go** (`sdk/go`): a controller-runtime Kubernetes client for the Gryvia custom resources. It does not call this REST
   API.
@@ -188,7 +208,8 @@ Gateway environment variables (chart values in parentheses): `GRYVIA_API_KEY` (`
 `OIDC_AUDIENCE`, `GRYVIA_OIDC_ADMIN_GROUPS` (`apiGateway.oidc.adminGroups`), `GRYVIA_OIDC_LEGACY_NAMESPACES`
 (`apiGateway.oidc.legacyNamespaces`), `GRYVIA_JOB_NAMESPACE`, `PROMETHEUS_URL` (`apiGateway.prometheusUrl`),
 `GRYVIA_COLLECTOR_URLS`, `GRYVIA_FLIGHT_TOKEN` (`apiGateway.flightTokenSecret`), `GRYVIA_FLIGHT_COLLECTOR_NAMESPACE`,
-`GRYVIA_NETRA_URL` / `GRYVIA_NETRA_TOKEN` / `GRYVIA_NETRA_INSECURE` (`apiGateway.netra.*`), `CORS_ALLOWED_ORIGINS`,
+`GRYVIA_NETRA_URL` / `GRYVIA_NETRA_TOKEN` / `GRYVIA_NETRA_INSECURE` (`apiGateway.netra.*`),
+`GRYVIA_INTELLIGENCE_ACTIONS` (`apiGateway.intelligenceActions`), `CORS_ALLOWED_ORIGINS`,
 `HTTP_TIMEOUT_SECONDS`.
 
 ## Support

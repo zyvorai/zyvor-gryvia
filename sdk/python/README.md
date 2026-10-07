@@ -160,6 +160,19 @@ async with Gryvia(...) as tr:
     by_gpu = await tr.costs.by_gpu_type()
 ```
 
+### Workload intelligence
+
+```python
+async with Gryvia(...) as tr:
+    caps = await tr.intelligence.capabilities()
+    why = await tr.intelligence.explain("my-training")
+    report = await tr.intelligence.analyze("preflight", inputs)  # inputs follow GET /api/intelligence/schemas
+```
+
+`propose`, `actions` and `transition` drive the opt-in approved operations and need an OIDC admin token. The trainer-side
+helpers `gryvia.training_telemetry.TrainingTelemetry` and `gryvia.artifact_cache.materialize` are described in
+[workload intelligence](../../docs/workload-intelligence.md).
+
 ## Error Handling
 
 ```python
