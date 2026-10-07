@@ -4,6 +4,9 @@
 {{- if and (dig "billing" "ledger" "enabled" false .Values.AsMap) (not (and .Values.webhook.enabled .Values.quotaOperator.enabled (dig "quotaOperator" "usageRecordWebhook" "enabled" nil .Values.AsMap))) }}
 {{- fail "billing.ledger.enabled requires webhook.enabled, quotaOperator.enabled and quotaOperator.usageRecordWebhook.enabled: the ledger and finalized invoices are only immutable behind the admission webhook" }}
 {{- end }}
+{{- if and (dig "aiOperator" "federation" "failover" false .Values.AsMap) (not (and (dig "aiOperator" "federation" "allowedServers" list .Values.AsMap) .Values.aiOperator.kueueIntegration)) }}
+{{- fail "aiOperator.federation.failover requires aiOperator.federation.allowedServers and aiOperator.kueueIntegration: it moves Kueue MultiKueue Workloads off failed members" }}
+{{- end }}
 {{- /* One Deployment per enabled operator; they differ only in name, image and resources. */ -}}
 {{- $ops := dict "gpu-operator" .Values.gpuOperator "ai-operator" .Values.aiOperator "quota-operator" .Values.quotaOperator "storage-operator" .Values.storageOperator "network-operator" .Values.networkOperator -}}
 {{- range $name, $op := $ops }}
@@ -182,6 +185,14 @@ spec:
             {{- end }}
             {{- if and (eq $name "ai-operator") (dig "aiOperator" "checkpointGuard" false $.Values.AsMap) }}
             - --checkpoint-guard=true
+            {{- end }}
+            {{- $fedServers := dig "aiOperator" "federation" "allowedServers" list $.Values.AsMap }}
+            {{- if and (eq $name "ai-operator") $fedServers }}
+            - {{ printf "--federation-allowed-servers=%s" (join "," $fedServers) | quote }}
+            - {{ printf "--federation-credentials-namespace=%s" (dig "aiOperator" "federation" "credentialsNamespace" "" $.Values.AsMap | default (include "gryvia.namespace" $)) | quote }}
+            {{- if (dig "aiOperator" "federation" "failover" false $.Values.AsMap) }}
+            - --federation-failover=true
+            {{- end }}
             {{- end }}
             {{- if and (eq $name "ai-operator") $.Values.aiOperator.admissionGate }}
             - --admission-gate=true

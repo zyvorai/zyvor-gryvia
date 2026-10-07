@@ -1,10 +1,12 @@
-name: Kind e2e (MultiKueue, two clusters)
+name: Kind e2e (MultiKueue, three clusters, federation failover)
 
-# Two kind clusters on one docker network: a manager running Gryvia with Kueue (tenant ClusterQueues bound to a
-# MultiKueue admission check via platformCompletion.kueueAdmissionCheck) and a worker running only Kueue. A
-# GryviaAIJob submitted on the manager must run on the worker and report Succeeded back. CPU pods only; this says
-# nothing about GPUs, data replication, failover or cost across clusters. Scenarios: scripts/e2e-multikueue.sh.
-# ASSUMPTIONS that may need adjusting after the first runs are listed at the top of that script.
+# Three kind clusters on one docker network: a manager running Gryvia with Kueue (tenant ClusterQueues bound to a
+# MultiKueue admission check via platformCompletion.kueueAdmissionCheck) and two workers running only Kueue. A
+# GryviaAIJob submitted on the manager must run on a worker and report Succeeded back. Then a GryviaFederation with
+# automatic failover watches both workers: a checkpointing job (S3 replica in a MinIO container) runs on one worker,
+# that worker's container is stopped, and the federation must fence it (lease timeout), evict the Workload so
+# MultiKueue redispatches it to the other worker, where the trainer resumes from the replica. CPU pods only; nothing
+# about GPUs or cost. Scenarios: scripts/e2e-multikueue.sh; its ASSUMPTIONS are listed at the top.
 
 on:
   pull_request:
@@ -12,6 +14,10 @@ on:
     paths:
       - 'scripts/e2e-multikueue.sh'
       - '.github/workflows/e2e-multikueue.yml'
+      - 'operators/ai-operator/controllers/gryviafederation*'
+      - 'operators/ai-operator/controllers/federation_client.go'
+      - 'examples/training/checkpoint_replica.py'
+      - 'examples/training/Dockerfile.elastic'
   workflow_dispatch:
   schedule:
     - cron: '41 4 * * 1'
@@ -26,7 +32,7 @@ concurrency:
 jobs:
   multikueue:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
       - uses: azure/setup-helm@v5
@@ -46,6 +52,25 @@ jobs:
             --namespace kueue-system --create-namespace --kube-context kind-gryvia-worker --wait --timeout 300s
           kubectl config use-context kind-gryvia-demo
           kubectl config get-contexts
+      - name: Second worker cluster with Kueue only
+        run: |
+          kind create cluster --name gryvia-worker2 --wait 120s
+          helm install kueue oci://registry.k8s.io/kueue/charts/kueue --version 0.19.6 \
+            --namespace kueue-system --create-namespace --kube-context kind-gryvia-worker2 --wait --timeout 300s
+          kubectl config use-context kind-gryvia-demo
+      - name: Training image on both workers, MinIO on the kind network (checkpoint replica)
+        run: |
+          docker build -f examples/training/Dockerfile.elastic -t ghcr.io/zyvorai/gryvia-elastic-train:dev examples/training
+          kind load docker-image --name gryvia-worker ghcr.io/zyvorai/gryvia-elastic-train:dev
+          kind load docker-image --name gryvia-worker2 ghcr.io/zyvorai/gryvia-elastic-train:dev
+          docker run -d --name e2e-minio --network kind -e MINIO_ROOT_USER=e2eaccess -e MINIO_ROOT_PASSWORD=e2esecret123 \
+            minio/minio:latest server /data
+          for _ in $(seq 1 30); do
+            docker run --rm --network kind -e AWS_ACCESS_KEY_ID=e2eaccess -e AWS_SECRET_ACCESS_KEY=e2esecret123 \
+              -e AWS_DEFAULT_REGION=us-east-1 ghcr.io/zyvorai/gryvia-elastic-train:dev python -c \
+              "import boto3; boto3.client('s3', endpoint_url='http://e2e-minio:9000').create_bucket(Bucket='ckpt')" && break
+            sleep 2
+          done
       - name: Manager - Kueue, per-tenant queues bound to the multikueue admission check
         run: |
           helm upgrade gryvia ./helm/gryvia --namespace gryvia-system --set namespace.create=false \
@@ -56,6 +81,8 @@ jobs:
             --set quotaOperator.kueueIntegration=true \
             --set quotaOperator.kueueQuotaResources=example.com/slot \
             --set platformCompletion.kueueAdmissionCheck=multikueue \
+            --set 'aiOperator.federation.allowedServers={https://gryvia-worker-control-plane:6443,https://gryvia-worker2-control-plane:6443}' \
+            --set aiOperator.federation.failover=true \
             --wait --timeout 600s
           kubectl -n gryvia-system rollout status deploy/kueue-controller-manager --timeout=300s
           kubectl -n gryvia-system rollout status deploy -l app.kubernetes.io/component=ai-operator --timeout=180s
@@ -78,16 +105,27 @@ jobs:
         run: ./scripts/e2e-multikueue.sh verify
       - name: A job submitted on the manager runs on the worker and reports back
         run: ./scripts/e2e-multikueue.sh dispatch
+      - name: Worker 2 - same queues; manager - add it to the MultiKueueConfig
+        run: |
+          WORKER_NAME=gryvia-worker2 ./scripts/e2e-multikueue.sh worker
+          ./scripts/e2e-multikueue.sh connect2
+      - name: Manager - GryviaFederation over both workers
+        run: ./scripts/e2e-multikueue.sh federation
+      - name: A worker stops - fenced, evicted, redispatched, resumed from the S3 replica
+        run: S3_ENDPOINT=http://e2e-minio:9000 ./scripts/e2e-multikueue.sh failover
       - name: Dump state on failure
         if: failure()
         run: |
-          for ctx in kind-gryvia-demo kind-gryvia-worker; do
+          for ctx in kind-gryvia-demo kind-gryvia-worker kind-gryvia-worker2; do
             echo "=== $ctx ==="
             kubectl --context $ctx get nodes -o wide || true
             kubectl --context $ctx get clusterqueues,localqueues,workloads,admissionchecks,multikueueclusters,multikueueconfigs -A -o yaml || true
             kubectl --context $ctx get jobs,pods -A -o wide || true
           done
-          kubectl --context kind-gryvia-demo get gryviaaijobs -A -o yaml || true
+          kubectl --context kind-gryvia-demo get gryviaaijobs,gryviafederations -A -o yaml || true
+          kubectl --context kind-gryvia-worker2 -n kueue-system logs deploy/kueue-controller-manager --tail=200 || true
+          for ctx in kind-gryvia-worker kind-gryvia-worker2; do kubectl --context $ctx -n tenant-q1 logs -l job-name=ft1 --tail=80 || true; done
+          docker logs e2e-minio --tail=50 || true
           kubectl --context kind-gryvia-demo -n gryvia-system logs deploy/kueue-controller-manager --tail=300 || true
           kubectl --context kind-gryvia-worker -n kueue-system logs deploy/kueue-controller-manager --tail=200 || true
           kubectl --context kind-gryvia-demo -n gryvia-system logs -l app.kubernetes.io/component=ai-operator --tail=200 || true

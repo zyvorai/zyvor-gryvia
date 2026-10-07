@@ -1,9 +1,10 @@
 # CPU image for the elastic torchrun example (elastic_train.py), used by the kind e2e. python-etcd is the client of
-# torch's etcd-v2 rendezvous backend; DCP's object gather (torch.distributed.checkpoint) needs numpy.
+# torch's etcd-v2 rendezvous backend; DCP's object gather (torch.distributed.checkpoint) needs numpy; boto3 is the
+# s3:// backend of checkpoint_replica.py.
 FROM python:3.12-slim
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 HOME=/tmp
 RUN pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu torch==2.8.0 \
- && pip install --no-cache-dir python-etcd==0.4.5 numpy==2.3.3
+ && pip install --no-cache-dir python-etcd==0.4.5 numpy==2.3.3 boto3==1.35.0
 WORKDIR /app
 COPY checkpoint_contract.py checkpoint_replica.py checkpoint_status.py coordinated_checkpoint.py dcp_checkpoint.py \
      elastic_train.py rendezvous_store.py ./

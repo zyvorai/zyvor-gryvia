@@ -539,6 +539,18 @@ rules:
       - get
       - create
   {{- end }}
+  {{- if (dig "aiOperator" "federation" "failover" false .Values.AsMap) }}
+  # aiOperator.federation.failover: deactivate and reactivate the Workloads dispatched to a failed member
+  - apiGroups:
+      - kueue.x-k8s.io
+    resources:
+      - workloads
+    verbs:
+      - get
+      - list
+      - watch
+      - patch
+  {{- end }}
   {{- if .Values.quotaOperator.kueueIntegration }}
   # quotaOperator.kueueIntegration: per-tenant ClusterQueue, LocalQueue and ResourceFlavors
   - apiGroups:

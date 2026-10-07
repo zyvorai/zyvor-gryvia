@@ -9,6 +9,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -22,6 +23,14 @@ type GryviaFederationReconciler struct {
 	Log                  logr.Logger
 	CredentialsNamespace string
 	AllowedServers       []string
+	// Failover (--federation-failover) lets spec.failover.automatic fence failed members and move their Kueue
+	// Workloads; off, the controller only probes.
+	Failover bool
+	Recorder record.EventRecorder
+	// RemoteClient overrides how a member is reached (tests); nil connects through restConfigFor.
+	RemoteClient func(ctx context.Context, c gryviav1.FederationCluster) (client.Client, error)
+	// Now overrides the clock (tests).
+	Now func() time.Time
 }
 
 //+kubebuilder:rbac:groups=gryvia.io,resources=gryviafederations,verbs=get;list;watch;create;update;patch;delete
@@ -67,8 +76,16 @@ func (r *GryviaFederationReconciler) reconcileFederation(ctx context.Context, fe
 	log := r.Log.WithValues("federation", federation.Name)
 
 	// Health check all member clusters
+	now := metav1.NewTime(r.now())
 	clusterStatuses := r.healthCheckClusters(ctx, federation)
+	trackHealth(federation.Status.ClusterStatus, clusterStatuses, now)
 	federation.Status.ClusterStatus = clusterStatuses
+	failoverWait, failoverErr := r.reconcileFailover(ctx, federation, now)
+	if failoverErr != nil {
+		log.Error(failoverErr, "Failover")
+		r.updateFederationCondition(federation, "FailoverFenced", metav1.ConditionUnknown, "FailoverError", failoverErr.Error())
+	}
+	clusterStatuses = federation.Status.ClusterStatus
 
 	// Calculate aggregate stats
 	federation.Status.AggregateStats = r.calculateAggregateStats(federation)
@@ -110,7 +127,17 @@ func (r *GryviaFederationReconciler) reconcileFederation(ctx context.Context, fe
 		}
 	}
 
-	return ctrl.Result{RequeueAfter: requeueAfter}, nil
+	if failoverWait > 0 && failoverWait < requeueAfter {
+		requeueAfter = failoverWait
+	}
+	return ctrl.Result{RequeueAfter: requeueAfter}, failoverErr
+}
+
+func (r *GryviaFederationReconciler) now() time.Time {
+	if r.Now != nil {
+		return r.Now()
+	}
+	return time.Now()
 }
 
 func (r *GryviaFederationReconciler) healthCheckClusters(ctx context.Context, federation *gryviav1.GryviaFederation) []gryviav1.FederationClusterStatus {

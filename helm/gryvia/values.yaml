@@ -98,6 +98,16 @@ aiOperator:
   # non-elastic job stuck on a deleted or NotReady node are force-deleted after restore.nodeLossGraceSeconds so the
   # Job recreates them. Grants the operator Role/RoleBinding create. See docs/checkpoint-guard.md.
   checkpointGuard: false
+  # GryviaFederation members (off while allowedServers is empty): only these https API servers are probed, with an
+  # inline kubeconfig Secret (key kubeconfig) from credentialsNamespace (empty: the release namespace). failover lets
+  # a federation with spec.failover.enabled and automatic fence a member that failed failureThreshold health checks
+  # (delete its copies of the jobs, or wait spec.failover.leaseTimeout when it is unreachable) and then evict the
+  # Kueue MultiKueue Workloads dispatched to it so they run on another member. Needs aiOperator.kueueIntegration;
+  # grants patch on Kueue Workloads. See docs/federation-failover.md.
+  federation:
+    allowedServers: []
+    credentialsNamespace: ""
+    failover: false
   # Extra command-line flags for the ai-operator manager, one string each. The ML controllers (GryviaWorkspace,
   # GryviaInferenceService, GryviaModelRegistry, GryviaWorkflow, GryviaAutoTuner) take their default images and limits
   # here, e.g. ["--workspace-code-image=nginxinc/nginx-unprivileged:stable-alpine", "--inference-image-vllm=...",

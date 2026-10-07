@@ -8,10 +8,17 @@
 #   (then scripts/e2e-kueue.sh setup: the tenant queues; they stay inactive until the check above is Active)
 #   scripts/e2e-multikueue.sh verify      # the tenant ClusterQueue is Active and bound to the check
 #   scripts/e2e-multikueue.sh dispatch    # the job runs on the worker, not on the manager, and finishes
+#   WORKER_NAME=gryvia-worker2 scripts/e2e-multikueue.sh worker   # a second worker, same queues
+#   scripts/e2e-multikueue.sh connect2    # manager: add worker2 to the MultiKueueConfig
+#   scripts/e2e-multikueue.sh federation  # manager: GryviaFederation over both workers, both probed healthy
+#   scripts/e2e-multikueue.sh failover    # a checkpointing job on one worker; that worker stops; the federation
+#                                         # fences it, evicts the Workload, MultiKueue redispatches it to the other
+#                                         # worker and the trainer resumes from the S3 replica (needs S3_ENDPOINT)
 #
 # Scope: this proves Kueue's MultiKueue binding as Gryvia configures it (tenant ClusterQueue bound to the
-# admission check with platformCompletion.kueueAdmissionCheck=multikueue) with CPU pods. It does not prove GPU
-# placement, data replication, failover or cost aggregation across clusters, none of which Gryvia implements.
+# admission check with platformCompletion.kueueAdmissionCheck=multikueue) with CPU pods, and GryviaFederation
+# failover with fencing by lease timeout and checkpoint resume from an S3 replica. It does not prove GPU placement,
+# fencing by remote delete against a real outage (unit-tested only) or cost aggregation across clusters.
 #
 # ASSUMPTIONS to look at first when a step fails: the manager's node image supports Job managedBy (Kubernetes
 # >= 1.32 beta); the worker API server is reachable from the manager pods as https://<worker>-control-plane:6443
@@ -126,6 +133,125 @@ scenario_verify() {
     || fail "gryvia-q1 does not reference the multikueue admission check (platformCompletion.kueueAdmissionCheck)"
 }
 
+scenario_connect2() {
+  local kcfg
+  kcfg="$(mktemp)"
+  kind get kubeconfig --internal --name gryvia-worker2 > "$kcfg"
+  km -n gryvia-system create secret generic worker2-kubeconfig --from-file=kubeconfig="$kcfg" \
+    --dry-run=client -o yaml | km apply -f - >/dev/null
+  rm -f "$kcfg"
+  cat <<YAML | km apply -f - >/dev/null
+apiVersion: kueue.x-k8s.io/v1beta1
+kind: MultiKueueCluster
+metadata: {name: worker2}
+spec:
+  kubeConfig: {locationType: Secret, location: worker2-kubeconfig}
+---
+apiVersion: kueue.x-k8s.io/v1beta1
+kind: MultiKueueConfig
+metadata: {name: gryvia-workers}
+spec: {clusters: [worker1, worker2]}
+YAML
+  wait_for 180 "MultiKueueCluster worker2 is Active" \
+    jsonpath_is km True get multikueuecluster worker2 -o 'jsonpath={.status.conditions[?(@.type=="Active")].status}'
+}
+
+member_state() { km get gryviafederation e2e -o "jsonpath={.status.clusterStatus[?(@.name==\"$1\")].$2}"; }
+
+# Both workers as federation members, probed through the same kubeconfig Secrets Kueue uses (inline client certs).
+scenario_federation() {
+  cat <<YAML | km apply -f - >/dev/null
+apiVersion: $API
+kind: GryviaFederation
+metadata: {name: e2e}
+spec:
+  clusters:
+    - {name: worker1, enabled: true, apiServer: "https://gryvia-worker-control-plane:6443", credentials: {secretRef: worker-kubeconfig}}
+    - {name: worker2, enabled: true, apiServer: "https://gryvia-worker2-control-plane:6443", credentials: {secretRef: worker2-kubeconfig}}
+  failover:
+    enabled: true
+    automatic: true
+    leaseTimeout: 30s
+    healthCheck: {interval: 5s, failureThreshold: 2}
+YAML
+  wait_for 120 "federation probes worker1 healthy" jsonpath_is member_state healthy worker1 state
+  wait_for 60 "federation probes worker2 healthy" jsonpath_is member_state healthy worker2 state
+}
+
+worker_of() { # the worker cluster that has Job $1, or nothing
+  local w
+  for w in gryvia-worker gryvia-worker2; do
+    if kubectl --context "kind-$w" -n "$NS" get job "$1" >/dev/null 2>&1; then echo "$w"; return; fi
+  done
+}
+on_some_worker() { [[ -n "$(worker_of "$1")" ]]; }
+worker_logs_have() { # <worker> <job> <regex>
+  kubectl --context "kind-$1" -n "$NS" logs -l "job-name=$2" --tail=-1 2>/dev/null | grep -Eq "$3"
+}
+fed_field() { km get gryviafederation e2e -o "jsonpath=$1"; }
+nonempty() { [[ -n "$("$@" 2>/dev/null)" ]]; }
+
+scenario_failover() {
+  : "${S3_ENDPOINT:?S3_ENDPOINT (reachable from the worker pods) is required}"
+  cat <<YAML | km apply -f - >/dev/null
+apiVersion: $API
+kind: GryviaAIJob
+metadata: {name: ft1, namespace: $NS}
+spec:
+  type: training
+  image: ghcr.io/zyvorai/gryvia-elastic-train:dev
+  imagePullPolicy: IfNotPresent
+  gpus: 0
+  retryLimit: 2
+  timeout: 30m
+  command: [torchrun, --standalone, --nnodes=1, --nproc_per_node=1, /app/elastic_train.py]
+  env:
+    - {name: CHECKPOINT_DIR, value: /tmp/ckpt}
+    - {name: TOTAL_STEPS, value: "150"}
+    - {name: STEP_SECONDS, value: "1"}
+    - {name: CHECKPOINT_EVERY, value: "5"}
+    - {name: GRYVIA_CHECKPOINT_REPLICA, value: "s3://ckpt/ft1"}
+    - {name: AWS_ENDPOINT_URL, value: "$S3_ENDPOINT"}
+    - {name: AWS_ACCESS_KEY_ID, value: "${S3_ACCESS_KEY:-e2eaccess}"}
+    - {name: AWS_SECRET_ACCESS_KEY, value: "${S3_SECRET_KEY:-e2esecret123}"}
+    - {name: AWS_DEFAULT_REGION, value: us-east-1}
+  resources:
+    requests: {cpu: 200m, memory: 512Mi, $SLOT: "1"}
+    limits: {cpu: "1", memory: 1536Mi, $SLOT: "1"}
+YAML
+  wait_for 300 "Job ft1 is dispatched to a worker" on_some_worker ft1
+  local first second
+  first="$(worker_of ft1)"
+  if [[ "$first" == gryvia-worker ]]; then second=gryvia-worker2; else second=gryvia-worker; fi
+  echo "ft1 runs on $first"
+  wait_for 420 "the trainer on $first committed and replicated step 15" worker_logs_have "$first" ft1 'committed step 15 '
+  [[ "$(km -n "$NS" get pods -o name | grep -c ft1 || true)" == "0" ]] || fail "the manager ran a pod of ft1"
+
+  # The worker's API server and node go away together; the federation can no longer reach it.
+  docker stop "$first-control-plane" >/dev/null
+  local member=worker1
+  [[ "$first" == gryvia-worker2 ]] && member=worker2
+  wait_for 120 "federation marks $member unhealthy" jsonpath_is member_state unhealthy "$member" state
+  wait_for 180 "$member is fenced after its lease timeout (unreachable, no remote delete)" \
+    jsonpath_is member_state LeaseExpired "$member" fenceMethod
+  wait_for 120 "the Workload of ft1 was evicted off $member" \
+    jsonpath_is fed_field "$member" '{.status.failovers[0].cluster}'
+  fed_field '{.status.failovers[0].workload}' | grep -q ft1 || fail "failover record is not for ft1"
+  wait_for 180 "the Workload was requeued for redispatch" nonempty fed_field '{.status.failovers[0].requeuedAt}'
+
+  wait_for 420 "MultiKueue redispatched ft1 to $second" kubectl --context "kind-$second" -n "$NS" get job ft1
+  wait_for 420 "the trainer on $second restored a committed step from the S3 replica" \
+    worker_logs_have "$second" ft1 'restored committed step [0-9]+ from the replica'
+  wait_for 600 "the trainer on $second finished" worker_logs_have "$second" ft1 'done: [{]'
+  local done_json
+  done_json="$(kubectl --context "kind-$second" -n "$NS" logs -l job-name=ft1 --tail=-1 | sed -n 's/.*done: //p' | tail -1)"
+  echo "done: $done_json"
+  python3 -c 'import json,sys; d=json.loads(sys.argv[1]); assert d["steps"]==150 and d["resumedFrom"]>=15, d' "$done_json" \
+    || fail "ft1 did not finish 150 steps resuming from step >= 15"
+  wait_for 300 "the GryviaAIJob on the manager reaches Succeeded" is_phase ft1 Succeeded
+  km get gryviafederation e2e -o yaml | sed -n '/^status:/,$p'
+}
+
 phase() { km -n "$NS" get gryviaaijob "$1" -o jsonpath='{.status.phase}' 2>/dev/null; }
 is_phase() { [[ "$(phase "$1")" == "$2" ]]; }
 
@@ -163,6 +289,9 @@ case "${1:-}" in
   connect)  scenario_connect ;;
   verify)   scenario_verify ;;
   dispatch) scenario_dispatch ;;
-  *) echo "usage: $0 worker|connect|verify|dispatch" >&2; exit 2 ;;
+  connect2) scenario_connect2 ;;
+  federation) scenario_federation ;;
+  failover) scenario_failover ;;
+  *) echo "usage: $0 worker|connect|verify|dispatch|connect2|federation|failover" >&2; exit 2 ;;
 esac
 echo "E2E OK: ${1}"
