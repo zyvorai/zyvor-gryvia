@@ -3437,6 +3437,72 @@ spec:
           status:
             description: GryviaAIJobStatus defines the observed state of GryviaAIJob
             properties:
+              checkpoint:
+                description: |-
+                  Checkpoint is set when a GryviaCheckpointGuard manages this job's checkpoints: what the trainer last
+                  reported as committed, and the pods replaced after node losses.
+                properties:
+                  currentStep:
+                    description: CurrentStep is the last training step the trainer
+                      reported, committed or not.
+                    format: int64
+                    type: integer
+                  directory:
+                    type: string
+                  guard:
+                    description: Guard is the GryviaCheckpointGuard whose policy the
+                      pods got.
+                    type: string
+                  lastCommittedAt:
+                    format: date-time
+                    type: string
+                  lastCommittedStep:
+                    format: int64
+                    type: integer
+                  lastNodeLoss:
+                    description: NodeLossEvent is one recovery from a lost node.
+                    properties:
+                      at:
+                        format: date-time
+                        type: string
+                      lostSteps:
+                        format: int64
+                        type: integer
+                      node:
+                        type: string
+                      pods:
+                        description: Pods were force-deleted so the Job recreates
+                          their indexes on healthy nodes.
+                        items:
+                          type: string
+                        type: array
+                      resumeStep:
+                        description: 'ResumeStep is the last committed step when the
+                          node was lost: the replacement pods resume from it.'
+                        format: int64
+                        type: integer
+                    required:
+                    - at
+                    - node
+                    - pods
+                    - resumeStep
+                    type: object
+                  lostSteps:
+                    format: int64
+                    type: integer
+                  nodeLossRecoveries:
+                    description: |-
+                      NodeLossRecoveries counts node losses after which pods were replaced; LostSteps sums the steps trained
+                      after the last commit at each loss (known only when the trainer reports currentStep).
+                    format: int32
+                    type: integer
+                  statusConfigMap:
+                    description: StatusConfigMap is where the trainer reports (committedStep,
+                      committedAt, currentStep).
+                    type: string
+                required:
+                - guard
+                type: object
               completionTime:
                 description: Completion time
                 format: date-time

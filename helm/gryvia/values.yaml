@@ -91,6 +91,13 @@ aiOperator:
   # interconnect. Without it the webhook only warns. Jobs without the annotations, an empty cluster and unknown GPU
   # memory are allowed; fails OPEN on lookup errors. See docs/workload-intelligence.md.
   preflightEnforce: false
+  # Checkpoint guard (--checkpoint-guard): a new batch training job (with spec.storage) matched by a
+  # GryviaCheckpointGuard gets its checkpoint environment (GRYVIA_CHECKPOINT_DIR, _EVERY, _INTERVAL_SECONDS, _REPLICA,
+  # _STATUS_CONFIGMAP), a status ConfigMap and a Role letting the namespace's default service account get/update
+  # only that ConfigMap; the trainer's reports land in status.checkpoint. With restore.autoRestore, pods of a
+  # non-elastic job stuck on a deleted or NotReady node are force-deleted after restore.nodeLossGraceSeconds so the
+  # Job recreates them. Grants the operator Role/RoleBinding create. See docs/checkpoint-guard.md.
+  checkpointGuard: false
   # Extra command-line flags for the ai-operator manager, one string each. The ML controllers (GryviaWorkspace,
   # GryviaInferenceService, GryviaModelRegistry, GryviaWorkflow, GryviaAutoTuner) take their default images and limits
   # here, e.g. ["--workspace-code-image=nginxinc/nginx-unprivileged:stable-alpine", "--inference-image-vllm=...",

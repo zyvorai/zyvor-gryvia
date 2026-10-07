@@ -15,8 +15,13 @@ still resumed from rank 0's blob. Rank 0 writes
 DONE (JSON: steps, final loss, world size, restarts, resumedFrom) next to the checkpoints when training finishes.
 `restarts` is TORCHELASTIC_RESTART_COUNT: failure restarts only; a group re-formed because a node joined keeps it.
 
-Environment: CHECKPOINT_DIR (required), TOTAL_STEPS (80), CHECKPOINT_EVERY (5), STEP_SECONDS (0.5),
-COLLECTIVE_TIMEOUT (60 seconds).
+Under a GryviaCheckpointGuard (ai-operator --checkpoint-guard) rank 0 also reports each committed step and its
+progress to the job's status ConfigMap (checkpoint_status.py), checkpoints early when the guard asks for it, copies
+each committed step to GRYVIA_CHECKPOINT_REPLICA and, with an empty checkpoint directory, restores from that
+replica first (checkpoint_replica.py).
+
+Environment: CHECKPOINT_DIR (or the guard's GRYVIA_CHECKPOINT_DIR), TOTAL_STEPS (80), CHECKPOINT_EVERY (or
+GRYVIA_CHECKPOINT_EVERY, default 5), STEP_SECONDS (0.5), COLLECTIVE_TIMEOUT (60 seconds).
 """
 from datetime import timedelta
 import io
@@ -29,6 +34,8 @@ import torch
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 
+import checkpoint_replica
+import checkpoint_status
 import coordinated_checkpoint as cc
 import dcp_checkpoint
 
@@ -57,10 +64,26 @@ def resume(root, model, opt):
     return dcp_checkpoint.load(root, model, opt)
 
 
+def early_checkpoint(status, rank, step):
+    """True on every rank when rank 0 saw an open early-checkpoint request from the guard."""
+    if not status.enabled:
+        return False
+    flag = torch.tensor([0])
+    if rank == 0:
+        reason = status.requested()
+        if reason:
+            print('early checkpoint at step %d: %s' % (step, reason), flush=True)
+            flag[0] = 1
+    dist.broadcast(flag, src=0)
+    return bool(flag.item())
+
+
 def main():
-    root = os.environ['CHECKPOINT_DIR']
+    root = os.environ.get('CHECKPOINT_DIR') or os.environ['GRYVIA_CHECKPOINT_DIR']
     total = int(os.environ.get('TOTAL_STEPS', '80'))
-    every = int(os.environ.get('CHECKPOINT_EVERY', '5'))
+    every = int(os.environ.get('CHECKPOINT_EVERY') or os.environ.get('GRYVIA_CHECKPOINT_EVERY') or '5')
+    replica = os.environ.get('GRYVIA_CHECKPOINT_REPLICA')
+    status = checkpoint_status.from_env()
     pause = float(os.environ.get('STEP_SECONDS', '0.5'))
     restarts = int(os.environ.get('TORCHELASTIC_RESTART_COUNT', '0'))
     # a peer that disappears mid all-reduce only surfaces as a collective timeout (30 min by default)
@@ -75,6 +98,10 @@ def main():
         dropped = cc.discard_uncommitted(root)
         if dropped:
             print('discarded uncommitted steps %s' % dropped, flush=True)
+        if replica:
+            restored = checkpoint_replica.restore(replica, root)
+            if restored is not None:
+                print('restored committed step %d from the replica' % restored, flush=True)
     dist.barrier()
 
     torch.manual_seed(0)
@@ -93,11 +120,16 @@ def main():
         opt.step()
         with torch.no_grad():
             loss = torch.nn.functional.mse_loss(model.module(x), y).item()
-        if step % every == 0:
+        if step % every == 0 or early_checkpoint(status, rank, step):
             dcp_checkpoint.save(root, step, model, opt)
             if rank == 0:
                 cc.prune(root, keep=2)
+                status.committed(step)
+                if replica:
+                    checkpoint_replica.replicate(root, replica)
                 print('committed step %d (world %d, loss %.6f)' % (step, world, loss), flush=True)
+        elif rank == 0:
+            status.progress(step)
         time.sleep(pause)
 
     dist.barrier()

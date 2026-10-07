@@ -180,6 +180,9 @@ spec:
             {{- if and (eq $name "ai-operator") (dig "aiOperator" "preflightEnforce" false $.Values.AsMap) }}
             - --preflight-enforce=true
             {{- end }}
+            {{- if and (eq $name "ai-operator") (dig "aiOperator" "checkpointGuard" false $.Values.AsMap) }}
+            - --checkpoint-guard=true
+            {{- end }}
             {{- if and (eq $name "ai-operator") $.Values.aiOperator.admissionGate }}
             - --admission-gate=true
             - --admission-default-hours={{ $.Values.aiOperator.admissionDefaultHours }}

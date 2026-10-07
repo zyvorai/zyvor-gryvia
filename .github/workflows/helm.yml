@@ -9,6 +9,7 @@ on:
       - '.github/ct.yaml'
       - '.github/workflows/helm.yml'
       - 'scripts/tests/chart-reuse-values.test.sh'
+      - 'scripts/tests/checkpoint-guard-chart.test.sh'
       - 'scripts/tests/submission-chart.test.sh'
       - 'scripts/tests/billing-chart.test.sh'
   pull_request:
@@ -19,6 +20,7 @@ on:
       - '.github/ct.yaml'
       - '.github/workflows/helm.yml'
       - 'scripts/tests/chart-reuse-values.test.sh'
+      - 'scripts/tests/checkpoint-guard-chart.test.sh'
       - 'scripts/tests/submission-chart.test.sh'
       - 'scripts/tests/billing-chart.test.sh'
   workflow_dispatch:
@@ -63,6 +65,9 @@ jobs:
         run: |
           helm dependency build helm/gryvia
           bash scripts/tests/kueue-chart.test.sh
+
+      - name: Checkpoint guard chart switch (flag on the ai-operator, Role/RoleBinding create only when on)
+        run: bash scripts/tests/checkpoint-guard-chart.test.sh
 
       - name: Head chart renders with the oldest release's values (helm upgrade --reuse-values)
         run: bash scripts/tests/chart-reuse-values.test.sh

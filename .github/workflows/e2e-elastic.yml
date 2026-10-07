@@ -12,6 +12,11 @@ name: Kind e2e (elastic training across nodes)
 # index 0 with the rendezvous in a 3-member etcd cluster (torch's etcd-v2 backend) that also loses a member first.
 # The cluster is scripts/kind-elastic.yaml; Gryvia installs like the other kind e2e (scripts/kind-demo.sh).
 # Losing index 1 first passed in CI on main on 2026-10-02 (run 36990965624).
+# The node-loss job runs a NON-elastic job under a GryviaCheckpointGuard (aiOperator.checkpointGuard, restore.
+# autoRestore): its checkpoint directory and status ConfigMap come from the guard, the trainer reports commits into
+# status.checkpoint, then its node's container is stopped (the node stays, NotReady). After the guard's grace the
+# operator force-deletes the stuck pod, the Indexed Job recreates it on the other training node, and the trainer
+# resumes from the last committed step.
 
 on:
   pull_request:
@@ -356,3 +361,147 @@ jobs:
           kubectl get pv,pvc -A || true
           kubectl -n gryvia-system get events --sort-by=.lastTimestamp | tail -60 || true
           sudo ls -laR /srv/e2e-elastic | head -60 || true
+
+  node-loss:
+    name: node loss (non-elastic job, CheckpointGuard autoRestore)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v5
+      - uses: helm/kind-action@v1
+        with:
+          install_only: true
+
+      - name: Create a 4-node kind cluster (two tainted training workers)
+        run: |
+          kind create cluster --name "$KIND_CLUSTER" --config scripts/kind-elastic.yaml --wait 120s
+          [ "$(kubectl get nodes -l e2e.gryvia.io/train=true -o name | wc -l)" -eq 2 ]
+
+      - name: NFS export on the runner, NFS client in the kind nodes
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq nfs-kernel-server >/dev/null
+          sudo mkdir -p /srv/e2e-ckpt /etc/exports.d
+          sudo chown 65534:65534 /srv/e2e-ckpt
+          echo '/srv/e2e-ckpt *(rw,sync,insecure,no_subtree_check,all_squash,anonuid=65534,anongid=65534)' \
+            | sudo tee /etc/exports.d/e2e-ckpt.exports >/dev/null
+          sudo exportfs -ra
+          sudo systemctl restart nfs-kernel-server
+          for node in $(kind get nodes --name "$KIND_CLUSTER"); do
+            docker exec "$node" sh -c 'apt-get update -qq && apt-get install -y -qq nfs-common >/dev/null'
+          done
+          echo "NFS_SERVER=$(hostname -I | awk '{print $1}')" >> "$GITHUB_ENV"
+
+      - name: Install Gryvia on kind with the checkpoint guard capability
+        run: |
+          GRYVIA_LOCAL_IMAGES=1 ./scripts/kind-demo.sh
+          helm upgrade gryvia ./helm/gryvia -n gryvia-system --reuse-values --set aiOperator.checkpointGuard=true --wait
+          kubectl -n gryvia-system rollout status deploy -l app.kubernetes.io/component=ai-operator --timeout=180s
+
+      - name: Trainer image and a static NFS volume for spec.storage
+        # The operator creates PVC <job>-data (ReadWriteMany, storageClassName = spec.storage); it binds to this
+        # pre-created PV of the same class, so /data is shared by both training nodes.
+        run: |
+          docker build -f examples/training/Dockerfile.elastic -t ghcr.io/zyvorai/gryvia-elastic-train:dev examples/training
+          kind load docker-image --name "$KIND_CLUSTER" ghcr.io/zyvorai/gryvia-elastic-train:dev
+          cat <<EOF | kubectl apply -f -
+          apiVersion: v1
+          kind: PersistentVolume
+          metadata: {name: e2e-ckpt-nfs}
+          spec:
+            capacity: {storage: 1Gi}
+            accessModes: [ReadWriteMany]
+            persistentVolumeReclaimPolicy: Retain
+            storageClassName: e2e-nfs
+            mountOptions: [nfsvers=4.2, noac, lookupcache=none]
+            nfs: {server: "${NFS_SERVER}", path: /srv/e2e-ckpt}
+          EOF
+
+      - name: Guarded job loses its node and resumes from the last committed step
+        run: |
+          source scripts/e2e-ml-lib.sh
+          cat <<'EOF' | tee /dev/stderr | kubectl apply -f -
+          apiVersion: gryvia.io/v1alpha1
+          kind: GryviaCheckpointGuard
+          metadata: {name: e2e-guard, namespace: gryvia-system}
+          spec:
+            jobSelector: {matchLabels: {e2e: node-loss}}
+            checkpointPolicy: {intervalMinutes: 1, everySteps: 5}
+            restore: {autoRestore: true, nodeLossGraceSeconds: 20}
+          ---
+          apiVersion: gryvia.io/v1alpha1
+          kind: GryviaAIJob
+          metadata: {name: e2e-nl, namespace: gryvia-system, labels: {e2e: node-loss}}
+          spec:
+            type: training
+            gpus: 0
+            image: ghcr.io/zyvorai/gryvia-elastic-train:dev
+            imagePullPolicy: IfNotPresent
+            retryLimit: 3
+            timeout: 20m
+            storage: e2e-nfs
+            storageRequest: 1Gi
+            command: [torchrun, --standalone, --nnodes=1, --nproc_per_node=1, /app/elastic_train.py]
+            env:
+              - {name: TOTAL_STEPS, value: "90"}
+              - {name: STEP_SECONDS, value: "1"}
+            resources:
+              requests: {cpu: 200m, memory: 512Mi}
+              limits: {cpu: "1", memory: 2Gi}
+            nodeSelector: {e2e.gryvia.io/train: "true"}
+            tolerations: [{key: e2e.gryvia.io/train, operator: Equal, value: "true", effect: NoSchedule}]
+          EOF
+          wait_for "Job created" 120 kubectl -n "$NS" get job/e2e-nl
+          env_of() { jp job/e2e-nl "{.spec.template.spec.containers[0].env[?(@.name==\"$1\")].value}"; }
+          assert_eq "checkpoint dir from the guard" "$(env_of GRYVIA_CHECKPOINT_DIR)" /data/checkpoints
+          assert_eq "checkpoint every from the guard" "$(env_of GRYVIA_CHECKPOINT_EVERY)" 5
+          assert_eq "status ConfigMap" "$(env_of GRYVIA_CHECKPOINT_STATUS_CONFIGMAP)" e2e-nl-checkpoint-status
+          kubectl -n "$NS" get role/e2e-nl-checkpoint-status rolebinding/e2e-nl-checkpoint-status configmap/e2e-nl-checkpoint-status
+
+          reported() { [ "$(jp gryviaaijob/e2e-nl '{.status.checkpoint.lastCommittedStep}')" -ge 15 ] 2>/dev/null; }
+          wait_for "trainer reported a committed step >= 15 into status.checkpoint" 300 reported
+          pod="$(kubectl -n "$NS" get pod -l job-name=e2e-nl -o jsonpath='{.items[0].metadata.name}')"
+          lost="$(jp "pod/$pod" '{.spec.nodeName}')"
+          committed_before="$(jp gryviaaijob/e2e-nl '{.status.checkpoint.lastCommittedStep}')"
+          echo "pod $pod on $lost, committed step $committed_before"
+
+          # The node's container stops; the Node object stays and goes NotReady. Without the guard the pod
+          # would sit on it until taint-based eviction (5 minutes) and then stay Terminating.
+          docker stop "$lost"
+          recovered() { [ "$(jp gryviaaijob/e2e-nl '{.status.conditions[?(@.type=="RecoveredFromNodeLoss")].status}')" = True ]; }
+          wait_for "operator replaced the pod after the node went NotReady" 300 recovered
+          assert_eq "lost node recorded" "$(jp gryviaaijob/e2e-nl '{.status.checkpoint.lastNodeLoss.node}')" "$lost"
+          assert_eq "one recovery" "$(jp gryviaaijob/e2e-nl '{.status.checkpoint.nodeLossRecoveries}')" 1
+          resume_step="$(jp gryviaaijob/e2e-nl '{.status.checkpoint.lastNodeLoss.resumeStep}')"
+          [ "$resume_step" -ge "$committed_before" ] || { echo "ASSERT FAILED: resume step $resume_step < $committed_before"; exit 1; }
+
+          moved() {
+            kubectl -n "$NS" get pod -l job-name=e2e-nl -o jsonpath='{range .items[*]}{.spec.nodeName}{" "}{.status.phase}{"\n"}{end}' \
+              | grep -v "^$lost " | grep -q " Running"
+          }
+          wait_for "replacement running on the other training node" 300 moved
+          resumed() { kubectl -n "$NS" logs -l job-name=e2e-nl --tail=-1 2>/dev/null | grep -qE "starting after step [1-9][0-9]* "; }
+          wait_for "replacement resumed from a committed step" 300 resumed
+          wait_for "AIJob Succeeded" 600 field_is gryviaaijob/e2e-nl '{.status.phase}' Succeeded
+          kubectl -n "$NS" logs -l job-name=e2e-nl --tail=-1 | grep -E "starting after|committed step|done:" || true
+          done_json="$(sudo cat /srv/e2e-ckpt/checkpoints/DONE)"
+          echo "$done_json"
+          assert_eq "trained every step" "$(jq -r .steps <<<"$done_json")" 90
+          jq -e --argjson s "$resume_step" '.resumedFrom >= $s and .resumedFrom > 0' <<<"$done_json" >/dev/null \
+            || { echo "ASSERT FAILED: did not resume from the committed step"; exit 1; }
+          guard_seen() { [ "$(jp gryviacheckpointguard/e2e-guard '{.status.jobs[0].nodeLossRecoveries}')" = 1 ]; }
+          wait_for "guard status shows the recovery" 120 guard_seen
+          echo "ok: lost $lost at committed step $committed_before, resumed from $(jq -r .resumedFrom <<<"$done_json")"
+
+      - name: Dump state on failure
+        if: failure()
+        run: |
+          kubectl get nodes -o wide || true
+          kubectl get pods -A -o wide || true
+          kubectl -n gryvia-system get gryviaaijob/e2e-nl gryviacheckpointguard/e2e-guard job/e2e-nl configmap/e2e-nl-checkpoint-status -o yaml || true
+          kubectl -n gryvia-system describe pods -l job-name=e2e-nl || true
+          kubectl -n gryvia-system logs -l job-name=e2e-nl --tail=200 --max-log-requests=10 || true
+          kubectl -n gryvia-system logs -l app.kubernetes.io/component=ai-operator --tail=200 || true
+          kubectl get pv,pvc -A || true
+          kubectl -n gryvia-system get events --sort-by=.lastTimestamp | tail -60 || true
+          sudo ls -laR /srv/e2e-ckpt | head -60 || true

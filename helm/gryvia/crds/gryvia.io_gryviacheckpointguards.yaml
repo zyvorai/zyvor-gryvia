@@ -57,6 +57,11 @@ spec:
                 description: CheckpointPolicy defines when and how checkpoints are
                   taken
                 properties:
+                  directory:
+                    description: |-
+                      Directory is where matched jobs write coordinated checkpoints (GRYVIA_CHECKPOINT_DIR). It must be a clean
+                      path below /data, the job's persistent spec.storage volume. Default /data/checkpoints.
+                    type: string
                   emergencyCheckpoint:
                     description: EmergencyCheckpoint defines triggers for immediate
                       checkpoint creation
@@ -69,6 +74,12 @@ spec:
                           type: string
                         type: array
                     type: object
+                  everySteps:
+                    description: EverySteps is passed to matched jobs as GRYVIA_CHECKPOINT_EVERY
+                      (commit every N training steps).
+                    format: int32
+                    minimum: 1
+                    type: integer
                   intervalMinutes:
                     description: IntervalMinutes is the interval in minutes between
                       periodic checkpoints
@@ -91,6 +102,12 @@ spec:
                           maintain
                         format: int32
                         type: integer
+                      target:
+                        description: |-
+                          Target is where rank 0 copies each committed step (GRYVIA_CHECKPOINT_REPLICA): file:///<path> on a
+                          mounted volume or s3://<bucket>/<prefix> (the trainer needs boto3 and credentials). Empty = no replica.
+                        pattern: ^(file:///|s3://)[^\s]*$
+                        type: string
                     type: object
                 type: object
               jobSelector:
@@ -130,6 +147,14 @@ spec:
                     description: InjectEnvVars defines environment variables injected
                       into restored job pods
                     type: object
+                  nodeLossGraceSeconds:
+                    description: |-
+                      NodeLossGraceSeconds is how long a matched job's pod may sit on a NotReady or deleted node before
+                      AutoRestore force-deletes it so the Indexed Job recreates it elsewhere. Default 60.
+                    format: int32
+                    maximum: 3600
+                    minimum: 15
+                    type: integer
                   preferNearStorage:
                     description: PreferNearStorage schedules restored jobs near checkpoint
                       storage
@@ -234,6 +259,37 @@ spec:
                   checkpoints triggered
                 format: int32
                 type: integer
+              jobs:
+                description: Jobs is the checkpoint state the matched jobs reported
+                  (needs the ai-operator checkpointGuard capability).
+                items:
+                  description: GuardedJob is one matched job's checkpoint state, copied
+                    from its status.checkpoint.
+                  properties:
+                    injected:
+                      description: Injected is true when the job's pods got the guard's
+                        checkpoint environment.
+                      type: boolean
+                    lastCommittedAt:
+                      format: date-time
+                      type: string
+                    lastCommittedStep:
+                      format: int64
+                      type: integer
+                    message:
+                      type: string
+                    name:
+                      type: string
+                    nodeLossRecoveries:
+                      description: NodeLossRecoveries counts pods this guard's AutoRestore
+                        replaced after a node loss.
+                      format: int32
+                      type: integer
+                  required:
+                  - injected
+                  - name
+                  type: object
+                type: array
               lastCheckpointTime:
                 description: LastCheckpointTime is the timestamp of the last checkpoint
                 format: date-time
