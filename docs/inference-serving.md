@@ -61,6 +61,58 @@ Only traffic through the LLM gateway counts as activity and wakes the service. A
 the Service) gets no activator: its connections fail while the service is at zero, and its requests do not keep it
 up.
 
+## Continuous SLO control
+
+`spec.slo` keeps latency and error objectives on the stable track by raising the HPA's `minReplicas` while an
+objective is breached **and** the engine is overloaded, and lowering it again after a run of healthy windows. It never
+writes the Deployment's replica count; the HPA stays the only writer.
+
+```yaml
+spec:
+  autoscaling: {enabled: true, minReplicas: 2, maxReplicas: 8}
+  slo:
+    enabled: true
+    maxTTFTMilliseconds: 800        # worst replica's TTFT p99 (engine metrics)
+    maxInterTokenMilliseconds: 60   # worst replica's inter-token latency p99
+    maxErrorRate: 0.01              # stable-track errors / requests (serving sidecar)
+    minRequests: 100                # default; smaller windows are not judged
+    windowSeconds: 60               # default 60, 30..600
+    scaleUpStep: 1                  # default 1, at most 10
+    scaleDownAfterWindows: 10       # default 10, at least 3
+    metricsJob: chat                # collector job label; default the service name
+```
+
+At least one objective is required. Each window the controller queries the operator Prometheus
+(`aiOperator.inferencePrometheusURL`):
+
+| Signal | Query (labels `namespace`, and `inference` + `track="stable"` or `job`) |
+|--------|----------------------------------------------------------------------------|
+| Requests, error rate | `gryvia_inference_requests_total`, `gryvia_inference_errors_total` over the window |
+| TTFT, ITL | `max(gryvia_inference_latency_seconds{metric="ttft_p99"})`, `{metric="itl_p99"}` |
+| Overload | `sum(gryvia_inference_requests{state="waiting"}) > 0` or `max(gryvia_inference_kv_cache_usage_ratio) >= 0.9` |
+
+TTFT, ITL and the overload signals come from the collector's engine scraper ([inference latency](inference-latency.md));
+pods of an SLO-controlled service carry the label `gryvia.io/job=<metricsJob>`, which the scraper's discovery
+(`-infer-metrics-discover`) uses to attribute them. Adding `spec.slo` therefore rolls the pods once.
+
+Decisions, reported in `status.slo` (`state`, `floorReplicas`, `healthyWindows`, `breaches`, `lastEvaluated`,
+`message`) and the condition `SLOControl`:
+
+- **Breach and overload** (`ScaledUp`): the floor becomes `max(floor, ready replicas) + scaleUpStep`, capped at
+  `maxReplicas`.
+- **Breach without overload** (`Breached`): the floor is held. Slow tokens with an empty queue are a model or hardware
+  problem that more replicas would not fix. Without any queue or KV-cache metric the floor is also held.
+- **Healthy**: the run of healthy windows grows; after `scaleDownAfterWindows` the floor drops by one (`ScaledDown`),
+  never below `autoscaling.minReplicas`. The HPA's own 300 s scale-down stabilization still applies.
+- **Too little traffic** (`InsufficientTraffic`) or **missing / stale metrics** (`Unknown`, any configured objective
+  older than 90 s or absent): everything is held, nothing is guessed.
+
+SLO control needs `spec.autoscaling.enabled` (condition False, `RequiresAutoscaling`), is not applied together with
+`spec.scaleToZero` (`ScaleToZero`), and without the operator Prometheus URL reports `NotConfigured` and leaves the HPA
+at the spec minimum. Disabling it removes the floor on the next reconcile. Unit tests with a fake Prometheus cover the
+decision table, stale and missing samples, the floor rising and falling through the HPA, and the gates
+(`operators/ai-operator/controllers/inference_slo_test.go`). It has not been run against a live vLLM under load.
+
 ## Weighted HTTP routing
 
 Enable the operator's optional capability:
