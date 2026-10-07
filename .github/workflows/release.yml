@@ -27,15 +27,18 @@ env:
   TAG: ${{ github.event.inputs.tag || github.ref_name }}
 
 jobs:
-  images:
-    name: Image ${{ matrix.name }}
-    runs-on: ubuntu-latest
-    env:
-      HAS_HUB: ${{ secrets.DOCKERHUB_TOKEN != '' }}
+  build:
+    # Each architecture builds natively (arm64 on an arm runner, no QEMU), so the collector's eBPF
+    # programs are compiled by an arm64 clang. Pushed by digest; the images job joins the two.
+    name: Build ${{ matrix.image.name }} (${{ matrix.platform.arch }})
+    runs-on: ${{ matrix.platform.runner }}
     strategy:
       fail-fast: false
       matrix:
-        include:
+        platform:
+          - {arch: amd64, runner: ubuntu-24.04}
+          - {arch: arm64, runner: ubuntu-24.04-arm}
+        image:
           - {name: gpu-operator,     context: operators/gpu-operator,     file: operators/gpu-operator/Dockerfile}
           - {name: ai-operator,      context: operators/ai-operator,      file: operators/ai-operator/Dockerfile}
           - {name: quota-operator,   context: operators/quota-operator,   file: operators/quota-operator/Dockerfile}
@@ -43,7 +46,7 @@ jobs:
           - {name: network-operator, context: operators/network-operator, file: operators/network-operator/Dockerfile}
           - {name: network-intelligence-operator, context: operators/network-intelligence, file: operators/network-intelligence/Dockerfile}
           # The eBPF collector builds the .o files itself (clang) and needs the repository root as context, as in images.yml.
-          # It is the default image of the network-intelligence chart. Its arm64 build compiles the eBPF programs under QEMU.
+          # It is the default image of the network-intelligence chart.
           - {name: ebpf-collector,   context: .,                          file: collector/Dockerfile}
           - {name: api-gateway,      context: services/api-gateway,       file: services/api-gateway/Dockerfile}
           - {name: ui,               context: .,                          file: docker/Dockerfile.ui}
@@ -53,7 +56,56 @@ jobs:
           - {name: agent-runtime,    context: examples/agents,            file: examples/agents/Dockerfile}
     steps:
       - uses: actions/checkout@v4
-      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v4
+      - name: Log in to ghcr.io
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and push by digest
+        id: build
+        uses: docker/build-push-action@v7
+        with:
+          context: ${{ matrix.image.context }}
+          file: ${{ matrix.image.file }}
+          platforms: linux/${{ matrix.platform.arch }}
+          outputs: type=image,name=${{ env.GHCR }}/gryvia-${{ matrix.image.name }},push-by-digest=true,name-canonical=true,push=true
+          provenance: true
+          sbom: true
+          labels: |
+            org.opencontainers.image.source=https://github.com/zyvorai/gryvia
+            org.opencontainers.image.version=${{ env.TAG }}
+            org.opencontainers.image.licenses=Apache-2.0
+      - name: Record digest
+        run: |
+          mkdir -p "$RUNNER_TEMP/digests"
+          d="${{ steps.build.outputs.digest }}"
+          touch "$RUNNER_TEMP/digests/${d#sha256:}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: digests-${{ matrix.image.name }}-${{ matrix.platform.arch }}
+          path: ${{ runner.temp }}/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  images:
+    name: Image ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    needs: build
+    env:
+      HAS_HUB: ${{ secrets.DOCKERHUB_TOKEN != '' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        name: [gpu-operator, ai-operator, quota-operator, storage-operator, network-operator,
+               network-intelligence-operator, ebpf-collector, api-gateway, ui, rag-ingest, agent-runtime]
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: digests-${{ matrix.name }}-*
+          merge-multiple: true
+          path: ${{ runner.temp }}/digests
       - uses: docker/setup-buildx-action@v4
       - uses: sigstore/cosign-installer@v3
       - name: Log in to ghcr.io
@@ -68,33 +120,23 @@ jobs:
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - name: Compute tags
-        id: tags
+      - name: Create the multi-arch manifest
+        id: manifest
+        working-directory: ${{ runner.temp }}/digests
         run: |
+          test "$(ls | wc -l)" = 2
           v="${TAG#v}"
-          tags="${GHCR}/gryvia-${{ matrix.name }}:${v}"
+          repo="${GHCR}/gryvia-${{ matrix.name }}"
+          tags=(-t "${repo}:${v}")
           # Only stable releases move "latest" and the minor tag.
-          if [[ "$v" != *-* ]]; then
-            tags="$tags,${GHCR}/gryvia-${{ matrix.name }}:latest,${GHCR}/gryvia-${{ matrix.name }}:${v%.*}"
-          fi
-          echo "tags=$tags" >> "$GITHUB_OUTPUT"
-      - name: Build and push (amd64, arm64)
-        id: build
-        uses: docker/build-push-action@v7
-        with:
-          context: ${{ matrix.context }}
-          file: ${{ matrix.file }}
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ${{ steps.tags.outputs.tags }}
-          provenance: true
-          sbom: true
-          labels: |
-            org.opencontainers.image.source=https://github.com/zyvorai/gryvia
-            org.opencontainers.image.version=${{ env.TAG }}
-            org.opencontainers.image.licenses=Apache-2.0
+          if [[ "$v" != *-* ]]; then tags+=(-t "${repo}:latest" -t "${repo}:${v%.*}"); fi
+          refs=()
+          for d in *; do refs+=("${repo}@sha256:${d}"); done
+          docker buildx imagetools create "${tags[@]}" "${refs[@]}"
+          digest=$(docker buildx imagetools inspect "${repo}:${v}" --format '{{json .Manifest}}' | jq -r .digest)
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
       - name: Sign image
-        run: cosign sign --yes "${GHCR}/gryvia-${{ matrix.name }}@${{ steps.build.outputs.digest }}"
+        run: cosign sign --yes "${GHCR}/gryvia-${{ matrix.name }}@${{ steps.manifest.outputs.digest }}"
       - name: Mirror to Docker Hub
         if: env.HAS_HUB == 'true'
         run: |
@@ -102,7 +144,7 @@ jobs:
           extra=()
           if [[ "$v" != *-* ]]; then extra=(-t "${HUB}/gryvia-${{ matrix.name }}:latest" -t "${HUB}/gryvia-${{ matrix.name }}:${v%.*}"); fi
           docker buildx imagetools create -t "${HUB}/gryvia-${{ matrix.name }}:${v}" "${extra[@]}" \
-            "${GHCR}/gryvia-${{ matrix.name }}@${{ steps.build.outputs.digest }}"
+            "${GHCR}/gryvia-${{ matrix.name }}@${{ steps.manifest.outputs.digest }}"
 
   chart:
     name: Helm chart

@@ -13,8 +13,8 @@ everything GPU-related (NCCL/CUDA uprobes, RDMA, GDS), which needs GPU or RDMA h
 `GET :9090/api/v1/ebpf/status`. See [ebpf/README.md](https://github.com/zyvorai/gryvia/blob/main/ebpf/README.md).
 
 **Collector.** A privileged, `hostNetwork`, `hostPID` DaemonSet in the `helm/network-intelligence` chart,
-disabled by default (`ebpf.enabled=false`). Its image (`gryvia-ebpf-collector`) is built in CI but is not among the release
-images. Its HTTP listener on `:9090` (`/metrics`, `/healthz`, `/api/v1/{graph,anomalies,gpu/nccl,gpu/memory,fabric,security/alerts,ai/training,ai/pipeline,tuning/tcp,ebpf/status}`)
+disabled by default (`ebpf.enabled=false`). Its image (`gryvia-ebpf-collector`) is built in CI and is in the signed multi-arch release
+workflow, but no tagged release has published it yet. Its HTTP listener on `:9090` (`/metrics`, `/healthz`, `/api/v1/{graph,anomalies,gpu/nccl,gpu/memory,fabric,security/alerts,ai/training,ai/pipeline,tuning/tcp,ebpf/status}`)
 is unauthenticated by default (HMAC, TLS and mTLS are opt-in: `docs/collector-security.md`); `/api/v1/flight/*` and
 `/api/v1/inference` always need the flight token.
 
@@ -604,8 +604,8 @@ helm install network-intelligence ./helm/network-intelligence \
 Relevant values (see `helm/network-intelligence/values.yaml`): `operator.*`, `collector.*`, `ebpf.enabled`,
 `ebpf.interface` (XDP/tcx attach), `ebpf.cgroupPath` (sockops), `ebpf.ncclLib` / `ebpf.cudaLib`,
 `ebpf.flightTokenSecret` (Flight Recorder token), `prometheus.serviceMonitor.*`, `namespace.name` (default
-`gryvia-network`). The collector image is not published with releases; build it yourself (`collector/Dockerfile`) and set
-`collector.image.repository` and `collector.image.tag`.
+`gryvia-network`). The collector image is in the release workflow, but no tagged release has published it yet; until then build it
+yourself (`collector/Dockerfile`) and set `collector.image.repository` and `collector.image.tag`.
 
 ### Verify
 

@@ -11,8 +11,8 @@ independent: neither requires the other.
   `GryviaTrainingInsight`, `GryviaInferenceInsight`). Several of them read data from Hubble, Prometheus or the collector; see
   the [operator README](../../operators/network-intelligence/README.md) for which paths are real.
 - The collector (`ebpf.enabled`) is **off by default**, runs privileged with `hostNetwork` and `hostPID`, and its image
-  (`gryvia-ebpf-collector`) is built in CI but **not published by the release workflow**: build it from
-  `collector/Dockerfile` and set `collector.image.repository`/`tag`. It was verified on Linux 7.0 x86_64 only; GPU, RDMA,
+  (`gryvia-ebpf-collector`) is built in CI and is in the release workflow, but **no tagged release has published it
+  yet**: until one does, build it from `collector/Dockerfile` and set `collector.image.repository`/`tag`. It was verified on Linux 7.0 x86_64 only; GPU, RDMA,
   arm64 and the gated attachments are unverified on hardware. See [collector/README.md](../../collector/README.md) and
   [ebpf/README.md](../../ebpf/README.md).
 - The keys `security.enabled`, `security.autoBlock`, `ha.enabled` and the top-level `labels` and `annotations` were
@@ -61,7 +61,7 @@ name is `gryvia-network-intelligence`.
 | `operator.sources.collector.tls`, `.caSecret`, `.caKey`, `.serverName`, `.clientCertSecret` | https to the collectors, CA bundle, certificate name to verify, mTLS client certificate | `false`, `""`, `ca.crt`, `gryvia-collector`, `""` |
 | `operator.sources.netra.url`, `.tokenSecret`, `.tokenKey`, `.caSecret`, `.caKey` | Netra flow history for `GryviaTraceSession` and `matchedFlows` (env `GRYVIA_NETRA_URL` etc.) | `""` |
 | `ebpf.enabled` | Run the eBPF collector DaemonSet | `false` |
-| `collector.image.repository` / `.tag` | Collector image (not published; build your own) | `ghcr.io/zyvorai/gryvia-ebpf-collector` |
+| `collector.image.repository` / `.tag` | Collector image (in the release workflow, not yet published by a tagged release) | `ghcr.io/zyvorai/gryvia-ebpf-collector` |
 | `collector.hostNetwork` | Host networking for the collector; the pod's port 9090 is then bound on the node | `true` |
 | `ebpf.interface` | Interface for the XDP/TCX programs (`-iface`); empty means they are not attached | `""` |
 | `ebpf.xdpMux` | Attach `xdp_mux` as the interface's only XDP program and chain `roce_cnp`, `pfc_pause`, `dns_tracker`, `packet_filter` and `roce_ecn` behind it (`-xdp-mux`); needs `ebpf.interface`. Without it only one XDP program can attach per interface. Tested in CI on the loopback interface, not on a NIC | `false` |

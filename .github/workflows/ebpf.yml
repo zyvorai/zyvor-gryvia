@@ -1,7 +1,7 @@
 name: eBPF programs
 
-# Builds every program in ebpf/ (x86_64 and an arm64 cross-compile) and loads each object through the kernel
-# verifier of the runner. Loading only; nothing is attached to a hook.
+# Builds every program in ebpf/ natively on x86_64 and arm64 runners and loads each object through that
+# runner's kernel verifier. Loading only, except the XDP chain, which runs with BPF_PROG_TEST_RUN and on lo.
 on:
   pull_request:
     paths:
@@ -19,8 +19,14 @@ concurrency:
 
 jobs:
   build-and-verify:
-    name: Build and verifier-load
-    runs-on: ubuntu-24.04
+    name: Build and verifier-load (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {arch: x86_64, runner: ubuntu-24.04}
+          - {arch: arm64, runner: ubuntu-24.04-arm}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -30,8 +36,11 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends clang llvm libbpf-dev linux-libc-dev make
-      - name: Build (x86_64)
-        run: make -C ebpf
+      - name: Build
+        run: |
+          uname -m
+          make -C ebpf
+          test "$(ls ebpf/*.o | wc -l)" = "$(ls ebpf/*.c | wc -l)"
       - name: Load every object through the verifier
         # collector/cmd/verifyobj uses the same cilium/ebpf loader as the collector; no bpftool needed.
         run: |
@@ -46,11 +55,6 @@ jobs:
           go test -c -tags bpfroot -o "$RUNNER_TEMP/loader.test" ./pkg/loader
           sudo env GRYVIA_EBPF_DIR="$PWD/../ebpf" "$RUNNER_TEMP/loader.test" -test.run 'TestXDP|TestManager' -test.v
         working-directory: collector
-      - name: Cross-compile (arm64)
-        run: |
-          make -C ebpf clean
-          make -C ebpf ARCH=arm64
-          test "$(ls ebpf/*.o | wc -l)" = "$(ls ebpf/*.c | wc -l)"
   collector:
     name: Collector tests
     runs-on: ubuntu-24.04
