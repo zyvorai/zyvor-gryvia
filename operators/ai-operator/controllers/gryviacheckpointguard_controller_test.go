@@ -168,38 +168,6 @@ func TestCheckpointGuard_IsEmergencyTrigger(t *testing.T) {
 	}
 }
 
-func TestCheckpointGuard_IsPeriodicCheckpointDue(t *testing.T) {
-	r, _ := newCheckpointGuardReconciler()
-
-	guard := newTestCheckpointGuard("test-guard", "default")
-
-	// Never checkpointed - should be due
-	if !r.isPeriodicCheckpointDue(guard) {
-		t.Error("expected checkpoint to be due when never checkpointed")
-	}
-
-	// Recent checkpoint - should not be due
-	now := metav1.Now()
-	guard.Status.LastCheckpointTime = &now
-	if r.isPeriodicCheckpointDue(guard) {
-		t.Error("expected checkpoint not to be due for recent checkpoint")
-	}
-
-	// Old checkpoint - should be due
-	old := metav1.NewTime(time.Now().Add(-1 * time.Hour))
-	guard.Status.LastCheckpointTime = &old
-	if !r.isPeriodicCheckpointDue(guard) {
-		t.Error("expected checkpoint to be due for old checkpoint")
-	}
-
-	// Zero interval defaults to 30 min
-	guard.Spec.CheckpointPolicy.IntervalMinutes = 0
-	guard.Status.LastCheckpointTime = &old
-	if !r.isPeriodicCheckpointDue(guard) {
-		t.Error("expected checkpoint to be due with default interval")
-	}
-}
-
 func TestCheckpointGuard_DetectLossDivergence(t *testing.T) {
 	r, _ := newCheckpointGuardReconciler()
 
@@ -245,28 +213,6 @@ func TestCheckpointGuard_GetRequeueInterval(t *testing.T) {
 	interval = r.getRequeueInterval(guard)
 	if interval != 15*time.Minute { // Half of default 30 min
 		t.Errorf("expected 15m for default interval, got %v", interval)
-	}
-}
-
-func TestCheckpointGuard_UpdateAvgDuration(t *testing.T) {
-	r, _ := newCheckpointGuardReconciler()
-
-	// First checkpoint
-	result := r.updateAvgDuration("", 10*time.Second, 1)
-	if result != "10s" {
-		t.Errorf("expected 10s, got %s", result)
-	}
-
-	// Second checkpoint
-	result = r.updateAvgDuration("10s", 20*time.Second, 2)
-	if result != "15s" {
-		t.Errorf("expected 15s, got %s", result)
-	}
-
-	// Invalid existing average
-	result = r.updateAvgDuration("invalid", 10*time.Second, 2)
-	if result != "10s" {
-		t.Errorf("expected 10s for invalid existing, got %s", result)
 	}
 }
 

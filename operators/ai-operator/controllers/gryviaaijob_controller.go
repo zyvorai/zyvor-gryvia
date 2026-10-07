@@ -86,8 +86,12 @@ type GryviaAIJobReconciler struct {
 	// A single job is already placed all-or-nothing (a placement that finds too few nodes fails and the job
 	// stays Pending); this closes the race between jobs. See gryviaaijob_holds.go.
 	PlacementHolds bool
-	gpuHolds       *scheduler.GPUHolds
-	gpuHoldsOnce   sync.Once
+	// CheckpointGuard (flag --checkpoint-guard, default false) gives new batch jobs matched by a
+	// GryviaCheckpointGuard its checkpoint environment and a status ConfigMap, and lets AutoRestore replace
+	// pods stuck on lost nodes. See gryviaaijob_checkpoint.go.
+	CheckpointGuard bool
+	gpuHolds        *scheduler.GPUHolds
+	gpuHoldsOnce    sync.Once
 }
 
 //+kubebuilder:rbac:groups=gryvia.io,resources=gryviaaijobs,verbs=get;list;watch;create;update;patch;delete
@@ -97,6 +101,10 @@ type GryviaAIJobReconciler struct {
 //+kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=batch,resources=jobs,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=batch,resources=jobs/status,verbs=get
+//+kubebuilder:rbac:groups=gryvia.io,resources=gryviacheckpointguards,verbs=get;list;watch
+//+kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch;create;update
+//+kubebuilder:rbac:groups="",resources=nodes,verbs=get;list;watch
+//+kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=roles;rolebindings,verbs=get;list;watch;create
 //+kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups="",resources=persistentvolumeclaims,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=gryvia.io,resources=gryvianodefabrics,verbs=get;list;watch

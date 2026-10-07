@@ -130,7 +130,7 @@ gryvia submit --file job.yaml
 
 ### Can I checkpoint and resume jobs?
 
-Your training code does the checkpointing. Write to a volume that survives the pod, using `spec.storage` (PVC mounted at `/data`) or your own `volumes`, and have the code resume from it on start. There is no `checkpointing` block on `GryviaAIJob` and Gryvia does not resume jobs on preemption or spot interruption. `GryviaCheckpointGuard` is a separate ai-operator kind for checkpoint protection; see the [ML workflows guide](ML_WORKFLOWS.md).
+Your training code does the checkpointing. Write to a volume that survives the pod, using `spec.storage` (PVC mounted at `/data`) or your own `volumes`, and have the code resume from it on start. There is no `checkpointing` block on `GryviaAIJob` and Gryvia does not resume jobs on preemption or spot interruption. With the opt-in `aiOperator.checkpointGuard`, a `GryviaCheckpointGuard` tells the trainer where and how often to save, records the steps it commits and replaces the pods of a non-elastic job whose node is lost; see [checkpoint guard](https://github.com/zyvorai/gryvia/blob/main/docs/checkpoint-guard.md).
 
 ### How do I run distributed training?
 

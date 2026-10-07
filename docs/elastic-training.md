@@ -144,6 +144,7 @@ Tested: `examples/training/test_dcp_checkpoint.py` spawns gloo processes on CPU,
 - **Losing index 0 needs a standalone rendezvous store.** With the default `MASTER_ADDR` endpoint the store is in pod 0 and losing it ends the job. See [Losing index 0](#losing-index-0).
 - **The Job can finish early.** Once `minNodes` indexes succeed the remaining pods are removed. In a healthy elastic run all workers finish together; if some finish a moment later they may be stopped mid-exit.
 - No resharding of data-loader state (optimizer and model state reshard through [DCP](#dcp-checkpoints-and-resharding)), no scale-up of a running job, no resize of a Kueue-admitted job after admission (Kueue's partial admission picks the size once, at admission).
+- Node-loss pod replacement by the operator is for non-elastic jobs only ([checkpoint guard](checkpoint-guard.md)); elastic survivors re-form the group themselves.
 - Unverified: etcd with TLS (`protocol=https`, `ssl_cert`), storage other than NFS, and any NCCL behaviour on a resized group.
 
 ## Tests

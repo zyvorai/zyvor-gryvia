@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
@@ -180,6 +181,9 @@ func (r *GryviaAIJobReconciler) reconcileBatchJob(ctx context.Context, job *gryv
 		if err := r.applyKueueToJob(ctx, job, bj); err != nil {
 			return err
 		}
+		if err := r.startCheckpointGuard(ctx, job, &bj.Spec.Template.Spec); err != nil {
+			return err
+		}
 		if err := r.Create(ctx, bj); err != nil {
 			return err
 		}
@@ -200,6 +204,12 @@ func (r *GryviaAIJobReconciler) reconcileBatchJob(ctx context.Context, job *gryv
 	}
 	r.applyJobStatus(job, bj)
 	r.applyKueueStatus(ctx, job, bj)
+	if job.Status.Checkpoint != nil {
+		r.syncCheckpointStatus(ctx, job)
+		if err := r.recoverFromNodeLoss(ctx, job, time.Now()); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 

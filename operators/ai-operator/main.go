@@ -66,6 +66,7 @@ func main() {
 	var kueueStrictAdmission bool
 	var kueueDefaultQueue string
 	var admissionGate bool
+	var checkpointGuard bool
 	var preflightEnforce bool
 	var admissionDefaultHours float64
 	var ml mlOptions
@@ -100,6 +101,8 @@ func main() {
 	flag.BoolVar(&kueueStrictAdmission, "kueue-strict-admission", false, "Require Kueue admission for tenant batch jobs even if the default LocalQueue is missing. Requires --kueue-integration.")
 	flag.StringVar(&kueueDefaultQueue, "kueue-default-queue", "gryvia",
 		"With --kueue-integration: LocalQueue used by jobs in tenant-* namespaces that name no queue (only if that LocalQueue exists).")
+	flag.BoolVar(&checkpointGuard, "checkpoint-guard", false,
+		"Inject a matching GryviaCheckpointGuard's checkpoint environment into new batch jobs, create their status ConfigMap and Role, and replace pods stuck on lost nodes for AutoRestore guards.")
 	flag.BoolVar(&admissionGate, "admission-gate", false,
 		"Before creating a job's workload, check the quotas and hard budgets covering its namespace (spend from usage records plus a forecast for the job) and reject it instead of creating it. Fails open on lookup errors. Off by default.")
 	flag.BoolVar(&preflightEnforce, "preflight-enforce", false,
@@ -158,6 +161,7 @@ func main() {
 		Recorder:             mgr.GetEventRecorderFor("gryviaaijob-controller"),
 
 		AdmissionGate:         admissionGate,
+		CheckpointGuard:       checkpointGuard,
 		PreflightEnforce:      preflightEnforce,
 		AdmissionDefaultHours: admissionDefaultHours,
 		PlacementHolds:        placementHolds,
@@ -194,9 +198,10 @@ func main() {
 	}
 
 	if err = (&controllers.GryviaCheckpointGuardReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
-		Log:    ctrl.Log.WithName("controllers").WithName("GryviaCheckpointGuard"),
+		Client:  mgr.GetClient(),
+		Scheme:  mgr.GetScheme(),
+		Log:     ctrl.Log.WithName("controllers").WithName("GryviaCheckpointGuard"),
+		Enabled: checkpointGuard,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "GryviaCheckpointGuard")
 		os.Exit(1)
