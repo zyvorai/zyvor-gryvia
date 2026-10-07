@@ -212,7 +212,7 @@ ready, have the wrong `gryvia.io/gpu` type, lack the requested RDMA/SR-IOV label
 memory, plus CPU/memory) and takes the top `distributed.nodes`. It records that choice in `status.nodesAllocated` (and
 keeps the job Pending, retrying every 30 s, when no node qualifies); the workload's pods (Job or StatefulSet) are constrained by node
 selector (`gryvia.io/gpu`, `gryvia.io/rdma`, `spec.nodeSelector`) and placed by the default Kubernetes scheduler. The
-There is no in-tree gang scheduler, DRF queue or preemption, and elastic training is only partial (`distributed.elastic.minNodes`, unit-tested, no live resize; see docs/elastic-training.md) (Kueue, when its integration is on, does gang admission, borrowing and priority preemption instead; unverified on a cluster), and the standalone NVLink/NUMA
+There is no in-tree gang scheduler, DRF queue or preemption, and elastic jobs resize live on request (`distributed.elastic.desiredNodes`, the gateway or the dashboard; kind e2e grow and shrink, no automatic sizing from free capacity; see docs/elastic-training.md) (Kueue, when its integration is on, does gang admission, borrowing and priority preemption instead; unverified on a cluster), and the standalone NVLink/NUMA
 topology optimizer in `scheduler/` is not called by the running operator. Opt-in fabric-aware ranking (`--fabric-aware-scheduling`, chart `aiOperator.fabricAwareScheduling`, or the per-job annotation `gryvia.io/fabric-aware`) subtracts up to 25 points from nodes whose fresh `GryviaNodeFabric` signal reports a sick fabric; it is off by default, unit-tested, and never run on a real fabric. Detail:
 [Scheduling guide](website/docs/guides/SCHEDULING.md).
 
@@ -375,7 +375,7 @@ guarantee yet; see the [changelog](CHANGELOG.md). What exists today:
 `gds_trace`, `overlap`, `roce_cnp`, `infer_latency`, `ucx_gloo`, `pfc_pause`, `weight_exfil`, `quota_pace` and `ibv_verbs`,
 and twelve newer ones: `xdp_mux`, `roce_ecn`, `nccl_transport`, `p2p_fallback`, `capture_gate`, `gpu_oom`, `graph_stall`,
 `gdr_fail`, `infer_ttft`, `weight_mmap`, `gpu_dev` and `ucx_complete`, whose signals nothing interprets yet, so ten of them are opt-in with `-enable-programs`) build and pass the
-verifier on a Linux 7.0 x86_64 host and in CI (arm64 is compile-only). With `-xdp-mux` the collector chains the XDP
+verifier on a Linux 7.0 x86_64 host and in CI on native x86_64 and arm64 runners (load only on arm64; not attached or run there). With `-xdp-mux` the collector chains the XDP
 programs behind one attach instead of one XDP program per interface (tested in CI on loopback only). On the x86_64 host the collector attached the supported
 kprobe/tracepoint subset and decoded TCP flows. GPU, NCCL, RDMA and GPUDirect Storage runtime behavior and the gated
 XDP/TCX/sockops attachments have not been validated on hardware. The collector is disabled by default, privileged and

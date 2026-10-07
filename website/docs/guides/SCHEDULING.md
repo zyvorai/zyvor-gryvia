@@ -229,7 +229,7 @@ kubectl describe gryviaaijob my-job
 | Gang admission (all pods together) | Kueue-backed, opt-in (`--kueue-integration`); unit-tested; the kind e2e (real Kueue, CPU pods) passes in CI; never on GPUs. |
 | Queues, per-tenant quota, borrowing | Kueue-backed, opt-in; nominal quota + cohort borrowing, not DRF. |
 | Hierarchical queues, backfill | Not implemented |
-| Elastic training | Partial: `distributed.elastic.minNodes`, unit-tested, not run on a cluster; no live resize |
+| Elastic training | Live resize on request (`distributed.elastic.desiredNodes`, `POST /api/jobs/{name}/resize`, dashboard), grow and shrink tested in a kind e2e on CPU; no automatic sizing from free capacity |
 | Validating webhook | Runs when enabled; quota and SKU policy; fails open by default |
 | Mutating webhook (NCCL injection) | Code only, not registered |
 | Priority preemption | Kueue-backed, opt-in: evicted jobs are requeued, no checkpointing. Off without the integration |

@@ -18,7 +18,7 @@ Enabled, their signals are counted per job by the fabric folder (`gryvia_fabric_
 feeds the placement score, none is published to `GryviaFabricSignal` status, and nothing acts on them. The maps that steer `nccl_transport`, `capture_gate` and `gpu_dev` (`transport_hint`,
 `capture_lease`, `allowed_cg`, `gpu_dev_cfg`) are never written. `xdp_mux` and `roce_ecn` are governed by `-xdp-mux`
 (off by default). Earlier results: the collector attached the kprobe/tracepoint subset there and decoded real TCP flows. GPU, NCCL,
-RDMA and GPUDirect Storage behaviour, arm64 loading and the gated XDP/TCX/sockops attachments have not been verified on
+RDMA and GPUDirect Storage behaviour, arm64 attachment (arm64 loading is verified in CI) and the gated XDP/TCX/sockops attachments have not been verified on
 hardware. Nothing in the rest of the platform depends on them, and the collector is off by default.
 
 ## Programs
@@ -91,8 +91,8 @@ Requirements on the node: a kernel with BTF (`CONFIG_DEBUG_INFO_BTF=y`, standard
 
 Verified: all 47 programs compile with `-Wall -Werror` for x86_64 and, cross-compiled, for arm64 (clang 18 on Ubuntu 24.04
 in CI; clang 21 earlier) and load through the kernel verifier in CI (`collector/cmd/verifyobj` on a GitHub Ubuntu 24.04
-runner); the first 35 also passed the verifier on Linux 7.0 x86_64 locally. The arm64 objects have not been loaded on an
-arm64 kernel. Runtime behaviour of the GPU/NCCL/RDMA/GDS programs (including `straggler`, `rdma_health` and
+runner); the first 35 also passed the verifier on Linux 7.0 x86_64 locally. The arm64 objects are also built natively and
+loaded through the verifier on a GitHub arm64 runner (kernel 6.17 in the last run: 47 objects, 0 failed); they have not been attached on arm64. Runtime behaviour of the GPU/NCCL/RDMA/GDS programs (including `straggler`, `rdma_health` and
 `gds_trace`, `overlap`, `infer_latency`) has not been exercised on GPU, RDMA or GPUDirect Storage hardware; the kprobe symbols they use
 (`ib_post_send`, `ib_poll_cq`, `mlx5_ib_*`, `nvidia_fs_read`) are absent on the test host and are skipped by the
 collector when missing.

@@ -686,7 +686,7 @@ gryvia invoice -o json
 - Each invoice has the number `INV-<tenant>-<YYYYMM>`, the period, the currency (`MIXED` when records use different currencies), the status `estimate`, the lines (SKU, GPU type, jobs, GPU hours, rate, amount), the subtotal and the job count. Amounts are rounded to 2 decimals and GPU hours to 4.
 - `open` is true while any included record is not final (a job is still running), so the amounts may still change. The table marks this with a warning symbol.
 - `-o table|json|yaml|csv`. JSON and YAML are always an array of invoices. CSV has the header `invoice,tenant,period_from,period_to,sku,gpuType,jobs,gpuHours,rate,amount,currency`, one row per line and a `TOTAL` row per invoice; cells starting with `=`, `+`, `-` or `@` are prefixed with `'`.
-- A month without usage prints a message and exits 0. Invoices are estimates from job run time; Gryvia does not process payments.
+- A month without usage prints a message and exits 0. This command always computes estimates from job run time. With the opt-in billing ledger, finalized invoices (hash-chained ledger lines, Stripe test mode only) are in the gateway (`GET /api/invoices`) and the dashboard; see [billing ledger](https://github.com/zyvorai/gryvia/blob/main/docs/billing-ledger.md). Gryvia does not process live payments.
 
 ## Network Intelligence Commands
 

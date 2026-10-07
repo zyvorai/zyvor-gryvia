@@ -345,7 +345,7 @@ For full documentation, examples, and CLI usage, see the **[ML Workflows Guide](
 
 eBPF-powered network observability, security, and performance optimization for GPU clusters.
 
-- **47 CO-RE eBPF programs** covering GPU communication (NCCL, RDMA, GPUDirect Storage), security detections and network paths. They have been verified on Linux 7.0 x86_64 and in CI (arm64 is compile-only); the collector is off by default, runs privileged with host networking, and GPU/NCCL/RDMA behaviour is unverified on real hardware.
+- **47 CO-RE eBPF programs** covering GPU communication (NCCL, RDMA, GPUDirect Storage), security detections and network paths. They pass the kernel verifier on Linux 7.0 x86_64 and in CI on native x86_64 and arm64 runners (arm64: load only, not attached); the collector is off by default, runs privileged with host networking, and GPU/NCCL/RDMA behaviour is unverified on real hardware.
 - **Network policy kinds** (GryviaFlowPolicy) with a registered controller in the network-intelligence operator.
 - **GryviaAutoPolicy** for policy suggestions from observed traffic.
 - **Anomaly detection** (GryviaNetworkAnomaly) with baseline-driven alerting.
