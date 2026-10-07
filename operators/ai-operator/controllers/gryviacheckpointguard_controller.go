@@ -15,7 +15,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	gryviav1 "github.com/zyvorai/gryvia/operators/ai-operator/api/v1"
-	"github.com/zyvorai/gryvia/operators/ai-operator/pkg/checkpoint"
 )
 
 const (
@@ -44,6 +43,9 @@ type GryviaCheckpointGuardReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
 	Log    logr.Logger
+	// Enabled mirrors the ai-operator --checkpoint-guard flag: without it no job gets the guard's environment.
+	Enabled bool
+	Now     func() time.Time // nil = time.Now
 }
 
 //+kubebuilder:rbac:groups=gryvia.io,resources=gryviacheckpointguards,verbs=get;list;watch;create;update;patch;delete
@@ -53,6 +55,7 @@ type GryviaCheckpointGuardReconciler struct {
 //+kubebuilder:rbac:groups=gryvia.io,resources=gryviagpunodes,verbs=get;list;watch
 //+kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;list;watch
 //+kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch
+//+kubebuilder:rbac:groups="",resources=configmaps,verbs=get;update
 //+kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 
 // Reconcile is part of the main kubernetes reconciliation loop
@@ -185,34 +188,17 @@ func (r *GryviaCheckpointGuardReconciler) reconcileCheckpointGuard(ctx context.C
 		}
 	}
 
-	// Step 8: Handle emergency checkpoint if triggered
+	// Step 8: copy what the jobs committed; ask the trainers for an early checkpoint on an emergency.
+	r.observeCheckpoints(guard, matchedJobs)
 	if emergencyNeeded {
 		log.Info("Emergency checkpoint triggered", "reason", emergencyReason)
-		guard.Status.Phase = PhaseCheckpointing
-		r.updateGuardCondition(guard, ConditionEmergencyTriggered, metav1.ConditionTrue, "EmergencyCheckpoint", emergencyReason)
-
-		if err := r.performCheckpoint(ctx, guard, matchedJobs, true); err != nil {
-			log.Error(err, "Failed to perform emergency checkpoint")
-			guard.Status.Phase = PhaseError
-			r.updateGuardCondition(guard, ConditionCheckpointValid, metav1.ConditionFalse, "CheckpointFailed", err.Error())
-		} else {
-			guard.Status.EmergencyCheckpointsTaken++
-			guard.Status.Phase = PhaseMonitoring
+		requested := r.requestCheckpoints(ctx, guard, matchedJobs, emergencyReason)
+		msg := emergencyReason
+		if requested > 0 {
+			guard.Status.EmergencyCheckpointsTaken += int32(requested)
+			msg = fmt.Sprintf("%s; checkpoint requested from %d job(s)", emergencyReason, requested)
 		}
-	}
-
-	// Step 9: Check if a periodic checkpoint is due
-	if r.isPeriodicCheckpointDue(guard) {
-		log.Info("Periodic checkpoint due")
-		guard.Status.Phase = PhaseCheckpointing
-
-		if err := r.performCheckpoint(ctx, guard, matchedJobs, false); err != nil {
-			log.Error(err, "Failed to perform periodic checkpoint")
-			guard.Status.Phase = PhaseError
-			r.updateGuardCondition(guard, ConditionCheckpointValid, metav1.ConditionFalse, "CheckpointFailed", err.Error())
-		} else {
-			guard.Status.Phase = PhaseMonitoring
-		}
+		r.updateGuardCondition(guard, ConditionEmergencyTriggered, metav1.ConditionTrue, "EmergencyCheckpoint", msg)
 	}
 
 	// Step 10: Update status
@@ -434,121 +420,6 @@ func (r *GryviaCheckpointGuardReconciler) isEmergencyTrigger(guard *gryviav1.Gry
 	}
 
 	return false
-}
-
-// isPeriodicCheckpointDue checks if enough time has elapsed since the last checkpoint
-func (r *GryviaCheckpointGuardReconciler) isPeriodicCheckpointDue(guard *gryviav1.GryviaCheckpointGuard) bool {
-	interval := guard.Spec.CheckpointPolicy.IntervalMinutes
-	if interval <= 0 {
-		interval = 30 // Default 30 minutes
-	}
-
-	if guard.Status.LastCheckpointTime == nil {
-		return true // Never checkpointed, checkpoint now
-	}
-
-	elapsed := time.Since(guard.Status.LastCheckpointTime.Time)
-	return elapsed >= time.Duration(interval)*time.Minute
-}
-
-// performCheckpoint executes a checkpoint operation for the matched jobs
-func (r *GryviaCheckpointGuardReconciler) performCheckpoint(ctx context.Context, guard *gryviav1.GryviaCheckpointGuard, jobs []gryviav1.GryviaAIJob, isEmergency bool) error {
-	log := r.Log.WithValues("gryviacheckpointguard", guard.Name, "emergency", isEmergency)
-
-	checkpointStart := time.Now()
-	checkpointName := fmt.Sprintf("ckpt-%s-%d", guard.Name, time.Now().Unix())
-
-	for _, job := range jobs {
-		if job.Status.Phase != PhaseRunning {
-			continue
-		}
-
-		log.Info("Performing checkpoint for job", "job", job.Name, "checkpoint", checkpointName)
-
-		// Build the checkpoint path
-		checkpointPath := fmt.Sprintf("/checkpoints/%s/%s", job.Name, checkpointName)
-
-		// Validate checkpoint configuration
-		retentionCount := int32(5) // default
-		if guard.Spec.Validation != nil && guard.Spec.Validation.RetentionCount > 0 {
-			retentionCount = guard.Spec.Validation.RetentionCount
-		}
-
-		// Create checkpoint metadata for the index
-		ckptMeta := checkpoint.CheckpointMetadata{
-			Name:        checkpointName,
-			Path:        checkpointPath,
-			JobName:     job.Name,
-			CreatedAt:   metav1.Now(),
-			IsEmergency: isEmergency,
-		}
-
-		// Validate the checkpoint using the validator
-		if guard.Spec.Validation != nil {
-			opts := checkpoint.ValidationOptions{
-				ChecksumVerify:    guard.Spec.Validation.ChecksumVerify,
-				TensorShapeVerify: guard.Spec.Validation.TensorShapeVerify,
-				LoadTest:          guard.Spec.Validation.LoadTest,
-			}
-
-			valid, reason := checkpoint.ValidateCheckpoint(checkpointPath, opts)
-			ckptMeta.Valid = valid
-			ckptMeta.ValidationMessage = reason
-
-			if valid {
-				guard.Status.ValidCheckpoints++
-				guard.Status.LastValidCheckpoint = checkpointName
-				r.updateGuardCondition(guard, ConditionCheckpointValid, metav1.ConditionTrue, "CheckpointValid",
-					fmt.Sprintf("Checkpoint %s passed validation", checkpointName))
-			} else {
-				log.Info("Checkpoint failed validation", "checkpoint", checkpointName, "reason", reason)
-				r.updateGuardCondition(guard, ConditionCheckpointValid, metav1.ConditionFalse, "ValidationFailed",
-					fmt.Sprintf("Checkpoint %s failed validation: %s", checkpointName, reason))
-
-				// If retainValidOnly, skip adding this checkpoint
-				if guard.Spec.Validation.RetainValidOnly {
-					continue
-				}
-			}
-		} else {
-			// No validation configured, mark as valid
-			ckptMeta.Valid = true
-			guard.Status.ValidCheckpoints++
-			guard.Status.LastValidCheckpoint = checkpointName
-		}
-
-		// Manage the checkpoint index with retention
-		checkpoint.AddToIndex(checkpointName, ckptMeta, int(retentionCount))
-	}
-
-	// Update checkpoint timing and counts
-	now := metav1.Now()
-	guard.Status.LastCheckpointTime = &now
-	guard.Status.TotalCheckpoints++
-
-	// Calculate average checkpoint duration
-	duration := time.Since(checkpointStart)
-	guard.Status.AvgCheckpointDuration = r.updateAvgDuration(guard.Status.AvgCheckpointDuration, duration, guard.Status.TotalCheckpoints)
-
-	log.Info("Checkpoint completed", "checkpoint", checkpointName, "duration", duration)
-	return nil
-}
-
-// updateAvgDuration computes a running average of checkpoint duration
-func (r *GryviaCheckpointGuardReconciler) updateAvgDuration(currentAvg string, newDuration time.Duration, totalCount int32) string {
-	if totalCount <= 1 {
-		return newDuration.Round(time.Second).String()
-	}
-
-	// Parse existing average
-	existing, err := time.ParseDuration(currentAvg)
-	if err != nil {
-		return newDuration.Round(time.Second).String()
-	}
-
-	// Weighted running average
-	avg := (existing*time.Duration(totalCount-1) + newDuration) / time.Duration(totalCount)
-	return avg.Round(time.Second).String()
 }
 
 // getRequeueInterval returns the requeue interval based on checkpoint policy

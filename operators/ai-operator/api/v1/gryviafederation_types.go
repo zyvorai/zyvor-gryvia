@@ -53,6 +53,10 @@ type FederationCluster struct {
 
 	// Priority for scheduling preference
 	Priority int `json:"priority,omitempty"`
+
+	// MultiKueueCluster is the name of the MultiKueueCluster on this (manager) cluster that dispatches to this
+	// member; failover evicts the Kueue Workloads assigned to it. Defaults to Name.
+	MultiKueueCluster string `json:"multiKueueCluster,omitempty"`
 }
 
 // FederationCredentials defines cluster credentials
@@ -146,6 +150,12 @@ type FederationFailover struct {
 
 	// HealthCheck defines health check settings
 	HealthCheck *FederationHealthCheck `json:"healthCheck,omitempty"`
+
+	// LeaseTimeout is how long a member must have been failing before its workloads count as fenced when its API
+	// server cannot be reached to delete them (Go duration, default 5m). Set it no shorter than the time after which
+	// the member stops its own workloads on its own (for example a node lease or self-fencing timeout): until then
+	// an unreachable member may still be running the job.
+	LeaseTimeout string `json:"leaseTimeout,omitempty"`
 }
 
 // FederationHealthCheck defines health check settings
@@ -210,6 +220,9 @@ type GryviaFederationStatus struct {
 	// JobDistribution tracks job distribution across clusters
 	JobDistribution map[string]int `json:"jobDistribution,omitempty"`
 
+	// Failovers lists the most recent workload moves (newest last, at most 20).
+	Failovers []FederationFailoverRecord `json:"failovers,omitempty"`
+
 	// Conditions represent the latest available observations
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
@@ -227,6 +240,32 @@ type FederationClusterStatus struct {
 
 	// Utilization of the cluster
 	Utilization *FederationUtilization `json:"utilization,omitempty"`
+
+	// ConsecutiveFailures counts failed health checks in a row; reset by a healthy check.
+	ConsecutiveFailures int `json:"consecutiveFailures,omitempty"`
+
+	// UnhealthySince is the first failed check of the current failure streak.
+	UnhealthySince *metav1.Time `json:"unhealthySince,omitempty"`
+
+	// Fenced is true once the member's workloads were deleted remotely (FenceMethod RemoteDelete) or its lease
+	// timeout expired (LeaseExpired); only then are its workloads evicted for redispatch. Cleared when it is healthy.
+	Fenced      bool         `json:"fenced,omitempty"`
+	FenceMethod string       `json:"fenceMethod,omitempty"`
+	FencedAt    *metav1.Time `json:"fencedAt,omitempty"`
+}
+
+// FederationFailoverRecord is one Kueue Workload moved off a failed member.
+type FederationFailoverRecord struct {
+	// Cluster the workload was moved off.
+	Cluster string `json:"cluster"`
+	// Namespace and Workload name on the manager.
+	Namespace string `json:"namespace"`
+	Workload  string `json:"workload"`
+	// FenceMethod used for the member (RemoteDelete or LeaseExpired).
+	FenceMethod string `json:"fenceMethod,omitempty"`
+	// EvictedAt is when the Workload was deactivated; RequeuedAt when it was reactivated for redispatch.
+	EvictedAt  metav1.Time  `json:"evictedAt"`
+	RequeuedAt *metav1.Time `json:"requeuedAt,omitempty"`
 }
 
 // FederationUtilization tracks cluster utilization

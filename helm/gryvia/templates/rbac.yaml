@@ -493,6 +493,21 @@ rules:
     verbs:
       - patch
 
+  {{- if (dig "aiOperator" "checkpointGuard" false .Values.AsMap) }}
+  # aiOperator.checkpointGuard: a per-job Role and RoleBinding that let the job's pods get/update only their
+  # checkpoint status ConfigMap (the operator holds get/update on configmaps, so it may grant them)
+  - apiGroups:
+      - rbac.authorization.k8s.io
+    resources:
+      - roles
+      - rolebindings
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+  {{- end }}
+
   {{- if .Values.aiOperator.fabricAwareScheduling }}
   # aiOperator.fabricAwareScheduling: read the per-node fabric health published by the collector
   - apiGroups:
@@ -523,6 +538,18 @@ rules:
     verbs:
       - get
       - create
+  {{- end }}
+  {{- if (dig "aiOperator" "federation" "failover" false .Values.AsMap) }}
+  # aiOperator.federation.failover: deactivate and reactivate the Workloads dispatched to a failed member
+  - apiGroups:
+      - kueue.x-k8s.io
+    resources:
+      - workloads
+    verbs:
+      - get
+      - list
+      - watch
+      - patch
   {{- end }}
   {{- if .Values.quotaOperator.kueueIntegration }}
   # quotaOperator.kueueIntegration: per-tenant ClusterQueue, LocalQueue and ResourceFlavors

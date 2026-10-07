@@ -65,7 +65,8 @@ metadata:
 The trainer must run `/app/train_recoverable.py` and `spec.storage` must provide the
 persistent /data mount. It saves periodically, acknowledges preStop requests only after
 publishing a durable checkpoint, and resumes on restart. Abrupt node loss recovers the
-last periodic save, not an unsaved step. Corruption and rank/world-size mismatches fail
+last periodic save, not an unsaved step; with a [checkpoint guard](checkpoint-guard.md) (`restore.autoRestore`)
+the operator replaces the pods of a non-elastic job stuck on a lost node instead of waiting for eviction. Corruption and rank/world-size mismatches fail
 explicitly. Checkpoint blobs are retained; operators must provide retention/garbage collection.
 SHA256 detects corruption, not malicious writers; trust and isolate the checkpoint volume.
 

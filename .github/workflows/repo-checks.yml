@@ -25,6 +25,8 @@ jobs:
       - run: python3 examples/training/test_checkpoint_worker.py
       - run: python3 examples/training/test_coordinated_checkpoint.py
       - run: python3 examples/training/test_checkpoint_contract.py
+      - run: python3 examples/training/test_checkpoint_status.py
+      - run: python3 examples/training/test_checkpoint_replica.py
       - run: bash scripts/tests/e2e-kueue-pods.test.sh
 
   dcp-checkpoint:
@@ -150,7 +152,7 @@ jobs:
       - name: shellcheck
         run: |
           shellcheck -S warning scripts/install.sh scripts/kind-demo.sh scripts/rename-kinds.sh scripts/install-k3s-gpu.sh scripts/tests/install-k3s-gpu.test.sh scripts/tests/billing-chart.test.sh \
-            scripts/tests/kueue-chart.test.sh scripts/e2e-kueue.sh scripts/e2e-jobs.sh scripts/e2e-gpuaas.sh scripts/e2e-ml-lib.sh scripts/sync-monitoring-assets.sh \
+            scripts/tests/kueue-chart.test.sh scripts/tests/checkpoint-guard-chart.test.sh scripts/tests/federation-chart.test.sh scripts/e2e-kueue.sh scripts/e2e-jobs.sh scripts/e2e-gpuaas.sh scripts/e2e-ml-lib.sh scripts/sync-monitoring-assets.sh \
             scripts/validate-gpu.sh scripts/tests/validate-gpu.test.sh scripts/bench-ebpf-overhead.sh \
             scripts/upgrade-test.sh scripts/backup-crs.sh scripts/tests/upgrade-test.test.sh scripts/release-check.sh scripts/tests/release-check.test.sh \
             scripts/lib/deploy-guards.sh scripts/tests/deploy-api-key.test.sh scripts/tests/submission-chart.test.sh

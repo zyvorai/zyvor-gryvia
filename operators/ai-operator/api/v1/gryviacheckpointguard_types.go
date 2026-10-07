@@ -38,6 +38,16 @@ type CheckpointPolicy struct {
 
 	// Replication defines how checkpoints are replicated for durability
 	Replication *ReplicationConfig `json:"replication,omitempty"`
+
+	// Directory is where matched jobs write coordinated checkpoints (GRYVIA_CHECKPOINT_DIR). It must be a clean
+	// path below /data, the job's persistent spec.storage volume. Default /data/checkpoints.
+	// +optional
+	Directory string `json:"directory,omitempty"`
+
+	// EverySteps is passed to matched jobs as GRYVIA_CHECKPOINT_EVERY (commit every N training steps).
+	// +kubebuilder:validation:Minimum=1
+	// +optional
+	EverySteps int32 `json:"everySteps,omitempty"`
 }
 
 // EmergencyCheckpointConfig defines conditions that trigger an emergency checkpoint
@@ -57,6 +67,12 @@ type ReplicationConfig struct {
 
 	// AsyncUpload enables asynchronous upload to avoid blocking training
 	AsyncUpload bool `json:"asyncUpload,omitempty"`
+
+	// Target is where rank 0 copies each committed step (GRYVIA_CHECKPOINT_REPLICA): file:///<path> on a
+	// mounted volume or s3://<bucket>/<prefix> (the trainer needs boto3 and credentials). Empty = no replica.
+	// +kubebuilder:validation:Pattern=`^(file:///|s3://)[^\s]*$`
+	// +optional
+	Target string `json:"target,omitempty"`
 }
 
 // CheckpointValidation defines how checkpoints are validated
@@ -87,6 +103,13 @@ type RestorePolicy struct {
 
 	// InjectEnvVars defines environment variables injected into restored job pods
 	InjectEnvVars map[string]string `json:"injectEnvVars,omitempty"`
+
+	// NodeLossGraceSeconds is how long a matched job's pod may sit on a NotReady or deleted node before
+	// AutoRestore force-deletes it so the Indexed Job recreates it elsewhere. Default 60.
+	// +kubebuilder:validation:Minimum=15
+	// +kubebuilder:validation:Maximum=3600
+	// +optional
+	NodeLossGraceSeconds int32 `json:"nodeLossGraceSeconds,omitempty"`
 }
 
 // CheckpointMonitoring defines observability settings
@@ -129,6 +152,22 @@ type GryviaCheckpointGuardStatus struct {
 
 	// MatchedJobs is the number of GryviaAIJob resources matched by jobSelector
 	MatchedJobs int32 `json:"matchedJobs,omitempty"`
+
+	// Jobs is the checkpoint state the matched jobs reported (needs the ai-operator checkpointGuard capability).
+	// +optional
+	Jobs []GuardedJob `json:"jobs,omitempty"`
+}
+
+// GuardedJob is one matched job's checkpoint state, copied from its status.checkpoint.
+type GuardedJob struct {
+	Name string `json:"name"`
+	// Injected is true when the job's pods got the guard's checkpoint environment.
+	Injected          bool         `json:"injected"`
+	LastCommittedStep int64        `json:"lastCommittedStep,omitempty"`
+	LastCommittedAt   *metav1.Time `json:"lastCommittedAt,omitempty"`
+	// NodeLossRecoveries counts pods this guard's AutoRestore replaced after a node loss.
+	NodeLossRecoveries int32  `json:"nodeLossRecoveries,omitempty"`
+	Message            string `json:"message,omitempty"`
 }
 
 //+kubebuilder:object:root=true

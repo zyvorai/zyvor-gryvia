@@ -76,7 +76,9 @@ same batch Job and PVC remain, and replacement pods read the checkpoint on start
 (busybox trainer that saves only on the hook's request, two workers, both resume).
 A crash, OOM kill, unreachable node, forced deletion or exhausted grace period can
 prevent a hook from running or finishing. Periodic framework checkpoints are still
-required. Gryvia does not verify checkpoint contents or wait for a global checkpoint
+required. A [checkpoint guard](checkpoint-guard.md) adds the periodic side: it tells the trainer where and how
+often to save, records the committed step the trainer reports, and with `restore.autoRestore` replaces the pods of a
+non-elastic job whose node is lost (the kind e2e `e2e-elastic.yml` job node-loss checks this). Gryvia does not verify checkpoint contents or wait for a global checkpoint
 commit before Kueue evicts a workload. It does not promise recovery without data loss.
 
 Workload templates are immutable after batch Job creation. Set these annotations

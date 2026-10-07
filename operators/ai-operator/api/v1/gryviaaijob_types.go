@@ -192,6 +192,11 @@ type GryviaAIJobStatus struct {
 	// job is scheduled.
 	// +optional
 	Dataset *AIJobDataset `json:"dataset,omitempty"`
+
+	// Checkpoint is set when a GryviaCheckpointGuard manages this job's checkpoints: what the trainer last
+	// reported as committed, and the pods replaced after node losses.
+	// +optional
+	Checkpoint *AIJobCheckpoint `json:"checkpoint,omitempty"`
 }
 
 // AIJobDataset is the dataset locality decision for a job.
@@ -291,4 +296,33 @@ func EnvVarFromCoreV1(name, value string) corev1.EnvVar {
 
 func init() {
 	SchemeBuilder.Register(&GryviaAIJob{}, &GryviaAIJobList{})
+}
+
+// AIJobCheckpoint is the guard-managed checkpoint state of a job.
+type AIJobCheckpoint struct {
+	// Guard is the GryviaCheckpointGuard whose policy the pods got.
+	Guard     string `json:"guard"`
+	Directory string `json:"directory,omitempty"`
+	// StatusConfigMap is where the trainer reports (committedStep, committedAt, currentStep).
+	StatusConfigMap   string       `json:"statusConfigMap,omitempty"`
+	LastCommittedStep int64        `json:"lastCommittedStep,omitempty"`
+	LastCommittedAt   *metav1.Time `json:"lastCommittedAt,omitempty"`
+	// CurrentStep is the last training step the trainer reported, committed or not.
+	CurrentStep int64 `json:"currentStep,omitempty"`
+	// NodeLossRecoveries counts node losses after which pods were replaced; LostSteps sums the steps trained
+	// after the last commit at each loss (known only when the trainer reports currentStep).
+	NodeLossRecoveries int32          `json:"nodeLossRecoveries,omitempty"`
+	LostSteps          int64          `json:"lostSteps,omitempty"`
+	LastNodeLoss       *NodeLossEvent `json:"lastNodeLoss,omitempty"`
+}
+
+// NodeLossEvent is one recovery from a lost node.
+type NodeLossEvent struct {
+	Node string      `json:"node"`
+	At   metav1.Time `json:"at"`
+	// Pods were force-deleted so the Job recreates their indexes on healthy nodes.
+	Pods []string `json:"pods"`
+	// ResumeStep is the last committed step when the node was lost: the replacement pods resume from it.
+	ResumeStep int64 `json:"resumeStep"`
+	LostSteps  int64 `json:"lostSteps,omitempty"`
 }
