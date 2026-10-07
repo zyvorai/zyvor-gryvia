@@ -79,4 +79,16 @@ func TestAdvancedKueueSchema(t *testing.T) {
 			}
 		}
 	}
+	gen := BuildTopology("gryvia-generated")
+	if err := c.Create(context.Background(), gen); err != nil {
+		t.Fatalf("generated Topology rejected: %v", err)
+	}
+	out := &unstructured.Unstructured{}
+	out.SetGroupVersionKind(gen.GroupVersionKind())
+	if err := c.Get(context.Background(), client.ObjectKeyFromObject(gen), out); err != nil {
+		t.Fatal(err)
+	}
+	if levels, _, _ := unstructured.NestedSlice(out.Object, "spec", "levels"); len(levels) != 3 {
+		t.Fatalf("generated Topology levels pruned: %v", levels)
+	}
 }

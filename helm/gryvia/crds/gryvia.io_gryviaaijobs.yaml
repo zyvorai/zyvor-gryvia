@@ -3618,6 +3618,11 @@ spec:
                   type: object
                 maxItems: 16
                 type: array
+              placementTopology:
+                description: |-
+                  PlacementTopology is the topology group the operator kept a multi-node job in ("gryvia.io/ib-block=b1"),
+                  set only with topology placement on; pods get soft node affinity toward it.
+                type: string
               replicasReady:
                 description: Ready replicas
                 format: int32

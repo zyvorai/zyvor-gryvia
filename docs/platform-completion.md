@@ -76,7 +76,12 @@ Enable `fairSharing` in the Kueue manager configuration too. BestEffortFIFO rema
 queueing strategy, allowing Kueue to consider jobs behind a blocked head job; Gryvia does
 not implement a second DRF/backfill scheduler.
 
-Create a Kueue Topology first, then set `platformCompletion.kueueTopologyName`. AIJob
+Create a Kueue Topology first, then set `platformCompletion.kueueTopologyName`, or also set
+`platformCompletion.kueueGenerateTopology=true` (with `quotaOperator.kueueIntegration`) and the quota operator creates
+it when it is missing, with levels `gryvia.io/ib-block`, `gryvia.io/rack`, `kubernetes.io/hostname` (Kueue
+`v1beta1`, label `app.kubernetes.io/managed-by: gryvia-quota-operator`; an existing Topology without that label is left alone, and
+the generated one is not deleted with tenants). The generated object is checked against the pinned Kueue schema in
+`TestAdvancedKueueSchema`. AIJob
 annotations `gryvia.io/required-topology` or `gryvia.io/preferred-topology` carry the topology
 level label to the PodSet. They are mutually exclusive. No topology is inferred from hardware. Topology-enabled flavors select Linux nodes; label them with all levels in the configured Topology.
 

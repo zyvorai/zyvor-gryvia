@@ -540,6 +540,17 @@ rules:
       - update
       - patch
       - delete
+  {{- if and (dig "platformCompletion" "kueueTopologyName" nil $.Values.AsMap) (dig "platformCompletion" "kueueGenerateTopology" false $.Values.AsMap) }}
+  # platformCompletion.kueueGenerateTopology: create the named Kueue Topology when it is missing
+  - apiGroups:
+      - kueue.x-k8s.io
+    resources:
+      - topologies
+    verbs:
+      - get
+      - create
+      - update
+  {{- end }}
   {{- end }}
   {{- if .Values.quotaOperator.slurmIntegration }}
   # quotaOperator.slurmIntegration: one Slinky NodeSet (Slurm partition) per tenant

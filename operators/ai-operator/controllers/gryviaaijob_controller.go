@@ -59,6 +59,9 @@ type GryviaAIJobReconciler struct {
 	FabricAware bool
 	// FabricMaxPenalty lowers the per-node penalty cap (points); 0 = the default 25.
 	FabricMaxPenalty float64
+	// TopologyPlacement keeps a multi-node job's nodes inside one gryvia.io/ib-block, else one gryvia.io/rack,
+	// when such a group has enough eligible nodes (operator flag --topology-placement, default false).
+	TopologyPlacement bool
 	// ClusterDomain is the cluster DNS suffix used in MASTER_ADDR (default "cluster.local").
 	ClusterDomain string
 	// Recorder emits the placement Event (optional).
@@ -268,6 +271,9 @@ func (r *GryviaAIJobReconciler) reconcileAIJob(ctx context.Context, job *gryviav
 			var err error
 			held := r.placementHeld(job) // GPUs other jobs hold and have not bound yet (nil when off)
 			schedCtx := scheduler.WithPreferredPools(ctx, dsSelectors)
+			if r.TopologyPlacement {
+				schedCtx = scheduler.WithTopologyPlacement(schedCtx)
+			}
 			if scheduler.FabricEnabled(job, r.FabricAware) {
 				var p scheduler.Placement
 				p, err = scheduler.FindOptimalNodesFabricHeld(schedCtx, r.Client, job, scheduler.FabricOptions{
@@ -297,8 +303,15 @@ func (r *GryviaAIJobReconciler) reconcileAIJob(ctx context.Context, job *gryviav
 			job.Status.NodesAllocated = nodes
 			job.Status.GpusAllocated = job.Spec.GPUs
 			r.bindDataset(ctx, job, dsBind, dsLocal, dsNamespace, nodes)
+			job.Status.PlacementTopology = ""
+			msg := "Job scheduled successfully"
+			if r.TopologyPlacement && job.Annotations[scheduler.AnnotationTopologyPlacement] != "false" {
+				if job.Status.PlacementTopology = scheduler.SharedTopology(ctx, r.Client, nodes); job.Status.PlacementTopology != "" {
+					msg += " within " + job.Status.PlacementTopology
+				}
+			}
 			r.holdPlacement(job, nodes)
-			r.updateCondition(job, ConditionScheduled, metav1.ConditionTrue, "Scheduled", "Job scheduled successfully")
+			r.updateCondition(job, ConditionScheduled, metav1.ConditionTrue, "Scheduled", msg)
 
 			if err := r.Status().Update(ctx, job); err != nil {
 				return ctrl.Result{}, err
@@ -692,6 +705,29 @@ func (r *GryviaAIJobReconciler) buildPodTemplate(job *gryviav1.GryviaAIJob, labe
 // affinity toward the nodes the operator selected. Required terms and the user's
 // own preferences are never touched; the spec object is never mutated.
 func (r *GryviaAIJobReconciler) buildAffinity(job *gryviav1.GryviaAIJob) *corev1.Affinity {
+	return withTopologyPreference(r.buildPlacementAffinity(job), job.Status.PlacementTopology)
+}
+
+// withTopologyPreference adds soft node affinity toward the job's topology group ("key=value"); a copy is returned.
+func withTopologyPreference(aff *corev1.Affinity, group string) *corev1.Affinity {
+	key, value, ok := strings.Cut(group, "=")
+	if !ok || key == "" || value == "" {
+		return aff
+	}
+	aff = aff.DeepCopy()
+	if aff == nil {
+		aff = &corev1.Affinity{}
+	}
+	if aff.NodeAffinity == nil {
+		aff.NodeAffinity = &corev1.NodeAffinity{}
+	}
+	aff.NodeAffinity.PreferredDuringSchedulingIgnoredDuringExecution = append(aff.NodeAffinity.PreferredDuringSchedulingIgnoredDuringExecution,
+		corev1.PreferredSchedulingTerm{Weight: 80, Preference: corev1.NodeSelectorTerm{MatchExpressions: []corev1.NodeSelectorRequirement{
+			{Key: key, Operator: corev1.NodeSelectorOpIn, Values: []string{value}}}}})
+	return aff
+}
+
+func (r *GryviaAIJobReconciler) buildPlacementAffinity(job *gryviav1.GryviaAIJob) *corev1.Affinity {
 	if job.Annotations[scheduler.AnnotationPinPlacement] == "true" && len(job.Status.NodesAllocated) > 0 {
 		// Opt-in: required, not preferred. If a chosen node goes away the pods stay Pending until
 		// the job is rescheduled; that is the price of making placement binding.

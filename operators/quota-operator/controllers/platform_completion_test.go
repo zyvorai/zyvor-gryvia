@@ -73,3 +73,29 @@ func TestKueueAdvancedConfiguration(t *testing.T) {
 		}
 	}
 }
+
+func TestKueueGeneratedTopology(t *testing.T) {
+	r := &GryviaKueueReconciler{TopologyName: "gryvia", GenerateTopology: true}
+	objs := r.desired(&gryviav1.GryviaTenant{ObjectMeta: metav1.ObjectMeta{Name: "team"}}, nil, nil)
+	if objs[0].GetKind() != "Topology" || objs[0].GetName() != "gryvia" || objs[0].GetLabels()[kueueManagedByLabel] != kueueManagedBy {
+		t.Fatalf("first object %s %s %v", objs[0].GetKind(), objs[0].GetName(), objs[0].GetLabels())
+	}
+	levels, _, _ := unstructured.NestedSlice(objs[0].Object, "spec", "levels")
+	if len(levels) != 3 || levels[0].(map[string]interface{})["nodeLabel"] != "gryvia.io/ib-block" || levels[2].(map[string]interface{})["nodeLabel"] != "kubernetes.io/hostname" {
+		t.Fatalf("levels %v", levels)
+	}
+	if _, found, _ := unstructured.NestedString(objs[0].Object, "spec", "topologyName"); found {
+		t.Fatal("topologyName belongs on ResourceFlavors only")
+	}
+	for _, o := range objs[1:] {
+		if o.GetKind() == "ResourceFlavor" {
+			if name, _, _ := unstructured.NestedString(o.Object, "spec", "topologyName"); name != "gryvia" {
+				t.Fatalf("flavor %s topologyName %q", o.GetName(), name)
+			}
+		}
+	}
+	r.GenerateTopology = false
+	if objs := r.desired(&gryviav1.GryviaTenant{ObjectMeta: metav1.ObjectMeta{Name: "team"}}, nil, nil); objs[0].GetKind() == "Topology" {
+		t.Fatal("no Topology without --kueue-generate-topology")
+	}
+}
