@@ -61,8 +61,20 @@ class Store(FakeCore):
             raise ApiException(status=409)
         return self.create_namespaced_config_map(ns, body)
 
-    def list_namespaced_config_map(self, ns, **kwargs):
-        return NS(items=[self.read_namespaced_config_map(n, ns) for n in self.cms], metadata=NS(_continue=None))
+    def list_namespaced_config_map(self, ns, limit=None, _continue=None, **kwargs):
+        names = sorted(self.cms)
+        start = int(_continue) if _continue else 0
+        end = len(names) if not limit else start + limit
+        token = str(end) if end < len(names) else None
+        return NS(items=[self.read_namespaced_config_map(n, ns) for n in names[start:end]], metadata=NS(_continue=token))
+
+    def delete_namespaced_config_map(self, name, ns, body=None):
+        if name not in self.cms:
+            raise ApiException(status=404)
+        want = ((body or {}).get("preconditions") or {}).get("resourceVersion")
+        if want and want != self.cms[name]["metadata"]["resourceVersion"]:
+            raise ApiException(status=409)
+        del self.cms[name]
 
 
 class Targets(FakeCustomObjects):
@@ -266,3 +278,60 @@ def test_quota_and_node_operations_preserve_unrelated_fields():
             assert core.node.spec.unschedulable is True
         assert client.post(path + "/rollback", headers=BOB).status_code == 200
     assert core.node.spec.unschedulable is False
+
+
+def _record(core, ident, **fields):
+    data = {"id": ident, "proposal": BODY, "proposedBy": {"issuer": "https://idp", "subject": "alice"},
+            "createdAt": "2000-01-01T00:00:00+00:00", "expiresAt": "2000-01-01T00:15:00+00:00", **fields}
+    core.create_namespaced_config_map("default", {
+        "metadata": {"name": "gryvia-action-" + ident, "labels": {"gryvia.io/intelligence-action": "true"}},
+        "data": {"operation.json": json.dumps(data)},
+    })
+
+
+def test_list_pages_with_continue_token():
+    client, core, _, deps = setup()
+    deps.intelligence_retention_days = 0
+    for i in range(5):
+        _record(core, f"{i:032x}", state="Proposed", expiresAt="2999-01-01T00:00:00+00:00")
+    first = client.get("/api/intelligence/actions?limit=2").json()
+    assert len(first["items"]) == 2 and first["truncated"] and first["continue"]
+    rest = client.get(f"/api/intelligence/actions?limit=10&continue={first['continue']}").json()
+    assert len(rest["items"]) == 3 and rest["continue"] is None
+    assert client.get("/api/intelligence/actions?limit=501").status_code == 422
+
+
+def test_sweep_keeps_uncertain_and_recent_records():
+    client, core, _, deps = setup()
+    old = "2000-01-02T00:00:00+00:00"
+    _record(core, "a" * 32, state="Applied", completedAt=old)
+    _record(core, "b" * 32, state="Rejected", reviewedAt=old)
+    _record(core, "c" * 32, state="Proposed")  # expired long ago
+    _record(core, "d" * 32, state="Executing")  # uncertain write: never deleted
+    _record(core, "e" * 32, state="RollingBack")
+    _record(core, "f" * 32, state="Approved", expiresAt="2999-01-01T00:00:00+00:00")
+    from datetime import datetime, timezone
+    recent = datetime.now(timezone.utc).isoformat()
+    _record(core, "1" * 32, state="RolledBack", completedAt=recent)
+    result = client.post("/api/intelligence/actions/sweep", headers=BOB)
+    assert result.status_code == 200 and result.json()["deleted"] == 3
+    left = {k[len("gryvia-action-"):][0] for k in core.cms}
+    assert left == {"d", "e", "f", "1"}
+
+
+def test_sweep_disabled_and_export():
+    client, core, _, deps = setup()
+    _record(core, "a" * 32, state="Applied", completedAt="2000-01-02T00:00:00+00:00")
+    exported = client.get("/api/intelligence/actions/export").json()
+    assert [r["id"] for r in exported["items"]] == ["a" * 32] and not exported["truncated"]
+    deps.intelligence_retention_days = 0
+    assert client.post("/api/intelligence/actions/sweep").status_code == 409
+    assert len(core.cms) == 1
+
+
+def test_list_sweeps_at_most_hourly():
+    client, core, _, deps = setup()
+    _record(core, "a" * 32, state="Applied", completedAt="2000-01-02T00:00:00+00:00")
+    assert client.get("/api/intelligence/actions").json()["items"] == []
+    _record(core, "b" * 32, state="Applied", completedAt="2000-01-02T00:00:00+00:00")
+    assert len(client.get("/api/intelligence/actions").json()["items"]) == 1

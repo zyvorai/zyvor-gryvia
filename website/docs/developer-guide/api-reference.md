@@ -177,7 +177,8 @@ operation lifecycle: [workload intelligence](https://github.com/zyvorai/gryvia/b
 | `GET /api/intelligence/jobs/{name}/explain` | any (scoped) | Job conditions and real pod scheduling failures |
 | `GET /api/intelligence/jobs/{name}/economics` | any (scoped) | Usage-record cost estimate joined by job UID; rejects mixed currencies |
 | `GET /api/intelligence/inventory` | admin | Registered GPU capacity; free capacity is reported as unknown |
-| `GET/POST /api/intelligence/actions`, `GET /api/intelligence/actions/{id}` | admin, OIDC only | List, create and inspect operation proposals. 503 unless `apiGateway.intelligenceActions` is on |
+| `GET/POST /api/intelligence/actions`, `GET /api/intelligence/actions/{id}` | admin, OIDC only | List (paged with `limit` and `continue`), create and inspect operation proposals. 503 unless `apiGateway.intelligenceActions` is on |
+| `GET /api/intelligence/actions/export`, `POST /api/intelligence/actions/sweep` | admin, OIDC only | Export up to 10,000 records; delete finished records older than `apiGateway.intelligenceRetentionDays` now (also runs hourly) |
 | `POST /api/intelligence/actions/{id}/{approve,reject,execute,rollback}` | admin, OIDC only | Lifecycle transition; the proposer cannot review, execute or roll back their own operation |
 
 Operations cover inference replicas, `GryviaQuota` GPU limits and node cordon only. Shared API keys and dashboard key
@@ -209,7 +210,7 @@ Gateway environment variables (chart values in parentheses): `GRYVIA_API_KEY` (`
 (`apiGateway.oidc.legacyNamespaces`), `GRYVIA_JOB_NAMESPACE`, `PROMETHEUS_URL` (`apiGateway.prometheusUrl`),
 `GRYVIA_COLLECTOR_URLS`, `GRYVIA_FLIGHT_TOKEN` (`apiGateway.flightTokenSecret`), `GRYVIA_FLIGHT_COLLECTOR_NAMESPACE`,
 `GRYVIA_NETRA_URL` / `GRYVIA_NETRA_TOKEN` / `GRYVIA_NETRA_INSECURE` (`apiGateway.netra.*`),
-`GRYVIA_INTELLIGENCE_ACTIONS` (`apiGateway.intelligenceActions`), `CORS_ALLOWED_ORIGINS`,
+`GRYVIA_INTELLIGENCE_ACTIONS` (`apiGateway.intelligenceActions`), `GRYVIA_INTELLIGENCE_RETENTION_DAYS` (`apiGateway.intelligenceRetentionDays`), `CORS_ALLOWED_ORIGINS`,
 `HTTP_TIMEOUT_SECONDS`.
 
 ## Support

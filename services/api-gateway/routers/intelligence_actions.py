@@ -9,8 +9,9 @@ there is no automatic replay of an uncertain write.
 from datetime import datetime, timedelta, timezone
 import json
 import uuid
+from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Request
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request
 from kubernetes.client.exceptions import ApiException
 from pydantic import Field, model_validator
 
@@ -242,9 +243,87 @@ def unexpired(data):
         raise HTTPException(status_code=409, detail="operation expired; create a fresh proposal")
 
 
+TERMINAL = {"Rejected", "Applied", "RolledBack"}
+EXPORT_LIMIT = 10000
+SWEEP_INTERVAL = timedelta(hours=1)
+
+
+def finished_at(data):
+    """When a record stopped changing, or None while it can still change (never for uncertain writes)."""
+    state = data.get("state")
+    if state in TERMINAL:
+        stamp = data.get("completedAt") or data.get("reviewedAt") or data.get("createdAt")
+    elif state == "Proposed" or state == "Approved":
+        stamp = data.get("expiresAt")
+    else:
+        return None
+    try:
+        return datetime.fromisoformat(stamp)
+    except (TypeError, ValueError):
+        return None
+
+
+def sweepable(data, now, retention_days):
+    if retention_days <= 0:
+        return False
+    done = finished_at(data)
+    if done is None or (data.get("state") in ("Proposed", "Approved") and done > now):
+        return False
+    return now - done >= timedelta(days=retention_days)
+
+
+async def list_page(deps, limit, token=None):
+    kwargs = {"label_selector": f"{LABEL}=true", "limit": limit}
+    if token:
+        kwargs["_continue"] = token
+    try:
+        result = await run(deps.k8s_core.list_namespaced_config_map, deps.job_namespace, **kwargs)
+    except ApiException as exc:
+        raise HTTPException(
+            status_code=410 if exc.status == 410 else 503, detail="operation records unavailable"
+        ) from exc
+    return result.items, getattr(result.metadata, "_continue", None) or None
+
+
+async def all_records(deps, cap=EXPORT_LIMIT):
+    out, token = [], None
+    while True:
+        items, token = await list_page(deps, min(500, cap), token)
+        out.extend(items)
+        if not token or len(out) >= cap:
+            return out[:cap], bool(token)
+
+
+async def sweep(deps, now=None):
+    """Delete terminal or expired records older than the retention window. Uncertain writes are kept."""
+    now = now or datetime.now(timezone.utc)
+    deleted = 0
+    records, _ = await all_records(deps)
+    for cm in records:
+        try:
+            data = serialize(cm)
+        except HTTPException:
+            continue
+        if not sweepable(data, now, deps.intelligence_retention_days):
+            continue
+        try:
+            await run(
+                deps.k8s_core.delete_namespaced_config_map,
+                cm.metadata.name,
+                deps.job_namespace,
+                body={"preconditions": {"resourceVersion": cm.metadata.resource_version}},
+            )
+            deleted += 1
+        except ApiException as exc:
+            if exc.status not in (404, 409):
+                raise HTTPException(status_code=503, detail="could not delete an operation record") from exc
+    return deleted
+
+
 def build_router(deps: Deps) -> APIRouter:
     router = APIRouter(route_class=BoundedRoute, dependencies=[Depends(deps.verify_auth), Depends(require_admin)])
     OperationID = Path(pattern=ID_PATTERN, min_length=32, max_length=32)
+    last_sweep = {"at": None}
 
     @router.post("/api/intelligence/actions", status_code=201)
     @deps.limiter.limit("10/minute")
@@ -253,16 +332,51 @@ def build_router(deps: Deps) -> APIRouter:
 
     @router.get("/api/intelligence/actions")
     @deps.limiter.limit("30/minute")
-    async def actions(request: Request):
+    async def actions(
+        request: Request,
+        limit: int = Query(100, ge=1, le=500),
+        cont: Optional[str] = Query(None, alias="continue", max_length=4096),
+    ):
         enabled(deps)
         actor(request)
-        result = await run(
-            deps.k8s_core.list_namespaced_config_map, deps.job_namespace, label_selector=f"{LABEL}=true", limit=100
-        )
-        return {
-            "items": [serialize(cm) for cm in result.items],
-            "truncated": bool(getattr(result.metadata, "_continue", None)),
-        }
+        now = datetime.now(timezone.utc)
+        if deps.intelligence_retention_days > 0 and (
+            last_sweep["at"] is None or now - last_sweep["at"] >= SWEEP_INTERVAL
+        ):
+            last_sweep["at"] = now
+            try:
+                await sweep(deps, now)
+            except HTTPException:
+                pass  # retention is best effort; listing must not fail because of it
+        items, token = await list_page(deps, limit, cont)
+        return {"items": [serialize(cm) for cm in items], "continue": token, "truncated": bool(token)}
+
+    @router.get("/api/intelligence/actions/export")
+    @deps.limiter.limit("5/minute")
+    async def export(request: Request):
+        enabled(deps)
+        actor(request)
+        records, truncated = await all_records(deps)
+        items = []
+        for cm in records:
+            try:
+                items.append(serialize(cm))
+            except HTTPException:
+                continue
+        return {"items": items, "truncated": truncated, "exportedAt": datetime.now(timezone.utc).isoformat()}
+
+    @router.post("/api/intelligence/actions/sweep")
+    @deps.limiter.limit("5/minute")
+    async def sweep_now(request: Request):
+        enabled(deps)
+        actor(request)
+        if deps.intelligence_retention_days <= 0:
+            raise HTTPException(
+                status_code=409, detail="retention is disabled (apiGateway.intelligenceRetentionDays=0)"
+            )
+        deleted = await sweep(deps)
+        last_sweep["at"] = datetime.now(timezone.utc)
+        return {"deleted": deleted, "retentionDays": deps.intelligence_retention_days}
 
     @router.get("/api/intelligence/actions/{ident}")
     @deps.limiter.limit("30/minute")
