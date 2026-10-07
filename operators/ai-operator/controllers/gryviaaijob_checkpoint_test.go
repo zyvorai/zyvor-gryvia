@@ -160,7 +160,9 @@ func TestNodeLossReplacesPodsAfterGrace(t *testing.T) {
 func TestNodeLossLeavesElasticAndNonAutoRestoreJobsAlone(t *testing.T) {
 	now := time.Now()
 	for name, mutate := range map[string]func(*gryviav1.GryviaAIJob, *gryviav1.GryviaCheckpointGuard){
-		"elastic":        func(j *gryviav1.GryviaAIJob, g *gryviav1.GryviaCheckpointGuard) { j.Spec.Distributed.Elastic = &gryviav1.ElasticConfig{MinNodes: 1} },
+		"elastic": func(j *gryviav1.GryviaAIJob, g *gryviav1.GryviaCheckpointGuard) {
+			j.Spec.Distributed.Elastic = &gryviav1.ElasticConfig{MinNodes: 1}
+		},
 		"no autoRestore": func(j *gryviav1.GryviaAIJob, g *gryviav1.GryviaCheckpointGuard) { g.Spec.Restore.AutoRestore = false },
 	} {
 		job, guard := runningGuardedJob(), guardFor(nil)
@@ -175,4 +177,3 @@ func TestNodeLossLeavesElasticAndNonAutoRestoreJobsAlone(t *testing.T) {
 		}
 	}
 }
-
