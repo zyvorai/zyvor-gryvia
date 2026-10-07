@@ -228,7 +228,9 @@ func (r *GryviaInferenceServiceReconciler) reconcileService(ctx context.Context,
 		return ctrl.Result{RequeueAfter: 15 * time.Second}, err
 	}
 	// At zero the HPA is left as it is: it does not scale a Deployment with 0 replicas.
+	var sloWait time.Duration
 	if !atZero {
+		sloWait = r.reconcileSLO(ctx, svc, primary, clock(r.Clock))
 		if err := r.reconcileHPA(ctx, svc); err != nil {
 			return ctrl.Result{RequeueAfter: 15 * time.Second}, err
 		}
@@ -237,6 +239,9 @@ func (r *GryviaInferenceServiceReconciler) reconcileService(ctx context.Context,
 	next := 30 * time.Second
 	if idleWait > 0 {
 		next = minDuration(next, idleWait)
+	}
+	if sloWait > 0 {
+		next = minDuration(next, sloWait)
 	}
 	canaryWait, err := r.reconcileCanary(ctx, svc, primary, model)
 	if err != nil {
@@ -550,8 +555,15 @@ func (r *GryviaInferenceServiceReconciler) buildDeployment(svc *gryviav1.GryviaI
 		nodeSelector = map[string]string{"gryvia.io/gpu": svc.Spec.GPUType}
 	}
 
+	podLabels := selector
+	if sloActive(svc) {
+		podLabels = map[string]string{labelJob: sloMetricsJob(svc)}
+		for k, v := range selector {
+			podLabels[k] = v
+		}
+	}
 	template := corev1.PodTemplateSpec{
-		ObjectMeta: metav1.ObjectMeta{Labels: selector},
+		ObjectMeta: metav1.ObjectMeta{Labels: podLabels},
 		Spec: corev1.PodSpec{
 			Containers:                   []corev1.Container{container},
 			Volumes:                      volumes,
@@ -697,7 +709,7 @@ func (r *GryviaInferenceServiceReconciler) reconcileHPA(ctx context.Context, svc
 	reportHPAMetricStatus(svc, existing, exists)
 	spec := autoscalingv2.HorizontalPodAutoscalerSpec{
 		ScaleTargetRef: autoscalingv2.CrossVersionObjectReference{APIVersion: "apps/v1", Kind: "Deployment", Name: inferPrimaryName(svc)},
-		MinReplicas:    &lo,
+		MinReplicas:    int32Ptr(sloFloor(svc, lo, hi)),
 		MaxReplicas:    hi,
 		Metrics:        metricSpecs,
 		Behavior: &autoscalingv2.HorizontalPodAutoscalerBehavior{

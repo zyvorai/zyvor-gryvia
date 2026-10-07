@@ -64,6 +64,80 @@ type GryviaInferenceServiceSpec struct {
 	// gateway receives a request for it. Only traffic through the gateway counts and wakes it: callers of
 	// status.endpoint get no activator. Not supported together with an enabled canary.
 	ScaleToZero *ScaleToZeroConfig `json:"scaleToZero,omitempty"`
+
+	// SLO keeps latency and error objectives by raising the HPA's minimum replicas while an objective is breached
+	// and the engine is overloaded, and lowering it again after a run of healthy windows. Needs autoscaling
+	// enabled and the operator's inference Prometheus URL; not used together with scale-to-zero.
+	// +optional
+	SLO *InferenceSLO `json:"slo,omitempty"`
+}
+
+// InferenceSLO is a service-level objective for the stable track. At least one objective is required.
+type InferenceSLO struct {
+	// Enabled turns SLO control on.
+	Enabled bool `json:"enabled"`
+
+	// MaxTTFTMilliseconds is the objective for the worst replica's p99 time to first token (engine metrics read by
+	// the collector, gryvia_inference_latency_seconds{metric="ttft_p99"}).
+	// +kubebuilder:validation:Minimum=1
+	// +optional
+	MaxTTFTMilliseconds int32 `json:"maxTTFTMilliseconds,omitempty"`
+
+	// MaxInterTokenMilliseconds is the objective for the worst replica's p99 inter-token latency.
+	// +kubebuilder:validation:Minimum=1
+	// +optional
+	MaxInterTokenMilliseconds int32 `json:"maxInterTokenMilliseconds,omitempty"`
+
+	// MaxErrorRate is the objective for the stable track's error ratio (serving sidecar counters), 0 to 1.
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=1
+	// +optional
+	MaxErrorRate *float64 `json:"maxErrorRate,omitempty"`
+
+	// MinRequests in a window before it is evaluated. Default 100.
+	// +kubebuilder:validation:Minimum=1
+	// +optional
+	MinRequests int32 `json:"minRequests,omitempty"`
+
+	// WindowSeconds is the evaluation window and interval. Default 60.
+	// +kubebuilder:validation:Minimum=30
+	// +kubebuilder:validation:Maximum=600
+	// +optional
+	WindowSeconds int32 `json:"windowSeconds,omitempty"`
+
+	// ScaleUpStep is how many replicas the floor rises per breached, overloaded window. Default 1.
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=10
+	// +optional
+	ScaleUpStep int32 `json:"scaleUpStep,omitempty"`
+
+	// ScaleDownAfterWindows is how many consecutive healthy windows lower the floor by one. Default 10.
+	// +kubebuilder:validation:Minimum=3
+	// +kubebuilder:validation:Maximum=1000
+	// +optional
+	ScaleDownAfterWindows int32 `json:"scaleDownAfterWindows,omitempty"`
+
+	// MetricsJob is the job label the collector uses for this service's engine metrics. Default: the service name
+	// (pods of an SLO-controlled service carry gryvia.io/job=<name>, which the collector's discovery uses).
+	// +kubebuilder:validation:MaxLength=63
+	// +optional
+	MetricsJob string `json:"metricsJob,omitempty"`
+}
+
+// InferenceSLOStatus reports SLO control.
+type InferenceSLOStatus struct {
+	// State is Healthy, Breached, ScaledUp, ScaledDown, InsufficientTraffic or Unknown.
+	State string `json:"state,omitempty"`
+	// FloorReplicas is the HPA minimum the SLO controller currently sets (0 while it sets none).
+	FloorReplicas int32 `json:"floorReplicas,omitempty"`
+	// HealthyWindows is the run of consecutive healthy windows.
+	HealthyWindows int32 `json:"healthyWindows,omitempty"`
+	// Breaches counts breached windows since SLO control was enabled.
+	Breaches int32 `json:"breaches,omitempty"`
+	// LastEvaluated is when the last window was evaluated.
+	LastEvaluated *metav1.Time `json:"lastEvaluated,omitempty"`
+	// Message explains the last decision with the measured values.
+	Message string `json:"message,omitempty"`
 }
 
 // ScaleToZeroConfig configures idle scale-down.
@@ -198,6 +272,9 @@ type GryviaInferenceServiceStatus struct {
 	// LastWakeAt is when the service was last woken (scaled up from zero, or a wake request while running), or when
 	// scale-to-zero was turned on; the idle period is counted from it or from the last request, whichever is later.
 	LastWakeAt *metav1.Time `json:"lastWakeAt,omitempty"`
+
+	// SLO reports SLO control (spec.slo).
+	SLO *InferenceSLOStatus `json:"slo,omitempty"`
 }
 
 // CanaryStatus holds the observed state of a canary deployment
