@@ -86,7 +86,9 @@ spec:
                     description: StorageClass is the storage class for cache PVCs
                     type: string
                   warmup:
-                    description: Warmup enables pre-loading cache on first access
+                    description: |-
+                      Warmup starts the spec.placement replica downloads together with the primary download instead of after it
+                      completes. Replicas are still only marked verified once the primary copy's digest is known.
                     type: boolean
                 type: object
               description:
@@ -101,6 +103,54 @@ spec:
                   Empty uses the storage-operator's --dataset-namespace.
                 pattern: ^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$
                 type: string
+              placement:
+                description: |-
+                  Placement keeps an extra copy of the current version in each listed node pool, so jobs in that pool read
+                  local data. Each copy is its own PVC, filled by a download Job pinned to the pool, and is verified
+                  against the primary copy's digest.
+                properties:
+                  accessMode:
+                    description: |-
+                      AccessMode of the replica PVCs. ReadWriteOnce (default) volumes can only be mounted by pods on one node, so
+                      jobs mount a ReadWriteOnce replica only when they run on a single node; ReadOnlyMany or ReadWriteMany
+                      replicas are mounted by multi-node jobs too.
+                    enum:
+                    - ReadWriteOnce
+                    - ReadOnlyMany
+                    - ReadWriteMany
+                    type: string
+                  pools:
+                    description: Pools each get one replica.
+                    items:
+                      description: DatasetPool is a set of nodes that shares one replica.
+                      properties:
+                        name:
+                          description: Name identifies the pool (part of the replica
+                            PVC name).
+                          pattern: ^[a-z0-9]([-a-z0-9]{0,22}[a-z0-9])?$
+                          type: string
+                        nodeSelector:
+                          additionalProperties:
+                            type: string
+                          description: NodeSelector picks the pool's nodes (for example
+                            topology.kubernetes.io/zone or gryvia.io/rack).
+                          minProperties: 1
+                          type: object
+                      required:
+                      - name
+                      - nodeSelector
+                      type: object
+                    maxItems: 16
+                    minItems: 1
+                    type: array
+                  storageClass:
+                    description: |-
+                      StorageClass for the replica PVCs; a node-local class with volumeBindingMode WaitForFirstConsumer binds each
+                      replica inside its pool. Default: spec.cache.storageClass, then the cluster default.
+                    type: string
+                required:
+                - pools
+                type: object
               source:
                 description: Source defines the data source
                 properties:
@@ -307,6 +357,56 @@ spec:
                 type: string
               pvcName:
                 type: string
+              replicas:
+                description: Replicas reports the spec.placement copies, one per pool.
+                items:
+                  description: DatasetReplica is the state of one pool's copy.
+                  properties:
+                    accessMode:
+                      type: string
+                    bytes:
+                      format: int64
+                      type: integer
+                    digest:
+                      description: Digest is the sha256 over the replica's files,
+                        computed like the primary copy's checksum.
+                      type: string
+                    files:
+                      format: int64
+                      type: integer
+                    lastSynced:
+                      description: LastSynced is when the replica last finished a
+                        download.
+                      format: date-time
+                      type: string
+                    message:
+                      type: string
+                    nodeSelector:
+                      additionalProperties:
+                        type: string
+                      type: object
+                    pool:
+                      type: string
+                    pvcName:
+                      type: string
+                    ready:
+                      description: Ready is true once the replica holds the current
+                        version; Verified once its digest equals the primary's.
+                      type: boolean
+                    sourceHash:
+                      type: string
+                    verified:
+                      type: boolean
+                    version:
+                      description: Version is the version directory (PVC SubPath)
+                        the replica holds; SourceHash the source it came from.
+                      type: string
+                  required:
+                  - pool
+                  - ready
+                  - verified
+                  type: object
+                type: array
               sourceHash:
                 description: SourceHash identifies the source and version the current
                   data was materialized from.

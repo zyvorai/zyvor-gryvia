@@ -237,6 +237,11 @@ func (r *GryviaAIJobReconciler) reconcileAIJob(ctx context.Context, job *gryviav
 	if job.Status.Phase == PhasePending || (job.Status.Phase == PhaseScheduling && !conditionTrue(job, ConditionScheduled)) {
 		log.Info("Scheduling AI job")
 		job.Status.Phase = PhaseScheduling
+		dsBind, dsLocal, dsNamespace := r.datasetLocality(ctx, job)
+		var dsSelectors []map[string]string
+		if dsBind != nil {
+			dsSelectors = dsBind.NodeSelectors
+		}
 
 		if queueManaged {
 			// Free capacity is Kueue's decision. Checking it here prevents occupied GPUs
@@ -244,6 +249,7 @@ func (r *GryviaAIJobReconciler) reconcileAIJob(ctx context.Context, job *gryviav
 			job.Status.NodesAllocated = nil
 			job.Status.PlacementExplanation = nil
 			job.Status.GpusAllocated = 0
+			r.bindDataset(ctx, job, dsBind, dsLocal, dsNamespace, nil)
 			r.updateCondition(job, ConditionScheduled, metav1.ConditionTrue, "QueueManaged", "Placement delegated to Kueue and kube-scheduler")
 			if err := r.Status().Update(ctx, job); err != nil {
 				return ctrl.Result{}, err
@@ -251,6 +257,7 @@ func (r *GryviaAIJobReconciler) reconcileAIJob(ctx context.Context, job *gryviav
 		} else if gpusPerPod == 0 {
 			// CPU-only job: there is no GPU placement to advise on.
 			job.Status.GpusAllocated = 0
+			r.bindDataset(ctx, job, dsBind, dsLocal, dsNamespace, nil)
 			r.updateCondition(job, ConditionScheduled, metav1.ConditionTrue, "CPUOnly", "CPU-only job: no GPU placement needed")
 			if err := r.Status().Update(ctx, job); err != nil {
 				return ctrl.Result{}, err
@@ -260,9 +267,10 @@ func (r *GryviaAIJobReconciler) reconcileAIJob(ctx context.Context, job *gryviav
 			var nodes []string
 			var err error
 			held := r.placementHeld(job) // GPUs other jobs hold and have not bound yet (nil when off)
+			schedCtx := scheduler.WithPreferredPools(ctx, dsSelectors)
 			if scheduler.FabricEnabled(job, r.FabricAware) {
 				var p scheduler.Placement
-				p, err = scheduler.FindOptimalNodesFabricHeld(ctx, r.Client, job, scheduler.FabricOptions{
+				p, err = scheduler.FindOptimalNodesFabricHeld(schedCtx, r.Client, job, scheduler.FabricOptions{
 					MaxPenalty: r.FabricMaxPenalty,
 					OnError: func(e error) {
 						log.Info("fabric-aware scheduling: node signals unavailable, ranking unchanged", "reason", e.Error())
@@ -274,7 +282,7 @@ func (r *GryviaAIJobReconciler) reconcileAIJob(ctx context.Context, job *gryviav
 					r.recordFabricPlacement(job, p)
 				}
 			} else {
-				nodes, err = scheduler.FindOptimalNodesHeld(ctx, r.Client, job, held)
+				nodes, err = scheduler.FindOptimalNodesHeld(schedCtx, r.Client, job, held)
 			}
 			if err != nil {
 				log.Error(err, "Failed to schedule job")
@@ -288,6 +296,7 @@ func (r *GryviaAIJobReconciler) reconcileAIJob(ctx context.Context, job *gryviav
 
 			job.Status.NodesAllocated = nodes
 			job.Status.GpusAllocated = job.Spec.GPUs
+			r.bindDataset(ctx, job, dsBind, dsLocal, dsNamespace, nodes)
 			r.holdPlacement(job, nodes)
 			r.updateCondition(job, ConditionScheduled, metav1.ConditionTrue, "Scheduled", "Job scheduled successfully")
 
@@ -666,6 +675,7 @@ func (r *GryviaAIJobReconciler) buildPodTemplate(job *gryviav1.GryviaAIJob, labe
 	}
 
 	applyRecoveryOptions(job, &podSpec)
+	datasetPodSpec(job, &podSpec)
 	r.applyReservation(job, &podSpec) // gryvia.io/reservation: toleration + nodeSelector (gryviaaijob_reservation.go)
 
 	return corev1.PodTemplateSpec{

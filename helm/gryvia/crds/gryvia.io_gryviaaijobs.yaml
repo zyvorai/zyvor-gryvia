@@ -3498,6 +3498,43 @@ spec:
                   - type
                   type: object
                 type: array
+              dataset:
+                description: |-
+                  Dataset records how the dataset named by the gryvia.io/dataset annotation was placed, decided once when the
+                  job is scheduled.
+                properties:
+                  localPools:
+                    description: LocalPools are the dataset's pools holding a ready,
+                      verified replica; nodes in them are preferred.
+                    items:
+                      type: string
+                    type: array
+                  message:
+                    description: Message explains the decision (why the replica is
+                      not mounted, for example).
+                    type: string
+                  name:
+                    description: Name of the GryviaDataset.
+                    type: string
+                  nodeSelectors:
+                    description: NodeSelectors of the local pools, used for the preferred
+                      node affinity.
+                    items:
+                      additionalProperties:
+                        type: string
+                      type: object
+                    type: array
+                  pool:
+                    description: Pool, PVCName and SubPath locate the replica mounted
+                      read-only at /datasets/<name> (empty when not mounted).
+                    type: string
+                  pvcName:
+                    type: string
+                  subPath:
+                    type: string
+                required:
+                - name
+                type: object
               gpusAllocated:
                 description: GPUs allocated
                 format: int32
