@@ -28,6 +28,8 @@ CLUSTER_SCOPED = frozenset({
     "gryvianetworkrates",
     "gryviagpusharingpolicies",
     "gryviahealthchecks",
+    "gryviainvoices",
+    "gryvialedgerentries",
     "gryvianetworks",
     "gryviapriorities",
     "gryviaquotas",

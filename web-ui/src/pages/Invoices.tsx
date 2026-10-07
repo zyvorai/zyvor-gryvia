@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router-dom'
 import { api } from '@/lib/api'
 import { notify } from '@/lib/notify'
@@ -7,9 +7,10 @@ import { useIsAdmin } from '@/lib/useRole'
 import { saveBlob } from '@/lib/download'
 import { formatNumber } from '@/lib/format'
 import { formatRate } from '@/lib/cloud'
-import { classLabel, formatMoney, invoiceFilename, networkRateDisplay, invoiceParams, invoiceTotalDisplay, invoiceTotalLabel, monthLabel, parseMonth, periodLabel, type Invoice } from '@/lib/invoices'
+import { classLabel, formatMoney, invoiceActions, invoiceBadge, invoiceFilename, voidReasonError, networkRateDisplay, invoiceParams, invoiceTotalDisplay, invoiceTotalLabel, monthLabel, parseMonth, periodLabel, type Invoice } from '@/lib/invoices'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 import PageHero from '@/components/PageHero'
+import ConfirmDialog from '@/components/ConfirmDialog'
 import { EmptyState, ErrorState, Skeleton } from '@/components/StateViews'
 
 export default function Invoices() {
@@ -19,6 +20,10 @@ export default function Invoices() {
   const month = useMemo(() => parseMonth(params.get('month')), [params])
   const tenant = admin ? (params.get('tenant') ?? '') : ''
   const [busy, setBusy] = useState<string | null>(null)
+  const [finalizing, setFinalizing] = useState<Invoice | null>(null)
+  const [voiding, setVoiding] = useState<Invoice | null>(null)
+  const [reason, setReason] = useState('')
+  const queryClient = useQueryClient()
 
   const setParam = (name: string, value: string) =>
     setParams(
@@ -36,6 +41,28 @@ export default function Invoices() {
     queryKey: ['invoices', month, tenant],
     queryFn: () => api.getInvoices(invoiceParams(month, tenant)),
   })
+
+  const finalize = useMutation({
+    mutationFn: (inv: Invoice) => api.finalizeInvoice(inv.tenant, month),
+    onSuccess: (inv) => {
+      notify.success(`Finalized ${inv.number}`)
+      setFinalizing(null)
+      return queryClient.invalidateQueries({ queryKey: ['invoices'] })
+    },
+    onError: (err) => notify.error('Could not finalize the invoice', err),
+  })
+  const voidInv = useMutation({
+    mutationFn: (inv: Invoice) => api.voidInvoice(inv.tenant, month, reason.trim()),
+    onSuccess: (inv) => {
+      notify.success(`Voided ${inv.number}`)
+      setVoiding(null)
+      setReason('')
+      return queryClient.invalidateQueries({ queryKey: ['invoices'] })
+    },
+    onError: (err) => notify.error('Could not void the invoice', err),
+  })
+  const reasonError = voidReasonError(reason)
+  const ledger = !!data?.billingLedger
 
   const download = async (inv: Invoice, format: 'csv' | 'json') => {
     const key = `${inv.number}:${format}`
@@ -55,7 +82,11 @@ export default function Invoices() {
       <PageHero
         eyebrow="Invoices"
         title={admin ? 'Invoices.' : 'Your invoices.'}
-        lede="Monthly statements built from job run time and the catalog rates. These are estimates, not bills; nothing is charged."
+        lede={
+          ledger
+            ? 'Monthly statements built from job run time and the catalog rates. A finalized invoice is frozen from the hash-chained billing ledger; until then it is an estimate.'
+            : 'Monthly statements built from job run time and the catalog rates. These are estimates, not bills; nothing is charged.'
+        }
       />
       <div className="grid">
         <section className="card span3">
@@ -94,15 +125,21 @@ export default function Invoices() {
             <EmptyState title={`No usage in ${monthLabel(month)}`}>Invoices appear here once jobs have run in the selected month.</EmptyState>
           </div>
         ) : (
-          (data?.items ?? []).map((inv) => (
+          (data?.items ?? []).map((inv) => {
+            const badge = invoiceBadge(inv.status)
+            const actions = invoiceActions(inv, { admin, ledger })
+            return (
             <section key={inv.number} className="card span3" aria-labelledby={`inv-${inv.number}`}>
               <p className="eyebrow">{periodLabel(inv.period)}</p>
               <h2 className="card-title" id={`inv-${inv.number}`}>
                 <span className="mono">{inv.number}</span> · {inv.tenant}
               </h2>
               <p>
-                <span className="pill">Estimate</span> <span className="faint">{inv.currency}</span>
+                <span className={badge.tone ? `pill ${badge.tone}` : 'pill'}>{badge.label}</span> <span className="faint">{inv.currency}</span>
                 {inv.open && <span className="faint"> Includes running jobs; the amount can still change.</span>}
+                {inv.finalizedAt && <span className="faint"> Finalized {inv.finalizedAt.slice(0, 10)}{inv.finalizedBy ? ` by ${inv.finalizedBy}` : ''}.</span>}
+                {inv.paidAt && <span className="faint"> Paid {inv.paidAt.slice(0, 10)}.</span>}
+                {inv.ledger && inv.ledger.entries > 0 && <span className="faint"> Ledger entries {inv.ledger.firstSequence}–{inv.ledger.lastSequence}.</span>}
               </p>
               <div className="table-wrap">
                 <table>
@@ -182,11 +219,55 @@ export default function Invoices() {
                     {busy === `${inv.number}:${f}` ? 'Downloading…' : `Download ${f.toUpperCase()}`}
                   </button>
                 ))}
+                {actions.finalize && (
+                  <button type="button" className="primary" onClick={() => setFinalizing(inv)} disabled={finalize.isPending}>
+                    Finalize
+                  </button>
+                )}
+                {actions.void && (
+                  <button type="button" className="danger" onClick={() => setVoiding(inv)} disabled={voidInv.isPending}>
+                    Void
+                  </button>
+                )}
               </div>
             </section>
-          ))
+            )
+          })
         )}
       </div>
+      {finalizing && (
+        <ConfirmDialog
+          title={`Finalize ${finalizing.tenant}, ${monthLabel(month)}?`}
+          confirmLabel="Finalize invoice"
+          tone="primary"
+          busy={finalize.isPending}
+          onCancel={() => setFinalizing(null)}
+          onConfirm={() => finalize.mutate(finalizing)}
+        >
+          The lines are rebuilt from the billing ledger and frozen under the tenant&apos;s next invoice number. A finalized invoice cannot be edited or deleted, only voided.
+        </ConfirmDialog>
+      )}
+      {voiding && (
+        <ConfirmDialog
+          title={`Void ${voiding.number}?`}
+          confirmLabel="Void invoice"
+          busy={voidInv.isPending}
+          onCancel={() => {
+            setVoiding(null)
+            setReason('')
+          }}
+          onConfirm={() => {
+            if (!reasonError) voidInv.mutate(voiding)
+          }}
+        >
+          <p>The invoice is kept for audit with its number; the month can then be finalized again under a new number.</p>
+          <label>
+            Reason
+            <textarea value={reason} onChange={(e) => setReason(e.target.value)} maxLength={500} rows={3} aria-invalid={!!reasonError} aria-describedby="void-reason-error" />
+          </label>
+          {reasonError && <p id="void-reason-error" className="faint">{reasonError}</p>}
+        </ConfirmDialog>
+      )}
     </>
   )
 }

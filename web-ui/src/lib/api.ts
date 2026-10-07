@@ -11,7 +11,7 @@ import type { Reservation, ReservationBody } from '@/lib/reservations'
 import type { Budget } from '@/lib/budgets'
 import type { Experiment } from '@/lib/experiments'
 import type { Sku, SkuBody, TenantResource, CreateTenantBody, UsageReport } from '@/lib/cloud'
-import type { InvoiceReport } from '@/lib/invoices'
+import type { Invoice, InvoiceReport } from '@/lib/invoices'
 import type { ModelWatch, ModelWatchRun } from '@/lib/modelWatches'
 import type { Dataset } from '@/lib/datasets'
 import type { CreatedLlmKey, LlmKey, LlmModels, LlmUsage } from '@/lib/llm'
@@ -835,6 +835,18 @@ export const api = {
 
   getInvoices: async (params: Record<string, string>): Promise<InvoiceReport> => {
     const { data } = await apiClient.get('/invoices', { params })
+    return data
+  },
+
+  /** Freeze a closed month into a numbered GryviaInvoice from the billing ledger (admin). */
+  finalizeInvoice: async (tenant: string, month: string): Promise<Invoice> => {
+    const { data } = await apiClient.post(`/invoices/${encodeURIComponent(tenant)}/${encodeURIComponent(month)}/finalize`)
+    return data
+  },
+
+  /** Void a finalized invoice; it is kept for audit and the month can be finalized again (admin). */
+  voidInvoice: async (tenant: string, month: string, reason: string): Promise<Invoice> => {
+    const { data } = await apiClient.post(`/invoices/${encodeURIComponent(tenant)}/${encodeURIComponent(month)}/void`, { reason })
     return data
   },
 

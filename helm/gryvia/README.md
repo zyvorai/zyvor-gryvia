@@ -139,6 +139,8 @@ Off by default unless noted. None of them has been run on real GPUs or fabrics; 
 | `aiOperator.preflightEnforce` | Reject Pending jobs whose preflight annotations (`gryvia.io/model-params-billions` and friends) fit no node pool; the webhook warns either way | [workload-intelligence](../../docs/workload-intelligence.md#submit-time-preflight) |
 | `apiGateway.intelligenceActions` | Two-person approved operations (inference replicas, quota GPU limit, node cordon) for named OIDC admins. Grants the gateway node and `GryviaQuota` patch, and a Role for operation ConfigMaps in its own namespace. `apiGateway.intelligenceRetentionDays` (default 30, `0` keeps all) deletes finished records | [workload-intelligence](../../docs/workload-intelligence.md#approved-operations) |
 | `quotaOperator.usageRecordWebhook.enabled` | **On by default.** Sealed usage records cannot be edited | above |
+| `billing.ledger.enabled` | Append-only hash-chained `GryviaLedgerEntry` per sealed usage record (`--billing-ledger`), finalize/void of `GryviaInvoice` in the gateway, webhook rules that block editing or deleting ledger entries, non-Draft invoices and sealed usage records. Needs `webhook.enabled` and the usage-record webhook | [billing-ledger](../../docs/billing-ledger.md) |
+| `billing.stripe.secretName` | Secret with a Stripe **test-mode** key (`secretKeyKey`, default `secret-key`, must be `sk_test_...`) and webhook signing secret (`webhookSecretKey`, default `webhook-secret`); needs `billing.ledger.enabled` | [billing-ledger](../../docs/billing-ledger.md#stripe-test-mode-only) |
 
 ## Common settings
 

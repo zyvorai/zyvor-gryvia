@@ -18,8 +18,48 @@ export interface Invoice {
   networkLines?: NetworkLine[]
   networkSubtotal?: number
   networkNote?: string
+  /** Persisted GryviaInvoice name (billing ledger only). */
+  invoice?: string
+  finalizedAt?: string
+  finalizedBy?: string
+  paidAt?: string
+  voidedAt?: string
+  voidReason?: string
+  ledger?: { entries: number; firstSequence?: number; lastSequence?: number; headHash?: string }
+  payment?: { provider: string; invoiceID: string; hostedURL?: string; liveMode: boolean }
 }
-export interface InvoiceReport { month: string; items: Invoice[] }
+/** billingLedger: the gateway runs with the immutable ledger, so months can be finalized. */
+export interface InvoiceReport { month: string; items: Invoice[]; billingLedger?: boolean }
+
+export type InvoiceStatus = 'estimate' | 'finalized' | 'paid' | 'void'
+
+/** Badge text and pill tone for an invoice status. */
+export function invoiceBadge(status: string): { label: string; tone: string } {
+  switch (status) {
+    case 'finalized':
+      return { label: 'Finalized', tone: 'info' }
+    case 'paid':
+      return { label: 'Paid', tone: 'ok' }
+    case 'void':
+      return { label: 'Void', tone: 'warn' }
+    default:
+      return { label: 'Estimate', tone: '' }
+  }
+}
+
+/** Which ledger actions an invoice offers: finalize a closed estimate, void a finalized (unpaid) invoice. Admin only. */
+export function invoiceActions(inv: Pick<Invoice, 'status' | 'open'>, opts: { admin: boolean; ledger: boolean }): { finalize: boolean; void: boolean } {
+  if (!opts.admin || !opts.ledger) return { finalize: false, void: false }
+  return { finalize: inv.status === 'estimate' && !inv.open, void: inv.status === 'finalized' }
+}
+
+/** The gateway requires 3 to 500 characters. */
+export function voidReasonError(reason: string): string | null {
+  const r = reason.trim()
+  if (r.length < 3) return 'Give a reason of at least 3 characters.'
+  if (r.length > 500) return 'Keep the reason under 500 characters.'
+  return null
+}
 
 const MONTH_RE = /^(\d{4})-(0[1-9]|1[0-2])$/
 

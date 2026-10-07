@@ -1,6 +1,9 @@
 {{- if and .Values.aiOperator.kueueStrictAdmission (not .Values.aiOperator.kueueIntegration) }}
 {{- fail "aiOperator.kueueStrictAdmission requires aiOperator.kueueIntegration" }}
 {{- end }}
+{{- if and (dig "billing" "ledger" "enabled" false .Values.AsMap) (not (and .Values.webhook.enabled .Values.quotaOperator.enabled (dig "quotaOperator" "usageRecordWebhook" "enabled" nil .Values.AsMap))) }}
+{{- fail "billing.ledger.enabled requires webhook.enabled, quotaOperator.enabled and quotaOperator.usageRecordWebhook.enabled: the ledger and finalized invoices are only immutable behind the admission webhook" }}
+{{- end }}
 {{- /* One Deployment per enabled operator; they differ only in name, image and resources. */ -}}
 {{- $ops := dict "gpu-operator" .Values.gpuOperator "ai-operator" .Values.aiOperator "quota-operator" .Values.quotaOperator "storage-operator" .Values.storageOperator "network-operator" .Values.networkOperator -}}
 {{- range $name, $op := $ops }}
@@ -183,6 +186,9 @@ spec:
             {{- end }}
             {{- if and (eq $name "quota-operator") $.Values.quotaOperator.reservations }}
             - --enable-reservations=true
+            {{- end }}
+            {{- if and (eq $name "quota-operator") (dig "billing" "ledger" "enabled" false $.Values.AsMap) }}
+            - --billing-ledger=true
             {{- end }}
             {{- range $op.extraArgs }}
             - {{ . | quote }}

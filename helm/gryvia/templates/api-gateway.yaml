@@ -50,6 +50,22 @@ spec:
         - name: GRYVIA_INTELLIGENCE_RETENTION_DAYS
           value: {{ (dig "apiGateway" "intelligenceRetentionDays" 30 .Values.AsMap) | int | quote }}
         {{- end }}
+        {{- if (dig "billing" "ledger" "enabled" false .Values.AsMap) }}
+        - name: GRYVIA_BILLING_LEDGER
+          value: "1"
+        {{- with (dig "billing" "stripe" "secretName" "" .Values.AsMap) }}
+        - name: GRYVIA_STRIPE_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ . | quote }}
+              key: {{ (dig "billing" "stripe" "secretKeyKey" "secret-key" $.Values.AsMap) | quote }}
+        - name: GRYVIA_STRIPE_WEBHOOK_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: {{ . | quote }}
+              key: {{ (dig "billing" "stripe" "webhookSecretKey" "webhook-secret" $.Values.AsMap) | quote }}
+        {{- end }}
+        {{- end }}
         - name: GRYVIA_FLIGHT_COLLECTOR_NAMESPACE
           value: {{ .Values.apiGateway.flightCollectorNamespace | quote }}
         {{- if .Values.apiGateway.flightTokenSecret }}
@@ -360,6 +376,15 @@ rules:
 - apiGroups: [""]
   resources: ["events"]
   verbs: ["get", "list"]
+{{- if (dig "billing" "ledger" "enabled" false .Values.AsMap) }}
+# Billing ledger (read and verify only) and invoices (create Draft, finalize, void, mark paid; only Drafts can be deleted).
+- apiGroups: ["gryvia.io"]
+  resources: ["gryvialedgerentries"]
+  verbs: ["get", "list"]
+- apiGroups: ["gryvia.io"]
+  resources: ["gryviainvoices"]
+  verbs: ["get", "list", "create", "patch", "delete"]
+{{- end }}
 {{- if (dig "apiGateway" "intelligenceActions" false .Values.AsMap) }}
 # Opt-in typed operations only. Node mutation is cordon, never reset/reboot.
 - apiGroups: [""]

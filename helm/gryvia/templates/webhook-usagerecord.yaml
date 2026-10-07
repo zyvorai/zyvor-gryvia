@@ -1,6 +1,7 @@
 {{- if and .Values.webhook.enabled .Values.quotaOperator.enabled (dig "quotaOperator" "usageRecordWebhook" "enabled" nil .Values.AsMap) }}
 {{- /* Serving cert (own CA) for the quota-operator's GryviaUsageRecord webhook, minted once and reused on upgrades. */ -}}
 {{- $ns := include "gryvia.namespace" . }}
+{{- $ledger := dig "billing" "ledger" "enabled" false .Values.AsMap }}
 {{- $svc := include "gryvia.usageWebhookServiceName" . }}
 {{- $secretName := include "gryvia.usageWebhookSecretName" . }}
 {{- $existing := lookup "v1" "Secret" $ns $secretName }}
@@ -70,7 +71,7 @@ webhooks:
       - apiGroups: ["gryvia.io"]
         apiVersions: ["v1alpha1"]
         resources: ["gryviausagerecords"]
-        operations: ["UPDATE"]
+        operations: {{ if $ledger }}["UPDATE", "DELETE"]{{ else }}["UPDATE"]{{ end }}
         scope: Namespaced
     clientConfig:
       service:
@@ -79,4 +80,27 @@ webhooks:
         path: /validate-gryvia-io-v1alpha1-gryviausagerecord
         port: 443
       caBundle: {{ $ca }}
+{{- if $ledger }}
+{{- range $kind, $plural := dict "gryvialedgerentry" "gryvialedgerentries" "gryviainvoice" "gryviainvoices" }}
+  - name: v{{ $kind }}.gryvia.io
+    admissionReviewVersions: ["v1"]
+    sideEffects: None
+    failurePolicy: Fail
+    timeoutSeconds: {{ $.Values.webhook.timeoutSeconds }}
+    matchPolicy: Equivalent
+    rules:
+      - apiGroups: ["gryvia.io"]
+        apiVersions: ["v1alpha1"]
+        resources: [{{ $plural | quote }}]
+        operations: ["UPDATE", "DELETE"]
+        scope: Cluster
+    clientConfig:
+      service:
+        name: {{ $svc }}
+        namespace: {{ $ns }}
+        path: /validate-gryvia-io-v1alpha1-{{ $kind }}
+        port: 443
+      caBundle: {{ $ca }}
+{{- end }}
+{{- end }}
 {{- end }}

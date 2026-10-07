@@ -10,12 +10,12 @@ An alpha, Kubernetes-native platform for GPU workloads. What runs today:
 
 - A `GryviaAIJob` operator that selects GPU nodes and creates the StatefulSet, Service and PVC for a training or inference job
 - GPU node registration (`GryviaGpuNode`) from NVIDIA GPU feature discovery labels
-- Multi-tenancy: tenants, quotas, a GPU price catalog, per-job usage metering and estimate invoices
+- Multi-tenancy: tenants, quotas, a GPU price catalog, per-job usage metering and estimate invoices (opt-in: a hash-chained billing ledger, finalized invoices and Stripe test mode)
 - An admission webhook that checks jobs against quota and SKU policy
 - Storage and network operators, and network intelligence (eBPF collector, off by default)
 - A REST API gateway, a dashboard and a Rust CLI, plus Python and Go SDKs
 
-Workflows, tuners, workspaces, inference services and the model registry have controllers in the ai-operator (unit-tested; the kind e2e with tiny CPU images passes in CI; nothing on GPUs), budgets, chargeback and reservations have controllers in the quota-operator (reservations are opt-in), and Kueue-based queueing is opt-in. Of the 47 kinds, 43 have a controller (several opt-in); the other four are catalog or telemetry data that controllers read. The old auto-scaling, SLA and similar kinds without a runtime were removed.
+Workflows, tuners, workspaces, inference services and the model registry have controllers in the ai-operator (unit-tested; the kind e2e with tiny CPU images passes in CI; nothing on GPUs), budgets, chargeback and reservations have controllers in the quota-operator (reservations are opt-in), and Kueue-based queueing is opt-in. Of the 49 kinds, 43 have a controller (several opt-in); the other six are catalog, telemetry or billing-ledger data that controllers and the gateway write and read. The old auto-scaling, SLA and similar kinds without a runtime were removed.
 
 ### Who should use it?
 

@@ -44,7 +44,7 @@ func main() {
 	var kueueQuotaResources, kueueTopology, kueueAdmissionCheck string
 	var kueueFairSharing bool
 	var tenantRBAC, enableReservations bool
-	var enableWebhooks bool
+	var enableWebhooks, billingLedger bool
 	var webhookCertDir string
 	var budgetWebhookURL string
 	var slurmIntegration, slurmOversubscribe bool
@@ -87,6 +87,8 @@ func main() {
 		"POST every GryviaBudget threshold alert as JSON to this URL (https, or loopback). HMAC-SHA256 signed with the secret in the environment variable GRYVIA_BUDGET_WEBHOOK_SECRET when set. Delivery is at least once. Empty = Kubernetes Events only.")
 	flag.BoolVar(&enableWebhooks, "enable-webhooks", false,
 		"Serve the GryviaUsageRecord validating webhook that rejects spec changes once spec.final is true (needs TLS certs in --webhook-cert-dir).")
+	flag.BoolVar(&billingLedger, "billing-ledger", false,
+		"Append a hash-chained GryviaLedgerEntry for every sealed GryviaUsageRecord; with --enable-webhooks also reject edits and deletes of ledger entries, of non-Draft GryviaInvoices and deletes of sealed usage records.")
 	flag.StringVar(&webhookCertDir, "webhook-cert-dir", "/tmp/k8s-webhook-server/serving-certs",
 		"Directory holding tls.crt and tls.key for the webhook server.")
 
@@ -145,6 +147,16 @@ func main() {
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "GryviaUsageRecord")
 		os.Exit(1)
+	}
+	if billingLedger {
+		if err = (&controllers.GryviaLedgerReconciler{
+			Client: mgr.GetClient(),
+			Reader: mgr.GetAPIReader(),
+			Scheme: mgr.GetScheme(),
+		}).SetupWithManager(mgr); err != nil {
+			setupLog.Error(err, "unable to create controller", "controller", "GryviaLedger")
+			os.Exit(1)
+		}
 	}
 
 	if kueueIntegration {
@@ -230,8 +242,15 @@ func main() {
 
 	if enableWebhooks {
 		mgr.GetWebhookServer().Register(usageadmission.UsageRecordPath,
-			&admission.Webhook{Handler: usageadmission.NewUsageRecordHandler(mgr.GetScheme())})
+			&admission.Webhook{Handler: usageadmission.NewUsageRecordHandler(mgr.GetScheme(), billingLedger)})
 		setupLog.Info("registered validating webhook", "path", usageadmission.UsageRecordPath, "certDir", webhookCertDir)
+		if billingLedger {
+			mgr.GetWebhookServer().Register(usageadmission.LedgerEntryPath,
+				&admission.Webhook{Handler: usageadmission.NewLedgerEntryHandler(mgr.GetScheme())})
+			mgr.GetWebhookServer().Register(usageadmission.InvoicePath,
+				&admission.Webhook{Handler: usageadmission.NewInvoiceHandler(mgr.GetScheme())})
+			setupLog.Info("registered billing webhooks", "paths", []string{usageadmission.LedgerEntryPath, usageadmission.InvoicePath})
+		}
 	}
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
 		setupLog.Error(err, "unable to set up health check")

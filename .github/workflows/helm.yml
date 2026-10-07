@@ -9,6 +9,7 @@ on:
       - '.github/ct.yaml'
       - '.github/workflows/helm.yml'
       - 'scripts/tests/chart-reuse-values.test.sh'
+      - 'scripts/tests/billing-chart.test.sh'
   pull_request:
     branches: [ main ]
     paths:
@@ -17,6 +18,7 @@ on:
       - '.github/ct.yaml'
       - '.github/workflows/helm.yml'
       - 'scripts/tests/chart-reuse-values.test.sh'
+      - 'scripts/tests/billing-chart.test.sh'
   workflow_dispatch:
 
 permissions:
@@ -49,6 +51,9 @@ jobs:
 
       - name: Intelligence operations use opt-in writes and namespace-local records
         run: bash scripts/tests/intelligence-chart.test.sh
+
+      - name: Billing ledger is opt-in (flag, webhooks, RBAC and Stripe test-mode env only when enabled)
+        run: bash scripts/tests/billing-chart.test.sh
 
       - name: Kueue chart switches (default render has no Kueue, each switch adds only its own flag and RBAC)
         run: |

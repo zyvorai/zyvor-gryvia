@@ -133,8 +133,16 @@ Deployments and Services, workflows and tuners create child jobs, and registry e
 | `GET /api/invoices?month=YYYY-MM&tenant=` | tenant-filtered | Estimate invoices, one per tenant with usage in the month (default: current UTC month) |
 | `GET /api/invoices/{tenant}/{YYYY-MM}?format=json\|csv` | tenant-filtered | One invoice; 404 when the tenant has no usage that month (or is not yours) |
 
-Usage and invoices are **estimates** computed from job wall-clock time and the SKU rate. There is no payment
-processing, tax handling or capacity reservation.
+| `POST /api/invoices/{tenant}/{YYYY-MM}/finalize` | admin, billing ledger | Freeze a closed month into a numbered `GryviaInvoice` built from the ledger; 409 while records are open or not yet in the ledger, when the chain fails verification, or when already finalized |
+| `POST /api/invoices/{tenant}/{YYYY-MM}/void` | admin, billing ledger | Body `{"reason": "..."}`; voids a Finalized (not Paid) invoice, which is kept |
+| `GET /api/ledger/{tenant}/verify` | admin or own tenant, billing ledger | Recompute the tenant's hash chain: `{entries, valid, problems[], headSequence, headHash, hashVersion}` |
+| `POST /api/invoices/{tenant}/{YYYY-MM}/stripe` | admin, Stripe test mode | Create and finalize a Stripe invoice for a Finalized `GryviaInvoice`; stores `spec.payment` once |
+| `POST /api/billing/stripe/webhook` | Stripe signature | `invoice.paid` (test mode only) sets the matching invoice to Paid |
+
+Without the billing ledger, usage and invoices are **estimates** computed from job wall-clock time and the SKU rate.
+With `billing.ledger.enabled`, a finalized invoice is frozen from the hash-chained ledger and replaces the estimate;
+Stripe accepts test-mode keys only. There is no tax handling or capacity reservation. See
+[Billing ledger](https://github.com/zyvorai/zyvor-gryvia/blob/main/docs/billing-ledger.md).
 
 ## Network, security and GPU analysis (admin only)
 

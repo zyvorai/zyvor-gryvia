@@ -22,15 +22,25 @@ type UsageRecordHandler struct {
 }
 
 // NewUsageRecordHandler builds a handler that decodes with the given scheme,
-// which must have gryviav1 registered.
-func NewUsageRecordHandler(scheme *runtime.Scheme) *UsageRecordHandler {
-	return &UsageRecordHandler{decoder: admission.NewDecoder(scheme)}
+// which must have gryviav1 registered. blockSealedDelete also rejects deleting final records.
+func NewUsageRecordHandler(scheme *runtime.Scheme, blockSealedDelete bool) *UsageRecordHandler {
+	return &UsageRecordHandler{decoder: admission.NewDecoder(scheme), validator: UsageRecordValidator{BlockSealedDelete: blockSealedDelete}}
 }
 
-// Handle allows everything except an UPDATE that the validator rejects.
+// Handle allows everything except an UPDATE or DELETE that the validator rejects.
 func (h *UsageRecordHandler) Handle(_ context.Context, req admission.Request) admission.Response {
+	if req.Operation == admissionv1.Delete {
+		oldRec := &gryviav1.GryviaUsageRecord{}
+		if err := h.decoder.DecodeRaw(req.OldObject, oldRec); err != nil {
+			return admission.Errored(http.StatusBadRequest, fmt.Errorf("decode oldObject: %w", err))
+		}
+		if _, err := h.validator.ValidateDelete(oldRec); err != nil {
+			return admission.Denied(err.Error())
+		}
+		return admission.Allowed("")
+	}
 	if req.Operation != admissionv1.Update {
-		return admission.Allowed("only updates are validated")
+		return admission.Allowed("only updates and deletes are validated")
 	}
 	newRec := &gryviav1.GryviaUsageRecord{}
 	if err := h.decoder.Decode(req, newRec); err != nil {

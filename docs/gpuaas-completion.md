@@ -195,7 +195,7 @@ server). No identity provider was involved in testing: the e2e workflow uses `ku
 
 ## 4. Invoice webhook (the payments seam)
 
-**Gryvia does not process payments, issue tax invoices or talk to a payment provider.** The seam is a provider-neutral webhook:
+**Gryvia does not process live payments or issue tax invoices.** (The opt-in [billing ledger](billing-ledger.md) adds finalized, immutable invoices and a Stripe integration that accepts test-mode keys only.) The seam is a provider-neutral webhook:
 `POST /api/invoices/{tenant}/{month}/send` (admin only) builds the estimate invoice JSON (the same builder as
 `GET /api/invoices/...`) and POSTs it to `GRYVIA_INVOICE_WEBHOOK_URL` (503 while unset). If `GRYVIA_INVOICE_WEBHOOK_SECRET` is
 set the body is signed:

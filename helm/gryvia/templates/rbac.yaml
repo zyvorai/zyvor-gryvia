@@ -393,6 +393,18 @@ rules:
       - patch
       - update
       - watch
+  {{- if (dig "billing" "ledger" "enabled" false .Values.AsMap) }}
+  # Append-only billing ledger: the quota-operator never updates or deletes an entry.
+  - apiGroups:
+      - gryvia.io
+    resources:
+      - gryvialedgerentries
+    verbs:
+      - create
+      - get
+      - list
+      - watch
+  {{- end }}
 
   # ML controllers (GryviaWorkspace, GryviaInferenceService, GryviaModelRegistry, GryviaWorkflow, GryviaAutoTuner,
   # GryviaModelWatch)
