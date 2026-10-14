@@ -56,6 +56,8 @@ class ReleaseArchiveTests(unittest.TestCase):
             for bad in ("credentials.env", "config.json", ".db", "local/", "__pycache__", ".build/"):
                 self.assertNotIn(bad, listing)
             self.assertIn(f"gryvia-server-{v}/LICENSE", listing)
+            for needed in ("examples/demo-job.json", "mcp/gryvia_mcp.py", "scripts/gryvia.py", "server/app.py"):
+                self.assertIn(f"gryvia-server-{v}/{needed}", listing)
 
     def test_package_release_rejects_mismatched_version(self):
         with tempfile.TemporaryDirectory() as out:
@@ -82,3 +84,11 @@ class CommunityFilesTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class BundleContentsTests(unittest.TestCase):
+    def test_app_bundle_ships_everything_the_docs_tell_users_to_run(self):
+        script = (ROOT / "scripts/package-mac.sh").read_text()
+        rsync = next(l for l in script.splitlines() if "rsync -a" in l and "Contents/Resources/gryvia" in l)
+        for needed in ("server", "runtimes", "web", "scripts", "examples", "mcp", "LICENSE", "VERSION"):
+            self.assertIn(needed, rsync.split())

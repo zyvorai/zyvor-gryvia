@@ -48,7 +48,7 @@ cp "$BIN/GryviaDesktop" "$APP/Contents/MacOS/GryviaDesktop"
 cp "$BIN/gryvia-agent" "$APP/Contents/Helpers/gryvia-agent"
 xattr -c "$APP/Contents/MacOS/GryviaDesktop" "$APP/Contents/Helpers/gryvia-agent" 2>/dev/null || true
 cp native/Gryvia.icns "$APP/Contents/Resources/Gryvia.icns"
-rsync -a --exclude __pycache__ server runtimes web scripts brand docs LICENSE NOTICE VERSION "$APP/Contents/Resources/gryvia/"
+rsync -a --exclude __pycache__ server runtimes web scripts brand docs examples mcp LICENSE NOTICE VERSION "$APP/Contents/Resources/gryvia/"
 
 if [[ -n "$APP_ID" ]]; then
   # Inside-out: helper first, then the app (hardened runtime) over it.

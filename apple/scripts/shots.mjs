@@ -19,7 +19,7 @@ await new Promise(r => server.once('listening', r));
 const base = `http://127.0.0.1:${server.address().port}/`;
 
 const browser = await chromium.launch();
-const out = join(root, 'site', 'img');
+const out = process.env.SHOTS_OUT || join(root, 'site', 'img');
 for (const theme of ['light', 'dark']) {
   const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1, colorScheme: theme, reducedMotion: 'reduce' });
   await ctx.addInitScript(t => { try { localStorage.setItem('gryvia-preferences', JSON.stringify({ theme: t, window: 'macos27', accent: 'blue', interval: 60000, welcomeHidden: true, templates: [] })); } catch {} }, theme);
@@ -37,7 +37,7 @@ for (const theme of ['light', 'dark']) {
   await page.click('[data-view="training"]');
   await page.fill('#train-form [name="base"]', 'mlx-community/Llama-3.2-1B-Instruct-4bit');
   await page.click('#train-form button.primary');
-  await page.waitForSelector('#train-chart svg'); await shot('training');
+  await page.waitForSelector('#train-chart svg'); await page.locator('#train-chart-panel').scrollIntoViewIfNeeded(); await shot('training');
   if (errors.length) throw new Error(errors.join('\n'));
   await ctx.close();
 }

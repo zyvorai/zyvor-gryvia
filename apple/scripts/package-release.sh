@@ -27,7 +27,7 @@ export COPYFILE_DISABLE=1
 
 srv="gryvia-server-$VERSION"
 mkdir -p "$STAGE/$srv"
-for d in server runtimes web scripts brand docs mcp; do [[ -d "$d" ]] && cp -R "$d" "$STAGE/$srv/"; done
+for d in server runtimes web scripts brand docs mcp examples; do [[ -d "$d" ]] && cp -R "$d" "$STAGE/$srv/"; done
 cp LICENSE NOTICE VERSION README.md CHANGELOG.md SECURITY.md "$STAGE/$srv/"
 find "$STAGE" -name __pycache__ -prune -exec rm -rf {} +
 cat > "$STAGE/$srv/README.txt" <<TXT

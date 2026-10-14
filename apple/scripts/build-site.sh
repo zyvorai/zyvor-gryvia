@@ -8,6 +8,7 @@ cd "$(dirname "$0")/.."
 OUT="${OUT:-_site}"
 rm -rf "$OUT" && mkdir -p "$OUT/demo"
 cp -R site/. "$OUT/"
+cp web/tokens.css "$OUT/tokens.css"
 cp web/index.html web/app.js web/style.css web/tokens.css web/favicon.svg web/icon.png "$OUT/demo/"
 # keep the demo out of search results and make it start in demo mode
 python3 - "$OUT/demo/index.html" <<'PY'
