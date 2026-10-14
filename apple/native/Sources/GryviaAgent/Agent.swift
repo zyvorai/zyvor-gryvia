@@ -63,7 +63,10 @@ struct Config: Decodable {
                     await stop(p); break
                 }
             }
-            p.waitUntilExit(); exitCode=p.terminationStatus; success=exitCode==0 && detail.isEmpty
+            // Poll instead of waitUntilExit(): with a readabilityHandler attached, Foundation's run-loop wait can deadlock
+            // after the child has already exited, which left finished jobs unfinished and the node offline.
+            while p.isRunning { try? await Task.sleep(nanoseconds:50_000_000) }
+            exitCode=p.terminationStatus; success=exitCode==0 && detail.isEmpty
         } catch {
             detail=error.localizedDescription
             // Fail closed immediately on renewal or connectivity failure.
@@ -86,6 +89,6 @@ struct Config: Decodable {
         guard p.isRunning else { return }; p.terminate()
         for _ in 0..<10 { if !p.isRunning { return }; try? await Task.sleep(nanoseconds:100_000_000) }
         if p.isRunning { kill(p.processIdentifier,SIGKILL) }
-        p.waitUntilExit()
+        for _ in 0..<20 { if !p.isRunning { return }; try? await Task.sleep(nanoseconds:100_000_000) }
     }
 }

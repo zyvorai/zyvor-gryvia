@@ -66,8 +66,9 @@ class RuntimeTests(unittest.TestCase):
         cases = [dict(prompt="2+2", contains="4"), dict(prompt="capital", equals="Paris"), dict(prompt="2+2", regex=r"answer is \d")]
         code, lines = run(eval_suite, ["--model", self.model(), "--cases", json.dumps(cases)])
         r = lines[-1]
+        cases = [l for l in lines if l.get("kind") == "case"]
         self.assertEqual((r["passed"], r["total"]), (2, 3))
-        self.assertEqual([c["passed"] for c in r["cases"]], [True, False, True])
+        self.assertEqual([c["passed"] for c in cases], [True, False, True])
 
     def test_quantize_writes_output_with_hash(self):
         self.tool("llama-quantize", 'printf "quantized" > "$2"\n')

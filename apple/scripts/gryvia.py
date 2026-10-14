@@ -234,7 +234,8 @@ def build_parser():
     s.add_argument("--repo"); s.add_argument("--file"); s.add_argument("--url"); s.add_argument("--revision", default="main")
     s.add_argument("--params-b", type=float); s.add_argument("--quant", default=""); s.add_argument("--runtime", default="llama"); s.add_argument("--node"); s.add_argument("--max-gib", type=float, default=8)
     s = sub.add_parser("bench", help="benchmark a ready model (tokens/s)"); s.add_argument("model")
-    s = sub.add_parser("eval", help="run a prompt suite against a ready model"); s.add_argument("model"); s.add_argument("cases", help="JSON file with a list of cases")
+    s = sub.add_parser("eval", help="run a prompt suite against a ready model"); s.add_argument("model"); s.add_argument("cases", nargs="?", help="local JSON file with a list of cases (4 KB inline limit)")
+    s.add_argument("--remote-cases", help="path to a cases file already on the Mac (under its managed folders); no size limit beyond 200 cases")
     s.add_argument("--base", action="store_true", help="MLX adapter models: evaluate the base model instead (for before/after comparison)")
     s = sub.add_parser("fuse", help="fuse a LoRA adapter model into a standalone MLX model"); s.add_argument("model", help="adapter model id")
     sub.add_parser("datasets", help="list datasets")
@@ -301,11 +302,15 @@ def run(args) -> int:
                 jobargs += ["--adapter", m["path"]]
         elif args.op == "eval" and m.get("runtime") == "mlx":
             jobargs = ["--engine", "mlx", "--model", m["path"]]
-        if args.op == "eval":
+        if args.op == "eval" and args.remote_cases:
+            jobargs += ["--cases-file", args.remote_cases]
+        elif args.op == "eval":
+            if not args.cases:
+                raise CliError("give a cases file, or --remote-cases PATH")
             with open(args.cases, encoding="utf-8") as f:
                 inline = json.dumps(json.load(f))
             if len(inline) > 3900:
-                raise CliError("suite is over the 4 KB inline limit")
+                raise CliError("suite is over the 4 KB inline limit; copy it to the Mac and use --remote-cases")
             jobargs += ["--cases", inline]
         spec = {"runtime": runtime, "kind": kind, "modelId": m["id"], "model": f"{kind} {m['id']}", "memoryGiB": max(1.0, m["memoryGiB"]),
                 "priority": 55, "mode": "exclusive", "timeoutSeconds": 3600, "retries": 0, "args": jobargs, "labels": [kind]}
