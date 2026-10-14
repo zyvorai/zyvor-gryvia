@@ -1,3 +1,6 @@
+{{- if and .Values.aiOperator.nativeQueueScheduler .Values.aiOperator.kueueIntegration }}
+{{- fail "aiOperator.nativeQueueScheduler and aiOperator.kueueIntegration are mutually exclusive" }}
+{{- end }}
 {{- if and .Values.aiOperator.kueueStrictAdmission (not .Values.aiOperator.kueueIntegration) }}
 {{- fail "aiOperator.kueueStrictAdmission requires aiOperator.kueueIntegration" }}
 {{- end }}
@@ -149,6 +152,9 @@ spec:
             {{- end }}
             {{- if and (eq $name "ai-operator") $.Values.aiOperator.fabricAwareScheduling }}
             - --fabric-aware-scheduling=true
+            {{- end }}
+            {{- if and (eq $name "ai-operator") $.Values.aiOperator.nativeQueueScheduler }}
+            - --native-queue-scheduler=true
             {{- end }}
             {{- if and (eq $name "ai-operator") $.Values.aiOperator.kueueIntegration }}
             - --kueue-integration=true

@@ -81,6 +81,9 @@ aiOperator:
   # your own) and adds get/list/watch on kueue.x-k8s.io workloads and localqueues and get/create on
   # workloadpriorityclasses to the operators ClusterRole. See docs/kueue-integration.md.
   kueueIntegration: false
+  # Built-in DRF fair-share / gang / priority-preemption admission driven by the gryvia-native-scheduler
+  # ConfigMap (deploy/native-scheduler-config.yaml). Mutually exclusive with kueueIntegration.
+  nativeQueueScheduler: false
   # LocalQueue used by jobs in tenant-* namespaces that name no queue (only when that LocalQueue exists).
   kueueDefaultQueue: gryvia
   # Fail closed for tenant batch jobs when the default queue/controller is missing.

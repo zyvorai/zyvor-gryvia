@@ -63,6 +63,7 @@ func main() {
 	var webhookCertDir string
 	var fabricAware, topologyPlacement bool
 	var fabricMaxPenalty float64
+	var nativeQueueScheduler bool
 	var kueueIntegration bool
 	var kueueStrictAdmission bool
 	var kueueDefaultQueue string
@@ -100,6 +101,8 @@ func main() {
 	flag.Float64Var(&fabricMaxPenalty, "fabric-max-penalty", 25,
 		"Most points fabric health may subtract from a node score (0 or above 25 means 25).")
 
+	flag.BoolVar(&nativeQueueScheduler, "native-queue-scheduler", false,
+		"Admit GryviaAIJobs with the built-in DRF fair-share, gang and priority-preemption queue using the gryvia-native-scheduler ConfigMap. Mutually exclusive with --kueue-integration. Off by default.")
 	flag.BoolVar(&kueueIntegration, "kueue-integration", false,
 		"Create the batch Job of a job with a queue suspended and labelled kueue.x-k8s.io/queue-name so Kueue admits all its pods together, and report Kueue's admission state as phase Queued. Needs Kueue installed. Off by default: nothing changes without it.")
 	flag.BoolVar(&kueueStrictAdmission, "kueue-strict-admission", false, "Require Kueue admission for tenant batch jobs even if the default LocalQueue is missing. Requires --kueue-integration.")
@@ -124,6 +127,10 @@ func main() {
 	}
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
+	if nativeQueueScheduler && kueueIntegration {
+		fmt.Fprintln(os.Stderr, "--native-queue-scheduler and --kueue-integration are mutually exclusive")
+		os.Exit(1)
+	}
 	if kueueStrictAdmission && !kueueIntegration {
 		fmt.Fprintln(os.Stderr, "--kueue-strict-admission requires --kueue-integration")
 		os.Exit(1)
@@ -160,6 +167,7 @@ func main() {
 		FabricAware:          fabricAware,
 		FabricMaxPenalty:     fabricMaxPenalty,
 		TopologyPlacement:    topologyPlacement,
+		NativeQueueScheduler: nativeQueueScheduler,
 		KueueIntegration:     kueueIntegration,
 		KueueStrictAdmission: kueueStrictAdmission,
 		KueueDefaultQueue:    kueueDefaultQueue,
