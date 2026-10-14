@@ -3720,6 +3720,57 @@ spec:
                   PlacementTopology is the topology group the operator kept a multi-node job in ("gryvia.io/ib-block=b1"),
                   set only with topology placement on; pods get soft node affinity toward it.
                 type: string
+              queueExplanation:
+                description: |-
+                  QueueExplanation says why a job managed by Kueue is waiting: the category, the Kueue
+                  message, the ClusterQueue's quota use and which cohort members hold borrowed capacity.
+                  Set only while the job is queued; cleared once Kueue admits it.
+                properties:
+                  borrowed:
+                    format: int64
+                    type: integer
+                  borrowers:
+                    description: |-
+                      Borrowers are the other queues of the cohort currently using more than their quota; the
+                      queue can reclaim that capacity by preemption when reclaimWithinCohort allows it
+                    items:
+                      description: QueueBorrower is a cohort member holding capacity above its own quota.
+                      properties:
+                        borrowed:
+                          format: int64
+                          type: integer
+                        clusterQueue:
+                          type: string
+                      required:
+                      - borrowed
+                      - clusterQueue
+                      type: object
+                    maxItems: 8
+                    type: array
+                  category:
+                    description: Category is WaitingForWorkload, QuotaExhausted, AdmissionChecksPending, Evicted or Pending
+                    type: string
+                  clusterQueue:
+                    description: ClusterQueue is the queue the job is waiting in
+                    type: string
+                  cohort:
+                    description: Cohort is the cohort of that ClusterQueue
+                    type: string
+                  inUse:
+                    format: int64
+                    type: integer
+                  message:
+                    description: Message is Kueue's own explanation, unmodified
+                    type: string
+                  nominal:
+                    description: |-
+                      Nominal, InUse and Borrowed are the queue's quota, current use and borrowed amount of its
+                      first resource group (GPUs by default), for one flavor
+                    format: int64
+                    type: integer
+                required:
+                - category
+                type: object
               replicasReady:
                 description: Ready replicas
                 format: int32

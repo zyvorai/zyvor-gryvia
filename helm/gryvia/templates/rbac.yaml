@@ -527,6 +527,7 @@ rules:
     resources:
       - workloads
       - localqueues
+      - clusterqueues
     verbs:
       - get
       - list

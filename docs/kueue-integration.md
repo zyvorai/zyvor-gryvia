@@ -259,3 +259,23 @@ kubectl -n gryvia-system logs deploy/kueue-controller-manager
 ## Strict admission and recovery
 
 See [Reliable admission and cooperative recovery](admission-recovery.md) for opt-in fail-closed tenant queues, queue-managed GPU demand, worker spreading and checkpoint hooks.
+
+## Why is my job waiting: `status.queueExplanation`
+
+While a Kueue-managed `GryviaAIJob` is queued, the ai-operator fills `status.queueExplanation` from the
+Workload and the job's ClusterQueue (it needs read access to `clusterqueues`, granted by the chart with
+`aiOperator.kueueIntegration`):
+
+| Field | Meaning |
+|---|---|
+| `category` | `WaitingForWorkload`, `QuotaExhausted`, `AdmissionChecksPending`, `Evicted` or `Pending` |
+| `message` | Kueue's own message, unmodified |
+| `clusterQueue`, `cohort` | the queue the job waits in and its cohort |
+| `nominal`, `inUse`, `borrowed` | that queue's quota, use and borrowed amount (first resource group, busiest flavor) |
+| `borrowers` | up to 8 cohort members currently above their own quota, largest first |
+
+It is cleared when Kueue admits the job. Lookup errors only reduce the detail; they never block the job.
+
+```bash
+kubectl get gryviaaijob my-job -o jsonpath='{.status.queueExplanation}'
+```

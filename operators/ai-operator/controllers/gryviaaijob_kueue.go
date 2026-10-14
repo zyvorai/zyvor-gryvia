@@ -30,7 +30,7 @@ import (
 	gryviav1 "github.com/zyvorai/gryvia/operators/ai-operator/api/v1"
 )
 
-//+kubebuilder:rbac:groups=kueue.x-k8s.io,resources=workloads;localqueues,verbs=get;list;watch
+//+kubebuilder:rbac:groups=kueue.x-k8s.io,resources=workloads;localqueues;clusterqueues,verbs=get;list;watch
 //+kubebuilder:rbac:groups=kueue.x-k8s.io,resources=workloadpriorityclasses,verbs=get;create
 
 const (
@@ -343,6 +343,7 @@ func (r *GryviaAIJobReconciler) applyKueueStatus(ctx context.Context, job *gryvi
 	}
 	if !out.Suspended {
 		job.Status.GpusAllocated = job.Spec.GPUs
+		job.Status.QueueExplanation = nil
 		r.updateCondition(job, ConditionKueue, metav1.ConditionTrue, "Admitted", "Admitted by Kueue")
 		return
 	}
@@ -364,6 +365,7 @@ func (r *GryviaAIJobReconciler) applyKueueStatus(ctx context.Context, job *gryvi
 	job.Status.Phase = PhaseQueued
 	job.Status.GpusAllocated = 0
 	job.Status.Message = msg
+	job.Status.QueueExplanation = r.explainQueue(ctx, job, bj, st, reason, msg)
 	r.updateCondition(job, ConditionKueue, metav1.ConditionFalse, reason, msg)
 	r.updateCondition(job, ConditionReady, metav1.ConditionFalse, "Queued", msg)
 }

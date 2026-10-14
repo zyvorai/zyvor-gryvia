@@ -215,6 +215,12 @@ type GryviaAIJobStatus struct {
 	// Human-readable message indicating details about the current phase
 	Message string `json:"message,omitempty"`
 
+	// QueueExplanation says why a job managed by Kueue is waiting: the category, the Kueue
+	// message, the ClusterQueue's quota use and which cohort members hold borrowed capacity.
+	// Set only while the job is queued; cleared once Kueue admits it.
+	// +optional
+	QueueExplanation *QueueExplanation `json:"queueExplanation,omitempty"`
+
 	// PlacementExplanation records, only when fabric-aware scheduling was applied,
 	// how per-node fabric health changed the node ranking (bounded to the top nodes)
 	// +kubebuilder:validation:MaxItems=16
@@ -254,6 +260,38 @@ type AIJobDataset struct {
 	NodeSelectors []map[string]string `json:"nodeSelectors,omitempty"`
 	// Message explains the decision (why the replica is not mounted, for example).
 	Message string `json:"message,omitempty"`
+}
+
+// QueueExplanation is the reason a Kueue-managed job has not started.
+type QueueExplanation struct {
+	// Category is WaitingForWorkload, QuotaExhausted, AdmissionChecksPending, Evicted or Pending
+	Category string `json:"category"`
+
+	// Message is Kueue's own explanation, unmodified
+	Message string `json:"message,omitempty"`
+
+	// ClusterQueue is the queue the job is waiting in
+	ClusterQueue string `json:"clusterQueue,omitempty"`
+
+	// Cohort is the cohort of that ClusterQueue
+	Cohort string `json:"cohort,omitempty"`
+
+	// Nominal, InUse and Borrowed are the queue's quota, current use and borrowed amount of its
+	// first resource group (GPUs by default), for one flavor
+	Nominal  int64 `json:"nominal,omitempty"`
+	InUse    int64 `json:"inUse,omitempty"`
+	Borrowed int64 `json:"borrowed,omitempty"`
+
+	// Borrowers are the other queues of the cohort currently using more than their quota; the
+	// queue can reclaim that capacity by preemption when reclaimWithinCohort allows it
+	// +kubebuilder:validation:MaxItems=8
+	Borrowers []QueueBorrower `json:"borrowers,omitempty"`
+}
+
+// QueueBorrower is a cohort member holding capacity above its own quota.
+type QueueBorrower struct {
+	ClusterQueue string `json:"clusterQueue"`
+	Borrowed     int64  `json:"borrowed"`
 }
 
 // PlacementExplanation is one node's line of the fabric-aware placement decision.
