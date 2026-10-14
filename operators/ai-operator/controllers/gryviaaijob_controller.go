@@ -70,6 +70,10 @@ type GryviaAIJobReconciler struct {
 	// KueueIntegration (flag --kueue-integration, default false) creates the batch Job suspended with a
 	// Kueue queue label and maps Kueue's admission state to the job phase. See gryviaaijob_kueue.go.
 	KueueIntegration bool
+	// NativeQueueScheduler (flag --native-queue-scheduler, default false) enables DRF fair-share, gang
+	// admission and priority preemption from the gryvia-native-scheduler ConfigMap. Mutually exclusive
+	// with KueueIntegration. See gryviaaijob_native_schedule.go.
+	NativeQueueScheduler bool
 	// KueueStrictAdmission keeps tenant jobs suspended even when their default queue is absent.
 	KueueStrictAdmission bool
 	// KueueDefaultQueue is the LocalQueue used in tenant-* namespaces (flag --kueue-default-queue).
@@ -201,7 +205,7 @@ func (r *GryviaAIJobReconciler) reconcileAIJob(ctx context.Context, job *gryviav
 		// Rejected means "never ran": also remove anything created before the rejection landed.
 		return ctrl.Result{}, r.teardown(ctx, job, true)
 	case PhaseQueued:
-		if !isKueueQueued(job) {
+		if !isKueueQueued(job) && !isNativeQueued(job) {
 			return ctrl.Result{}, nil // held by the quota operator: no PVC, Service or workload
 		}
 		// waiting for Kueue: the workload exists (suspended), keep reconciling it
@@ -211,6 +215,9 @@ func (r *GryviaAIJobReconciler) reconcileAIJob(ctx context.Context, job *gryviav
 		return ctrl.Result{}, r.failJob(ctx, job, "InvalidSpec", err.Error())
 	}
 
+	if done, res, err := r.nativeQueueGate(ctx, job); done || err != nil { // opt-in native DRF/gang/preemption gate
+		return res, err
+	}
 	if done, res, err := r.admissionGate(ctx, job); done { // opt-in quota/budget gate: creates nothing when it rejects
 		return res, err
 	}
@@ -695,6 +702,9 @@ func (r *GryviaAIJobReconciler) buildPodTemplate(job *gryviav1.GryviaAIJob, labe
 		RestartPolicy: corev1.RestartPolicyAlways,
 	}
 
+	if r.NativeQueueScheduler {
+		applyNativeGPUShare(job, annotations, &podSpec)
+	}
 	applyRecoveryOptions(job, &podSpec)
 	datasetPodSpec(job, &podSpec)
 	r.applyReservation(job, &podSpec) // gryvia.io/reservation: toleration + nodeSelector (gryviaaijob_reservation.go)
