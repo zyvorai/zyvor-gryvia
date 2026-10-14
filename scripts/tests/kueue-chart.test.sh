@@ -28,7 +28,8 @@ OUT="$(render --set aiOperator.kueueIntegration=true)"
 has   "ai-operator flag" '--kueue-integration=true'
 has   "default queue flag" '--kueue-default-queue=gryvia'
 has   "workloads read rule" '- workloadpriorityclasses'
-lacks "no clusterqueue rule (quota operator switch is off)" '- clusterqueues'
+has   "clusterqueues read rule (status.queueExplanation)" '- clusterqueues'
+lacks "no resourceflavors rule (quota operator switch is off)" '- resourceflavors'
 lacks "sub-chart still off" 'name: kueue-controller-manager'
 
 echo "strict admission"
