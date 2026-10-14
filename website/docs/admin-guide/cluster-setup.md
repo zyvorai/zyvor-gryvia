@@ -34,7 +34,7 @@ helm install gryvia oci://ghcr.io/zyvorai/charts/gryvia \
 The chart is also published as a classic repository:
 
 ```bash
-helm repo add gryvia https://zyvorai.github.io/gryvia/charts && helm repo update
+helm repo add gryvia https://zyvorai.github.io/zyvor-gryvia/charts && helm repo update
 helm install gryvia gryvia/gryvia --namespace gryvia-system --create-namespace
 ```
 

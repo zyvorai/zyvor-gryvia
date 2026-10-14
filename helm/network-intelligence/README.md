@@ -46,7 +46,7 @@ helm install network-intelligence ./helm/network-intelligence \
   --namespace gryvia-network --create-namespace
 ```
 
-The chart is also in the classic repository (`helm repo add gryvia https://zyvorai.github.io/gryvia/charts`), where its
+The chart is also in the classic repository (`helm repo add gryvia https://zyvorai.github.io/zyvor-gryvia/charts`), where its
 name is `gryvia-network-intelligence`.
 
 ## Configuration
