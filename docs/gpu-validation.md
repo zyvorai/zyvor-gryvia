@@ -126,3 +126,22 @@ Step 6 (host-driver mode) and the installer itself (step 1) are not scripted her
 Once a GPU job runs, [GPU-cluster runbook](gpu-ai-runbook.md) takes one small model through the AI features that need
 GPUs: the default ML images, the model factory (fine-tune, AWQ quantization, evaluation), a vLLM canary and its
 rollback, and vLLM behind the LLM gateway, RAG and agents.
+
+## Scheduler features that need real hardware
+
+These paths are unit-tested and (for the Kueue parts) run on CPU in kind, but have never run on a GPU. Each row is one
+check to run on a GPU cluster once the sections above pass; record the result with `scripts/record-gpu-validation.sh`.
+A passing report is the only thing that makes the corresponding claim legitimate.
+
+| Feature | How to check | Pass when |
+|---|---|---|
+| Whole-GPU quota | `quotaOperator.kueueIntegration=true` (default `nvidia.com/gpu` quota), tenant with `concurrentGPUs: 2`, submit two 2-GPU jobs | one runs, one is `Queued` with `status.queueExplanation.category: QuotaExhausted`, the second runs after the first finishes |
+| Borrow limits | two tenants in one `cohort`, one with `borrowingLimit: 0`, an idle neighbour, a job larger than the capped tenant's quota | the capped tenant's job stays queued while an unrestricted tenant's job borrows the idle GPUs |
+| Preemption | a higher-priority job in a full tenant | the lower-priority job is requeued and `nvidia.com/gpu` is released |
+| MIG slices | node with MIG enabled and the mixed strategy; `quotaOperator.kueueQuotaResources="nvidia.com/gpu,nvidia.com/mig-1g.10gb"`; a job with `spec.migProfile: 1g.10gb`, `gpus: 1` | the pod requests `nvidia.com/mig-1g.10gb: 1`, lands on the MIG node, and `nvidia-smi -L` shows a MIG device |
+| Fabric ranking | `--fabric-aware-scheduling`, a `GryviaNodeFabric` penalty on one node, a Kueue-managed GPU job | `status.preferredNodes` excludes the penalised node and the pod prefers the other one |
+| Idle reclaim | `aiOperator.idleReclaim.enabled=true`, a `GryviaTrainingProfiler` for a GPU job that sleeps | the job gets `IdleGPU=True` after the window; with `suspend: true` its GPUs are released |
+| Reset agent | `gpu-reset-agent.md` with dry-run off on a disposable node | the escalation ladder reaches the expected rung and the node returns Ready |
+
+The manual workflow `.github/workflows/gpu-validation.yml` runs `scripts/validate-gpu.sh` on a self-hosted runner
+labelled `gpu` and uploads the JSON report; the table above is still run by hand.
