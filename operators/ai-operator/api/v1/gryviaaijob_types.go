@@ -21,6 +21,12 @@ type GryviaAIJobSpec struct {
 	// Preferred GPU type (H100, A100, L40, V100, T4, any)
 	GpuType string `json:"gpuType,omitempty"`
 
+	// MigProfile asks for MIG slices instead of whole GPUs ("1g.10gb", "3g.40gb", ...): each of
+	// the gpus per pod becomes one nvidia.com/mig-<profile> device. Nodes must advertise that
+	// resource (NVIDIA device plugin with the mixed MIG strategy). Empty means whole GPUs.
+	// +kubebuilder:validation:Pattern=`^[0-9]+g\.[0-9]+gb$`
+	MigProfile string `json:"migProfile,omitempty"`
+
 	// Storage backend name
 	Storage string `json:"storage,omitempty"`
 
@@ -214,6 +220,11 @@ type GryviaAIJobStatus struct {
 
 	// Human-readable message indicating details about the current phase
 	Message string `json:"message,omitempty"`
+
+	// PreferredNodes are the nodes a Kueue-managed job gets soft node affinity toward, chosen by
+	// fabric-aware ranking without regard to free capacity. Unlike nodesAllocated it is advice.
+	// +kubebuilder:validation:MaxItems=64
+	PreferredNodes []string `json:"preferredNodes,omitempty"`
 
 	// QueueExplanation says why a job managed by Kueue is waiting: the category, the Kueue
 	// message, the ClusterQueue's quota use and which cohort members hold borrowed capacity.

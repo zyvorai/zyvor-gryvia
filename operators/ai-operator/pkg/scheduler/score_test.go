@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	gryviav1 "github.com/zyvorai/gryvia/operators/ai-operator/api/v1"
@@ -89,5 +90,27 @@ func TestScoreSpreadVersusPack(t *testing.T) {
 	s = scoreNodes([]corev1.Node{busy, idle}, pack, usage)
 	if s[0].Score-s[1].Score != 6*5 {
 		t.Fatalf("pack: busy should lead by 30, got %d", s[0].Score-s[1].Score)
+	}
+}
+
+func TestMigProfileFiltersOnAdvertisedSlices(t *testing.T) {
+	ready := []corev1.NodeCondition{{Type: corev1.NodeReady, Status: corev1.ConditionTrue}}
+	withSlices := scoreNode("mig", nil)
+	withSlices.Status.Conditions = ready
+	withSlices.Status.Allocatable = corev1.ResourceList{MigResourceName("1g.10gb"): resource.MustParse("14")}
+	whole := scoreNode("whole", nil) // 8 whole GPUs by label, no MIG resource
+	whole.Status.Conditions = ready
+
+	job := scoreJob(4, "", "")
+	job.Spec.MigProfile = "1g.10gb"
+	got := filterNodes([]corev1.Node{withSlices, whole}, job, nil, 4)
+	if len(got) != 1 || got[0].Name != "mig" {
+		t.Fatalf("MIG job must only match nodes advertising the slice resource, got %v", got)
+	}
+
+	job.Spec.MigProfile = ""
+	got = filterNodes([]corev1.Node{withSlices, whole}, job, nil, 4)
+	if len(got) != 2 {
+		t.Fatalf("whole-GPU job must keep matching by GPU count (both nodes have 8), got %d nodes", len(got))
 	}
 }

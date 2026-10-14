@@ -1621,6 +1621,11 @@ func (in *GryviaAIJobStatus) DeepCopyInto(out *GryviaAIJobStatus) {
 		*out = new(JobMetrics)
 		**out = **in
 	}
+	if in.PreferredNodes != nil {
+		in, out := &in.PreferredNodes, &out.PreferredNodes
+		*out = make([]string, len(*in))
+		copy(*out, *in)
+	}
 	if in.QueueExplanation != nil {
 		in, out := &in.QueueExplanation, &out.QueueExplanation
 		*out = new(QueueExplanation)
