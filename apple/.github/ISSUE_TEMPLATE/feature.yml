@@ -1,0 +1,16 @@
+name: Feature request
+description: Suggest something
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes: { label: "What are you trying to do?", description: "The situation first, then the idea." }
+    validations: { required: true }
+  - type: textarea
+    id: idea
+    attributes: { label: "What would you like Gryvia to do?" }
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options: [Scheduling / admission, Fleet / agent, Model hub, Training, Deployments, Observability, UI, Packaging / release, Docs]

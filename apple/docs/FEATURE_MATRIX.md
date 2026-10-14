@@ -28,3 +28,9 @@
 | OIDC, payment billing, hostile-code isolation | Not implemented | Static roles and trusted-worker beta only |
 
 “All features” is not a production certification. This matrix defines this release's concrete implemented scope and identifies the substantial capabilities that still require engineering or hardware validation.
+| Idle-time harvesting | Per-Mac owner policy, presence sensing, yield and requeue without consuming a retry | Server and CLI tests; real run on a Mac mini (job yielded, requeued at attempt 0, resumed and finished) |
+| Power / thermal policy | Battery %, Low Power Mode and call guards in the gate | Unit tests; battery rules not exercised on a laptop |
+| Energy estimate | Optional root `powermetrics` helper, per-job joules above idle, tenant kWh | Math and file parsing tested; helper not run on hardware (needs sudo) |
+| Signed provenance | Ed25519 attestations, pinned keys, verified chains, `--require-verified` | RFC 8032 vectors and a CryptoKit signature verified by the server; real signed download on a Mac mini |
+| MCP server | Read-only by default; `--allow-write` adds submit, cancel, policy | 8 tests; not exercised against a real MCP client |
+| App Intents | Fleet status, demo job, pause this Mac | Compiles; registration with Shortcuts needs an Xcode-built app (not verified) |

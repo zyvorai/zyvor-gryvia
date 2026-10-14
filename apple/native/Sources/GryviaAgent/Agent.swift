@@ -16,15 +16,23 @@ struct Config: Decodable {
     let runtimes: [String:RuntimeConfig]
 }
 @main struct Agent {
+    nonisolated(unsafe) static var attestor: Attestor?
+    static func heartbeat(_ config:Config) -> sending [String:Any] {
+        var body=Hardware.report(budget:config.budgetGiB,runtimes:Array(config.runtimes.keys))
+        if let key=attestor?.publicKeyHex { body["attestKey"]=key }
+        return body
+    }
     static func main() async {
         do {
             guard CommandLine.arguments.count==2 else { throw GryviaError.invalid("Usage: gryvia-agent /absolute/agent.json; set GRYVIA_AGENT_TOKEN") }
             let config=try JSONDecoder().decode(Config.self,from:Data(contentsOf:URL(fileURLWithPath:CommandLine.arguments[1])))
             guard config.budgetGiB.isFinite && config.budgetGiB>0 else { throw GryviaError.invalid("Invalid memory budget") }
             let api=try API(base:config.server,token:ProcessInfo.processInfo.environment["GRYVIA_AGENT_TOKEN"] ?? "")
+            let attestor = try? Attestor()   // nil only if the key file cannot be created; provenance is then simply absent
+            Agent.attestor = attestor
             while !Task.isCancelled {
                 do {
-                    _=try await api.request("api/agent/heartbeat",body:Hardware.report(budget:config.budgetGiB,runtimes:Array(config.runtimes.keys)))
+                    _=try await api.request("api/agent/heartbeat",body:heartbeat(config))
                     let reply=try JSONDecoder().decode(ClaimResponse.self,from:await api.request("api/agent/claim",body:[:]))
                     if let job=reply.job { await execute(job,api:api,config:config) }
                 } catch { fputs("Agent: \(error.localizedDescription)\n",stderr) }
@@ -34,6 +42,8 @@ struct Config: Decodable {
     }
     static func execute(_ job:Claim,api:API,config:Config) async {
         let p=Process(); let pipe=Pipe(); let sink=BufferedLog()
+        var resultLine: String?   // last structured result line exactly as shipped (after the 2,000-character cap)
+        func note(_ lines:[String]) { for l in lines where l.hasPrefix("{\"kind\": \"result\"") { resultLine=l } }
         var success=false; var detail=""; var exitCode:Int32 = -1
         let started=Date()
         do {
@@ -55,8 +65,8 @@ struct Config: Decodable {
             while p.isRunning {
                 try await Task.sleep(nanoseconds:2_000_000_000)
                 let renew=try JSONDecoder().decode(Renewal.self,from:await api.request("api/agent/renew",body:["id":job.id,"lease":job.lease]))
-                _=try await api.request("api/agent/heartbeat",body:Hardware.report(budget:config.budgetGiB,runtimes:Array(config.runtimes.keys)))
-                let lines=sink.take()
+                _=try await api.request("api/agent/heartbeat",body:heartbeat(config))
+                let lines=sink.take(); note(lines)
                 if !lines.isEmpty { _=try await api.request("api/agent/logs",body:["id":job.id,"lease":job.lease,"lines":lines]) }
                 if renew.cancel || Date().timeIntervalSince(started)>Double(job.spec.timeoutSeconds) {
                     detail=renew.cancel ? (renew.reason == "job timeout" ? "Job timeout" : "Cancelled by user") : "Job timeout"
@@ -77,13 +87,22 @@ struct Config: Decodable {
         // Bounded batches retain pending lines instead of silently dropping each flush.
         do {
             while true {
-                let lines=sink.take()
+                let lines=sink.take(); note(lines)
                 if lines.isEmpty { break }
                 _=try await api.request("api/agent/renew",body:["id":job.id,"lease":job.lease])
                 _=try await api.request("api/agent/logs",body:["id":job.id,"lease":job.lease,"lines":lines])
             }
         } catch { fputs("Log flush: \(error.localizedDescription)\n",stderr) }
-        _=try? await api.request("api/agent/complete",body:["id":job.id,"lease":job.lease,"success":success,"result":["exitCode":exitCode,"durationSeconds":Date().timeIntervalSince(started),"message":detail]])
+        let finished=Date()
+        var body:[String:Any]=["id":job.id,"lease":job.lease,"success":success,"result":["exitCode":exitCode,"durationSeconds":finished.timeIntervalSince(started),"message":detail]]
+        if let attestor, let spec=job.specSha256 {
+            // Signed statement: this node ran this job (spec hash) and produced this result line, with this exit code.
+            let payload:[String:Any]=["v":1,"job":job.id,"kind":job.spec.kind ?? "inference","modelId":job.spec.modelId ?? "","datasetId":job.spec.datasetId ?? "",
+                "specSha256":spec,"resultSha256":resultLine.map(Attestor.sha256Hex) ?? "","exitCode":Int(exitCode),"success":success,
+                "startedAt":started.timeIntervalSince1970,"finishedAt":finished.timeIntervalSince1970,"agent":"gryvia-agent"]
+            if let text=try? Attestor.canonical(payload), let sig=try? attestor.sign(text) { body["attestation"]=["payload":text,"signature":sig] }
+        }
+        _=try? await api.request("api/agent/complete",body:body)
     }
     static func stop(_ p:Process) async {
         guard p.isRunning else { return }; p.terminate()

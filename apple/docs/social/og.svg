@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#0b0b0d"/><stop offset="1" stop-color="#16213a"/></linearGradient>
+    <linearGradient id="g" x1="0.1" y1="0" x2="0.9" y2="1"><stop offset="0" stop-color="#5cb8ff"/><stop offset="1" stop-color="#0088ff"/></linearGradient>
+    <radialGradient id="glow" cx="0.8" cy="0.1" r="0.8"><stop offset="0" stop-color="#0088ff" stop-opacity="0.35"/><stop offset="1" stop-color="#0088ff" stop-opacity="0"/></radialGradient>
+  </defs>
+  <rect width="1200" height="630" fill="url(#bg)"/><rect width="1200" height="630" fill="url(#glow)"/>
+  <g transform="translate(86 96) scale(0.17)">
+    <rect width="1024" height="1024" rx="229" fill="#1d1d1f"/>
+    <path d="M706 374A226 226 0 1 0 738 512H538" fill="none" stroke="url(#g)" stroke-width="112" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="772" cy="318" r="46" fill="#1d1d1f"/><circle cx="772" cy="318" r="32" fill="#30d158"/>
+  </g>
+  <text x="86" y="372" font-family="-apple-system, Helvetica, Arial, sans-serif" font-weight="700" font-size="92" fill="#f5f5f7" letter-spacing="-2">Your Macs, scheduled.</text>
+  <text x="86" y="440" font-family="-apple-system, Helvetica, Arial, sans-serif" font-size="34" fill="#a1a1a6">A multi-tenant control plane for Apple Silicon fleets.</text>
+  <text x="86" y="488" font-family="-apple-system, Helvetica, Arial, sans-serif" font-size="34" fill="#a1a1a6">Admission · quotas · live GPUs · provenance.</text>
+  <text x="86" y="570" font-family="-apple-system, Helvetica, Arial, sans-serif" font-size="24" fill="#6e6e73">Zyvor AI Labs · source-available (BUSL-1.1)</text>
+  <g transform="translate(860 330)" fill="#38383a">
+    <rect width="26" height="26" rx="5" fill="#0088ff"/><rect x="34" width="26" height="26" rx="5" fill="#0088ff"/><rect x="68" width="26" height="26" rx="5" fill="#0088ff"/><rect x="102" width="26" height="26" rx="5" fill="#0088ff"/><rect x="136" width="26" height="26" rx="5" fill="#0088ff"/><rect x="170" width="26" height="26" rx="5"/>
+    <rect y="34" width="26" height="26" rx="5" fill="#0088ff"/><rect x="34" y="34" width="26" height="26" rx="5" fill="#0088ff"/><rect x="68" y="34" width="26" height="26" rx="5" fill="#0088ff"/><rect x="102" y="34" width="26" height="26" rx="5"/><rect x="136" y="34" width="26" height="26" rx="5"/><rect x="170" y="34" width="26" height="26" rx="5"/>
+    <rect y="68" width="26" height="26" rx="5" fill="#0088ff"/><rect x="34" y="68" width="26" height="26" rx="5"/><rect x="68" y="68" width="26" height="26" rx="5"/><rect x="102" y="68" width="26" height="26" rx="5"/><rect x="136" y="68" width="26" height="26" rx="5"/><rect x="170" y="68" width="26" height="26" rx="5"/>
+  </g>
+</svg>

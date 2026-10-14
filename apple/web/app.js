@@ -63,8 +63,8 @@ function startDemo() {
   const mk = (n, tenant, st, sp, node, age, started) => ({id: ('demo' + n + 'c0ffee').padEnd(32, '0'), tenant, state: st, created: now - age, started: started ? now - started : null, node, attempt: st === 'queued' ? 0 : 1, reason: st === 'queued' ? 'node memory reservation budget' : '', spec: sp, result: {}});
   demo = {
     nodes: [
-      {id: 'studio-01', seen: now, drain: false, online: true, budgetGiB: 48, slots: 1, runtimes: ['mlx', 'llama', 'demo'], thermal: 'nominal', gpu: 'Apple M3 Ultra', host: 'studio-01.local', gpuModel: 'Apple M3 Ultra', gpuCores: 80, totalGiB: 96, gpuUtilPct: 60, gpuInUseMiB: 21000},
-      {id: 'mini-01', seen: now, drain: false, online: true, budgetGiB: 12, slots: 1, runtimes: ['mlx', 'coreml', 'demo'], thermal: 'fair', gpu: 'Apple M4 Pro', host: 'mini-01.local', gpuModel: 'Apple M4 Pro', gpuCores: 20, totalGiB: 24, gpuUtilPct: 40, gpuInUseMiB: 3500},
+      {id: 'studio-01', seen: now, drain: false, online: true, budgetGiB: 48, slots: 1, runtimes: ['mlx', 'llama', 'demo'], thermal: 'nominal', gpu: 'Apple M3 Ultra', host: 'studio-01.local', presence: {idleSeconds: 40, locked: false, onBattery: false, batteryPct: 100}, policy: {mode: 'idle', idleMinutes: 5}, gate: {allowed: false, reason: 'owner is active'}, gpuModel: 'Apple M3 Ultra', gpuCores: 80, totalGiB: 96, gpuUtilPct: 60, gpuInUseMiB: 21000},
+      {id: 'mini-01', seen: now, drain: false, online: true, budgetGiB: 12, slots: 1, runtimes: ['mlx', 'coreml', 'demo'], thermal: 'fair', gpu: 'Apple M4 Pro', host: 'mini-01.local', gpuModel: 'Apple M4 Pro', gpuCores: 20, totalGiB: 24, gpuUtilPct: 40, gpuInUseMiB: 3500, presence: {idleSeconds: 1800, locked: false, onBattery: false, batteryPct: 100}, policy: {mode: 'idle', idleMinutes: 5}, gate: {allowed: true, reason: ''}},
       {id: 'air-01', seen: now - 200, drain: false, online: false, budgetGiB: 6, slots: 1, runtimes: ['coreml'], thermal: 'nominal', gpu: 'Apple M2', host: 'air-01.local', gpuModel: 'Apple M2', gpuCores: 10, totalGiB: 8, gpuUtilPct: 0, gpuInUseMiB: 0}],
     telemetry: {}, decisions: [{seq: 1, at: now - 90, job: 'demo3c0ffee', node: null, kind: 'wait', detail: 'node memory reservation budget'}, {seq: 2, at: now - 600, job: 'demo1c0ffee', node: 'studio-01', kind: 'admit', detail: 'admitted on studio-01'}],
     jobs: [
@@ -74,7 +74,7 @@ function startDemo() {
       mk(4, 'default', 'succeeded', spec('CPU smoke test', 'demo', 1, 50), 'mini-01', 3000, 2900),
       mk(5, 'research', 'failed', spec('Whisper transcribe', 'mlx', 8, 40), 'studio-01', 2600, 2500)],
     tenants: [{id: 'default', quota: 32, weight: 1}, {id: 'research', quota: 64, weight: 2}],
-    models: [{id: 'llama-3.2-1b-q4', runtime: 'llama', memoryGiB: 1.8, status: 'ready', quant: 'Q4_K_M', paramsB: 1.2, sizeBytes: 808e6, source: 'bartowski/Llama-3.2-1B-Instruct-GGUF/Llama-3.2-1B-Instruct-Q4_K_M.gguf', revision: 'main', node: 'mini-01', path: '/demo/models/Llama-3.2-1B-Q4_K_M.gguf', sha256: 'demo'.padEnd(64, '0'), endpoints: ['http://demo.invalid']}],
+    models: [{id: 'llama-3.2-1b-q4', runtime: 'llama', memoryGiB: 1.8, status: 'ready', quant: 'Q4_K_M', paramsB: 1.2, sizeBytes: 808e6, source: 'bartowski/Llama-3.2-1B-Instruct-GGUF/Llama-3.2-1B-Instruct-Q4_K_M.gguf', revision: 'main', node: 'mini-01', path: '/demo/models/Llama-3.2-1B-Q4_K_M.gguf', sha256: 'demo'.padEnd(64, '0'), endpoints: ['http://demo.invalid'], provenance: {verified: true, chainVerified: true, baseUnattested: false, chain: [{job: 'demodownload', kind: 'download', verified: true, signer: 'mini-01', why: '', at: now - 3000}]}}],
     results: [{at: now - 400, job: 'd1', model: 'llama-3.2-1b-q4', kind: 'benchmark', node: 'mini-01', body: {success: true, promptTokensPerSecond: 910.2, generationTokensPerSecond: 72.4}},
               {at: now - 300, job: 'd2', model: 'llama-3.2-1b-q4', kind: 'evaluate', node: 'mini-01', body: {success: true, passed: 4, total: 5, passRate: 0.8, cases: [{passed: true, prompt: 'What is 2+2?', output: '4'}, {passed: false, prompt: 'Capital of Peru?', output: 'Lima is'}]}}],
     suites: {}, datasets: [{id: 'support-chats', status: 'ready', rows: 4200, bytes: 6.2e6, node: 'studio-01', source: 'datasets/acme/support/train.jsonl', path: '/demo/support.jsonl'}], workflows: [],
@@ -126,6 +126,7 @@ function demoApi(path, body) {
   if (path === 'cancel') { const j = d.jobs.find(j => j.id === body.id); if (j) j.state = j.state === 'queued' ? 'cancelled' : 'cancelling'; if (j && j.state === 'cancelling') setTimeout(() => { j.state = 'cancelled'; }, 1500); }
   if (path === 'drain') { const n = d.nodes.find(n => n.id === body.id); if (n) n.drain = body.drain; }
   if (path === 'priority') { const j = d.jobs.find(j => j.id === body.id); if (j) j.spec.priority = body.priority; }
+  if (path === 'nodes/policy') { const n = d.nodes.find(n => n.id === body.id); if (n) { n.policy = {...body}; delete n.policy.id; n.gate = body.mode === 'paused' ? {allowed: false, reason: 'paused by the Mac owner'} : body.mode === 'idle' && n.presence && n.presence.idleSeconds < body.idleMinutes * 60 ? {allowed: false, reason: 'owner is active'} : {allowed: true, reason: ''}; } return Promise.resolve({policy: body}); }
   if (path === 'tenants') { const t = d.tenants.find(t => t.id === body.id); if (t) Object.assign(t, body); else d.tenants.push(body); }
   if (path === 'models') d.models.push(body);
   if (path === 'suites') d.suites[body.id] = body.cases;
@@ -191,12 +192,20 @@ function render() {
   $('#recent').innerHTML = table(jobs.slice(0, 5), false);
   $('#job-table').innerHTML = table(filtered(), true);
   $('#bulk').hidden = selected.size === 0; $('#bulk-count').textContent = `${selected.size} selected`;
-  $('#nodes').innerHTML = nodes.map(n => `<article class="node-card"><div class="section-head"><h3>${esc(n.id)}</h3>${badge(n.online ? 'online' : 'offline')}</div>
+  $('#nodes').innerHTML = nodes.map(n => {
+    const pol = n.policy || {mode: 'always', idleMinutes: 5}, gate = n.gate || {allowed: true, reason: ''}, pr = n.presence || {};
+    const presence = [pr.idleSeconds !== undefined ? (pr.locked ? 'screen locked' : 'idle ' + (pr.idleSeconds < 90 ? Math.round(pr.idleSeconds) + ' s' : Math.round(pr.idleSeconds / 60) + ' min')) : null,
+      pr.onBattery ? `battery ${Math.round(pr.batteryPct ?? 0)}%` : (pr.batteryPct !== undefined ? 'plugged in' : null), pr.lowPowerMode ? 'Low Power Mode' : null, pr.micInUse ? 'mic in use' : null].filter(Boolean).join(' · ');
+    return `<article class="node-card"><div class="section-head"><h3>${esc(n.id)}</h3>${badge(n.online ? 'online' : 'offline')}</div>
     <p>${esc(n.gpu || n.host || 'Native Mac worker')}</p><p>${n.budgetGiB} GiB budget · ${esc(n.thermal || 'unknown')} thermal · ${reservedOn(n.id, jobs).toFixed(1)} GiB reserved</p><p>${esc(n.runtimes.join(' · '))}</p>
-    <div class="actions"><button data-node="${esc(n.id)}">Details</button><button data-drain="${esc(n.id)}" data-value="${!n.drain}">${n.drain ? 'Resume admission' : 'Drain node'}</button></div></article>`).join('') || '<div class="empty">No registered Mac workers.</div>';
+    <p>${gate.allowed ? '<span class="badge succeeded">accepting work</span>' : `<span class="badge queued">not accepting: ${esc(gate.reason)}</span>`} <span class="muted">${esc(presence)}</span></p>
+    <label class="policy">When may this Mac run fleet work?
+      <select data-policy-mode="${esc(n.id)}"><option value="always" ${pol.mode === 'always' ? 'selected' : ''}>Always</option><option value="idle" ${pol.mode === 'idle' ? 'selected' : ''}>Only when I am away (${pol.idleMinutes ?? 5} min idle)</option><option value="paused" ${pol.mode === 'paused' ? 'selected' : ''}>Paused</option></select></label>
+    <div class="actions"><button data-node="${esc(n.id)}">Details</button><button data-drain="${esc(n.id)}" data-value="${!n.drain}">${n.drain ? 'Resume admission' : 'Drain node'}</button></div></article>`;
+  }).join('') || '<div class="empty">No registered Mac workers.</div>';
   renderGantt();
   $('#tenant-list').innerHTML = `<table><tr><th>Tenant</th><th>Quota</th><th>Reserved now</th><th>Weight</th><th>Budget used</th></tr>${tenants.map(t => { const used = ((state.usage || []).find(u => u.tenant === t.id)?.reservedGiBSeconds || 0) / 3600; return `<tr><td>${esc(t.id)}</td><td>${t.quota} GiB</td><td>${sum(jobs.filter(j => j.tenant === t.id && ACTIVE.includes(j.state)), j => j.spec.memoryGiB)} GiB</td><td>${t.weight}</td><td>${t.budget ? `${used.toFixed(1)} / ${t.budget} GiB-h` : 'no budget'}</td></tr>`; }).join('')}</table>`;
-  $('#usage-list').innerHTML = (state.usage || []).map(u => `<div class="queue-line"><span>${esc(u.tenant)}</span><strong>${u.workerSeconds.toFixed(1)} worker-seconds · ${u.reservedGiBSeconds.toFixed(1)} GiB-seconds</strong></div>`).join('') || '<div class="empty">Metered attempts appear after completion or lease expiry.</div>';
+  $('#usage-list').innerHTML = (state.usage || []).map(u => `<div class="queue-line"><span>${esc(u.tenant)}</span><strong>${u.workerSeconds.toFixed(1)} worker-seconds · ${u.reservedGiBSeconds.toFixed(1)} GiB-seconds${u.kWh ? ` · ≈${(u.kWh * 1000).toFixed(1)} Wh (estimate)` : ''}</strong></div>`).join('') || '<div class="empty">Metered attempts appear after completion or lease expiry.</div>';
   renderModels();
   $('#events').innerHTML = events.length ? `<table><tr><th>Time</th><th>Event</th><th>Subject</th><th>Detail</th></tr>${events.map(e => `<tr><td>${esc(new Date(e.at * 1000).toLocaleString())}</td><td>${esc(e.kind)}</td><td>${esc(e.subject)}</td><td>${esc(e.detail)}</td></tr>`).join('')}</table>` : '<div class="empty">No administrator activity visible.</div>';
   const al = alerts(), badgeEl = $('#alert-count');
@@ -328,6 +337,13 @@ function estimateGiB(paramsB, quant) {
   const bits = (table.find(([k]) => q.includes(k)) || [0, 16])[1];
   return Math.round((paramsB * 1e9 * bits / 8 * 1.15 / 1024 ** 3 + 0.75) * 10) / 10;
 }
+function provBadge(m) {
+  const p = m.provenance;
+  if (!p) return m.path ? '<span class="label" title="No signed attestation: registered manually or downloaded by an agent without a signing key">unattested</span>' : '';
+  if (p.chainVerified) return '<span class="badge succeeded" title="Signed by the node that produced it, and every attested parent is signed too">✓ verified chain</span> ';
+  if (p.verified) return '<span class="badge running" title="This step is signed by its node; the base model was not attested on this fleet">✓ signed · base unattested</span> ';
+  return '<span class="badge queued" title="An attestation was missing or failed verification">unverified</span> ';
+}
 function renderModels() {
   const models = state.models;
   $('#model-list').innerHTML = models.map(m => {
@@ -336,7 +352,7 @@ function renderModels() {
     return `<article class="node-card"><div class="section-head"><h3>${esc(m.id)}</h3>${badge(st === 'ready' ? 'succeeded' : st === 'failed' ? 'failed' : st === 'onboarding' ? 'queued' : 'running').replace(/>[^<]*</, '>' + esc(st) + '<')}</div>
       <p>${esc(m.runtime)}${m.quant ? ' · ' + esc(m.quant) : ''}${m.paramsB ? ' · ' + m.paramsB + 'B params' : ''} · ~${m.memoryGiB} GiB memory</p>
       <p>${esc(m.source || 'No pinned source')}${m.sizeBytes ? ' · ' + GB(m.sizeBytes) + ' on disk' : ''}</p>
-      <p>${b ? `<span class="label">${(b.generationTokensPerSecond || 0).toFixed(1)} tok/s gen</span><span class="label">${(b.promptTokensPerSecond || 0).toFixed(0)} tok/s prompt</span>` : ''}${e ? `<span class="label">eval ${e.passed}/${e.total}</span>` : ''}</p>
+      <p>${provBadge(m)}${b ? `<span class="label">${(b.generationTokensPerSecond || 0).toFixed(1)} tok/s gen</span><span class="label">${(b.promptTokensPerSecond || 0).toFixed(0)} tok/s prompt</span>` : ''}${e ? `<span class="label">eval ${e.passed}/${e.total}</span>` : ''}</p>
       <div class="actions"><label class="remember"><input type="checkbox" data-compare="${esc(m.id)}" ${compareSet.has(m.id) ? 'checked' : ''}> Compare</label><button data-model="${esc(m.id)}">Open</button></div></article>`;
   }).join('') || '<div class="empty">No models yet. Press <strong>Onboard a model</strong> to download one onto a Mac.</div>';
   $('#compare').disabled = compareSet.size < 2;
@@ -356,7 +372,9 @@ function openModel(id) {
     const cases = r.kind === 'evaluate' && b.cases ? `<details><summary>cases</summary>${b.cases.map(c => `<div class="queue-line"><span>${c.passed ? '✔' : '✘'} ${esc(c.prompt)}</span><span class="muted">${esc(c.output.slice(0, 80))}</span></div>`).join('')}</details>` : '';
     return `<tr><td>${new Date(r.at * 1000).toLocaleString()}</td><td>${esc(r.kind)}</td><td>${b.success ? badge('succeeded') : badge('failed')}</td><td>${detail}${cases}</td><td>${esc(r.node)}</td></tr>`;
   };
-  $('#modeldlg-body').innerHTML = `<table>${meta.map(([k, v]) => `<tr><td>${esc(k)}</td><td style="word-break:break-all">${esc(v)}</td></tr>`).join('')}</table>
+  const chain = (m.provenance && m.provenance.chain) || [];
+  const provHtml = m.provenance ? `<h3 class="gap">Provenance</h3><table><tr><th>Step</th><th>Signed</th><th>Signer</th><th>When</th><th>Note</th></tr>${chain.map(c => `<tr><td>${esc(c.kind)} <small>${esc(String(c.job).slice(0, 8))}</small></td><td>${c.verified ? badge('succeeded').replace('>succeeded<', '>verified<') : badge('queued').replace('>queued<', '>unverified<')}</td><td>${esc(c.signer || '—')}</td><td>${new Date(c.at * 1000).toLocaleString()}</td><td>${esc(c.why || '')}</td></tr>`).join('')}</table>${m.provenance.baseUnattested ? '<p class="muted">The base model came from outside this fleet (for example pulled by mlx-lm from Hugging Face) and has no attestation.</p>' : ''}<p class="muted">Signatures prove which Mac produced an artifact and that its result record was not altered; they are not a global supply-chain guarantee.</p>` : '';
+  $('#modeldlg-body').innerHTML = `<table>${meta.map(([k, v]) => `<tr><td>${esc(k)}</td><td style="word-break:break-all">${esc(v)}</td></tr>`).join('')}</table>${provHtml}
     <h3 class="gap">History</h3>${rs.length ? `<table><tr><th>When</th><th>Kind</th><th>Result</th><th>Detail</th><th>Mac</th></tr>${rs.map(row).join('')}</table>` : '<div class="empty">No benchmarks or evaluations yet.</div>'}`;
   const ready = (m.status || 'ready') === 'ready' && !!m.path;
   const gguf = ready && m.runtime === 'llama';
@@ -768,7 +786,12 @@ for (const [selector, path, numbers] of [['#tenant-form', 'tenants', ['quota', '
     try { const b = Object.fromEntries(new FormData(e.target)); numbers.forEach(k => { if (b[k] === '' || b[k] === undefined) delete b[k]; else b[k] = Number(b[k]); }); if (b.endpoints) b.endpoints = JSON.parse(b.endpoints); await api(path, b); await refresh(); toast('Saved'); } catch (err) { fail(err); }
   };
 }
-document.addEventListener('change', e => {
+document.addEventListener('change', async e => {
+  const pm = e.target.dataset && e.target.dataset.policyMode;
+  if (pm) {
+    try { const n = state.nodes.find(x => x.id === pm); await api('nodes/policy', {id: pm, ...(n.policy || {}), mode: e.target.value}); await refresh(); toast(`${pm}: ${e.target.value === 'idle' ? 'runs fleet work only when you are away' : e.target.value === 'paused' ? 'fleet work paused' : 'runs fleet work any time'}`); } catch (err) { fail(err); }
+    return;
+  }
   const id = e.target.dataset && e.target.dataset.select;
   const cm = e.target.dataset && e.target.dataset.compare;
   if (cm) { e.target.checked ? compareSet.add(cm) : compareSet.delete(cm); $('#compare').disabled = compareSet.size < 2; return; }

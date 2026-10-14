@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _common import confine, emit, mlx_python, models_root  # noqa: E402
+from _common import confine, emit, mlx_python, models_root, run_group  # noqa: E402
 
 
 def main(argv=None) -> int:
@@ -25,8 +25,8 @@ def main(argv=None) -> int:
     out.parent.mkdir(parents=True, exist_ok=True)
     model = str(confine(a.model)) if a.model.startswith("/") else a.model
     emit(kind="progress", stage="fuse", model=model, adapter=str(adapter))
-    r = subprocess.run([mlx_python(), "-m", "mlx_lm", "fuse", "--model", model, "--adapter-path", str(adapter), "--save-path", str(out)],
-                       capture_output=True, text=True, timeout=3600)
+    r = run_group([mlx_python(), "-m", "mlx_lm", "fuse", "--model", model, "--adapter-path", str(adapter), "--save-path", str(out)],
+                       timeout=3600)
     if r.returncode != 0 or not (out / "config.json").exists():
         emit(kind="error", message=(r.stderr or r.stdout)[-400:])
         return r.returncode or 1

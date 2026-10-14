@@ -13,7 +13,7 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _common import confine, emit, find_tool, mlx_python  # noqa: E402
+from _common import confine, emit, find_tool, mlx_python, run_group  # noqa: E402
 
 
 def judge(case: dict, text: str) -> bool:
@@ -31,7 +31,7 @@ def mlx_generate(python: str, model: str, adapter: str | None, prompt: str, max_
     cmd = [python, "-m", "mlx_lm", "generate", "--model", model, "--prompt", prompt, "--max-tokens", str(max_tokens), "--temp", "0"]
     if adapter:
         cmd += ["--adapter-path", adapter]
-    r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, stdin=subprocess.DEVNULL)
+    r = run_group(cmd, timeout=timeout, stdin=subprocess.DEVNULL)
     out, inside = [], False
     for line in r.stdout.splitlines():
         if line.startswith("=========="):
@@ -84,8 +84,8 @@ def main(argv=None) -> int:
     for i, case in enumerate(cases, 1):
         started = time.monotonic()
         try:
-            r = subprocess.run([tool, "-m", str(model), "-p", case["prompt"], "-n", str(a.max_tokens), "--temp", "0", "--no-display-prompt", "-no-cnv"],
-                               capture_output=True, text=True, timeout=a.timeout, stdin=subprocess.DEVNULL)
+            r = run_group([tool, "-m", str(model), "-p", case["prompt"], "-n", str(a.max_tokens), "--temp", "0", "--no-display-prompt", "-no-cnv"],
+                               timeout=a.timeout, stdin=subprocess.DEVNULL)
             text, ok = r.stdout, r.returncode == 0 and judge(case, r.stdout)
         except subprocess.TimeoutExpired:
             text, ok = "", False

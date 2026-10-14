@@ -9,7 +9,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _common import confine, emit, find_tool, models_root  # noqa: E402
+from _common import confine, emit, find_tool, models_root, run_group  # noqa: E402
 
 TYPES = {"Q2_K", "Q3_K_S", "Q3_K_M", "Q4_0", "Q4_K_S", "Q4_K_M", "Q5_0", "Q5_K_S", "Q5_K_M", "Q6_K", "Q8_0", "F16"}
 
@@ -30,7 +30,7 @@ def main(argv=None) -> int:
     out = confine(str(models_root() / src.parent.name / name))
     out.parent.mkdir(parents=True, exist_ok=True)
     emit(kind="progress", stage="quantize", type=a.type)
-    r = subprocess.run([find_tool("llama-quantize"), str(src), str(out), a.type], capture_output=True, text=True, timeout=7200)
+    r = run_group([find_tool("llama-quantize"), str(src), str(out), a.type], timeout=7200)
     if r.returncode != 0 or not out.is_file():
         emit(kind="error", message=(r.stderr or r.stdout)[-400:])
         return r.returncode or 1

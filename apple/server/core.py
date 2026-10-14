@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: BUSL-1.1
 # Copyright © 2026 Zyvor AI Labs Private Limited
 """Durable admission scheduler. All decisions and reservations share one SQLite transaction."""
-import json, sqlite3, time, uuid, threading, math
+import hashlib, json, sqlite3, time, uuid, threading, math
+from server import ed25519
 
 RUNTIMES=['demo','mlx','llama','mps','coreml','download','bench','evaluate','quantize','train','serve','fuse']
 KINDS=['inference','download','benchmark','evaluate','quantize','train','serve','dataset','fuse']
@@ -16,9 +17,43 @@ def positive(value, name):
         raise Problem(name+' must be positive')
     return value
 
+POLICY_MODES=('always','idle','paused')
+DEFAULT_POLICY={'mode':'always','idleMinutes':5,'allowOnBattery':True,'minBatteryPct':30,'pauseOnCall':True,'preempt':True}
+OWNER_RETURNED='owner returned'
+
+def clean_policy(raw):
+    """Validate an owner policy. Unknown keys are rejected so typos cannot silently disable a safeguard."""
+    if not isinstance(raw,dict): raise Problem('policy must be an object')
+    out=dict(DEFAULT_POLICY)
+    for k,v in raw.items():
+        if k not in DEFAULT_POLICY: raise Problem('unknown policy field '+str(k))
+        out[k]=v
+    if out['mode'] not in POLICY_MODES: raise Problem('mode must be always, idle or paused')
+    if type(out['idleMinutes']) not in (int,float) or isinstance(out['idleMinutes'],bool) or not 0<=out['idleMinutes']<=1440: raise Problem('idleMinutes must be 0..1440')
+    if type(out['minBatteryPct']) not in (int,float) or isinstance(out['minBatteryPct'],bool) or not 0<=out['minBatteryPct']<=100: raise Problem('minBatteryPct must be 0..100')
+    for k in ('allowOnBattery','pauseOnCall','preempt'):
+        if type(out[k]) is not bool: raise Problem(k+' must be boolean')
+    return out
+
+def policy_gate(policy,presence):
+    """Return (allowed, reason). Missing presence data (older agents, desktops without sensors) never blocks work."""
+    p=policy or DEFAULT_POLICY; pr=presence if isinstance(presence,dict) else {}
+    if p['mode']=='paused': return False,'paused by the Mac owner'
+    if pr.get('lowPowerMode'): return False,'Low Power Mode is on'
+    if pr.get('onBattery'):
+        if not p['allowOnBattery']: return False,'on battery'
+        pct=pr.get('batteryPct')
+        if isinstance(pct,(int,float)) and pct<p['minBatteryPct']: return False,f'battery below {p["minBatteryPct"]:g}%'
+    if p['mode']=='idle':
+        idle=pr.get('idleSeconds')
+        locked=bool(pr.get('locked')) or bool(pr.get('displaySleep'))
+        if isinstance(idle,(int,float)) and not locked and idle<p['idleMinutes']*60: return False,'owner is active'
+        if p['pauseOnCall'] and pr.get('micInUse'): return False,'microphone in use (call?)'
+    return True,''
+
 class Store:
     def __init__(self, path, clock=time.time):
-        self.clock=clock; self.lock=threading.RLock()
+        self.clock=clock; self.lock=threading.RLock(); self._gate_last={}; self.require_verified=False
         self.db=sqlite3.connect(path, check_same_thread=False, isolation_level=None)
         self.db.row_factory=sqlite3.Row
         self.db.executescript('''PRAGMA journal_mode=WAL;
@@ -29,6 +64,10 @@ class Store:
         CREATE TABLE IF NOT EXISTS logs(seq INTEGER PRIMARY KEY AUTOINCREMENT, job TEXT, at REAL, text TEXT);
         CREATE TABLE IF NOT EXISTS models(id TEXT PRIMARY KEY, body TEXT);
         CREATE TABLE IF NOT EXISTS history(at REAL PRIMARY KEY, online INTEGER, running INTEGER, queued INTEGER, reservedGiB REAL, budgetGiB REAL);
+        CREATE TABLE IF NOT EXISTS node_keys(node TEXT PRIMARY KEY, pub TEXT NOT NULL, first_seen REAL);
+        CREATE TABLE IF NOT EXISTS attestations(id INTEGER PRIMARY KEY AUTOINCREMENT, at REAL, job TEXT, node TEXT, kind TEXT, verified INTEGER, why TEXT, payload TEXT, signature TEXT);
+        CREATE INDEX IF NOT EXISTS attestations_job ON attestations(job);
+        CREATE TABLE IF NOT EXISTS node_policy(node TEXT PRIMARY KEY, body TEXT NOT NULL, at REAL);
         CREATE TABLE IF NOT EXISTS datasets(id TEXT PRIMARY KEY, body TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS run_metrics(job TEXT, step INTEGER, key TEXT, value REAL, at REAL);
         CREATE INDEX IF NOT EXISTS run_metrics_job ON run_metrics(job, key, step);
@@ -44,7 +83,10 @@ class Store:
         cols=[r['name'] for r in self.db.execute('PRAGMA table_info(jobs)')]
         if 'started' not in cols: self.db.execute('ALTER TABLE jobs ADD COLUMN started REAL')
         if 'finished' not in cols: self.db.execute('ALTER TABLE jobs ADD COLUMN finished REAL')
+        if 'spec_sha' not in cols: self.db.execute('ALTER TABLE jobs ADD COLUMN spec_sha TEXT')
         if 'budget' not in [r['name'] for r in self.db.execute('PRAGMA table_info(tenants)')]: self.db.execute('ALTER TABLE tenants ADD COLUMN budget REAL')
+        if 'watts' not in [r['name'] for r in self.db.execute('PRAGMA table_info(node_telemetry)')]: self.db.execute('ALTER TABLE node_telemetry ADD COLUMN watts REAL')
+        if 'joules' not in [r['name'] for r in self.db.execute('PRAGMA table_info(usage)')]: self.db.execute('ALTER TABLE usage ADD COLUMN joules REAL DEFAULT 0')
         self.db.execute('INSERT OR IGNORE INTO tenants(id,quota,weight) VALUES(?,?,?)',('default',32,1))
     def tx(self, fn):
         with self.lock:
@@ -66,18 +108,20 @@ class Store:
     def record_telemetry(self, node, body):
         """Per-heartbeat GPU sample. Utilisation is device-wide as reported by the Mac, not per job."""
         util=body.get('gpuUtilPct')
+        watts=(body.get('power') or {}).get('packageW') if isinstance(body.get('power'),dict) else None
+        if not isinstance(watts,(int,float)) or isinstance(watts,bool) or not 0<=watts<=2000: watts=None
         if not isinstance(util,(int,float)) or isinstance(util,bool): return
         last=self.db.execute('SELECT MAX(at) AS a FROM node_telemetry WHERE node=?',(node,)).fetchone()['a']
         if last is not None and self.clock()-last<1.0: return
         reserved=sum(json.loads(j['body'])['memoryGiB'] for j in self.db.execute("SELECT body FROM jobs WHERE node=? AND state IN ('running','cancelling')",(node,)))
         in_use=body.get('gpuInUseMiB'); in_use=(in_use/1024.0) if isinstance(in_use,(int,float)) and not isinstance(in_use,bool) else 0.0
-        self.db.execute('INSERT INTO node_telemetry VALUES(?,?,?,?,?)',(self.clock(),node,float(min(100,max(0,util))),in_use,reserved))
+        self.db.execute('INSERT INTO node_telemetry(at,node,util,inUseGiB,reservedGiB,watts) VALUES(?,?,?,?,?,?)',(self.clock(),node,float(min(100,max(0,util))),in_use,reserved,watts))
         self.db.execute('DELETE FROM node_telemetry WHERE node=? AND at NOT IN (SELECT at FROM node_telemetry WHERE node=? ORDER BY at DESC LIMIT 900)',(node,node))
     def telemetry(self, limit=120):
         limit=max(1,min(int(limit),900)); out={}
         with self.lock:
             for n in self.db.execute('SELECT id FROM nodes'):
-                rows=self.db.execute('SELECT at,util,inUseGiB,reservedGiB FROM (SELECT * FROM node_telemetry WHERE node=? ORDER BY at DESC LIMIT ?) ORDER BY at',(n['id'],limit)).fetchall()
+                rows=self.db.execute('SELECT at,util,inUseGiB,reservedGiB,watts FROM (SELECT * FROM node_telemetry WHERE node=? ORDER BY at DESC LIMIT ?) ORDER BY at',(n['id'],limit)).fetchall()
                 out[n['id']]=[dict(r) for r in rows]
         return out
     def recent_decisions(self, limit=40):
@@ -93,7 +137,44 @@ class Store:
         def run():
             self.db.execute('INSERT INTO nodes(id,body,seen) VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET body=excluded.body,seen=excluded.seen',(ident,json.dumps(body),self.clock()))
             self.record_telemetry(ident,body)
+            self.pin_key(ident,body.get('attestKey'))
+            self.enforce_policy(ident,body)
         self.tx(run)
+    def pin_key(self,node,key):
+        """Trust-on-first-use pinning of a node's attestation public key; a different key later is refused and logged."""
+        if not isinstance(key,str) or len(key)!=64: return
+        try: bytes.fromhex(key)
+        except ValueError: return
+        row=self.db.execute('SELECT pub FROM node_keys WHERE node=?',(node,)).fetchone()
+        if not row: self.db.execute('INSERT INTO node_keys VALUES(?,?,?)',(node,key,self.clock())); self.event('attest.key_pinned',node,key[:16])
+        elif row['pub']!=key and self._gate_last.get(('key',node))!=key:
+            self._gate_last[('key',node)]=key; self.event('attest.key_mismatch',node,'a different signing key was presented; attestations are ignored until the key is reset')
+    def reset_key(self,node):
+        self.tx(lambda:(self.db.execute('DELETE FROM node_keys WHERE node=?',(node,)),self.event('attest.key_reset',node)))
+    def node_policy(self,node):
+        row=self.db.execute('SELECT body FROM node_policy WHERE node=?',(node,)).fetchone()
+        return json.loads(row['body']) if row else dict(DEFAULT_POLICY)
+    def set_policy(self,node,raw):
+        pol=clean_policy(raw)
+        def run():
+            if not self.db.execute('SELECT 1 FROM nodes WHERE id=?',(node,)).fetchone(): raise Problem('node not found',404)
+            self.db.execute('INSERT OR REPLACE INTO node_policy VALUES(?,?,?)',(node,json.dumps(pol),self.clock())); self.event('node.policy',node,pol['mode'])
+            n=self.db.execute('SELECT body FROM nodes WHERE id=?',(node,)).fetchone()
+            self.enforce_policy(node,json.loads(n['body']))
+        self.tx(run); return pol
+    def gate(self,node,body):
+        ok,why=policy_gate(self.node_policy(node),body.get('presence'))
+        if self._gate_last.get(node)!=(ok,why):
+            self._gate_last[node]=(ok,why); self.event('node.gate',node,'open' if ok else why)
+        return ok,why
+    def enforce_policy(self,node,body):
+        """When the owner returns (or pauses the Mac), ask running jobs to yield; they are requeued without using a retry."""
+        ok,why=self.gate(node,body)
+        pol=self.node_policy(node)
+        if ok or not pol.get('preempt',True): return
+        for j in self.db.execute("SELECT id FROM jobs WHERE node=? AND state='running'",(node,)).fetchall():
+            self.db.execute("UPDATE jobs SET state='cancelling',reason=? WHERE id=?",(OWNER_RETURNED,j['id']))
+            self.event('job.yield',j['id'],why); self.decide(j['id'],node,'yield',why)
     def submit(self, tenant, body):
         if not isinstance(tenant,str) or not tenant: raise Problem('invalid tenant')
         if not isinstance(body,dict): raise Problem('object required')
@@ -110,6 +191,10 @@ class Store:
         args=body.get('args',[])
         if not isinstance(args,list) or len(args)>64 or not all(isinstance(x,str) and len(x)<=4096 for x in args): raise Problem('invalid args')
         if not isinstance(body.get('model',''),str) or len(body.get('model',''))>256: raise Problem('invalid model')
+        if self.require_verified and body.get('kind') in ('serve','benchmark','evaluate','quantize','fuse') and body.get('modelId'):
+            row=self.db.execute('SELECT body FROM models WHERE id=?',(body['modelId'],)).fetchone()
+            prov=(json.loads(row['body']).get('provenance') if row else None) or {}
+            if not prov.get('verified'): raise Problem('policy requireVerified: model %s has no verified provenance'%body['modelId'],403)
         after=body.get('after',[])
         if not isinstance(after,list) or len(after)>16 or not all(isinstance(x,str) and len(x)<=64 for x in after): raise Problem('invalid after')
         if 'datasetId' in body and (not isinstance(body['datasetId'],str) or not 0<len(body['datasetId'])<=128): raise Problem('invalid datasetId')
@@ -123,16 +208,31 @@ class Store:
                 if not self.db.execute('SELECT 1 FROM jobs WHERE id=? AND tenant=?',(dep,tenant)).fetchone(): raise Problem('unknown dependency '+dep[:12])
             self.db.execute('INSERT INTO jobs(id,tenant,body,state,created) VALUES(?,?,?,?,?)',(ident,tenant,json.dumps(body),'queued',self.clock())); self.event('job.submitted',ident); self.decide(ident,None,'queue','queued')
         self.tx(run); return ident
+    def energy(self,node,start,end):
+        """Estimated energy of a job: node package power integrated over its lease window (trapezoid), and the part above
+        the node's idle baseline (median of watts observed while no job was running). Both are estimates: package power is
+        the whole SoC, so other activity on the Mac is included in `joules`. Returns None without power samples."""
+        rows=self.db.execute('SELECT at,watts FROM node_telemetry WHERE node=? AND watts IS NOT NULL AND at BETWEEN ? AND ? ORDER BY at',(node,start-4,end+4)).fetchall()
+        if len(rows)<2: return None
+        pts=[(max(start,min(end,r['at'])),r['watts']) for r in rows]
+        joules=sum((b[0]-a[0])*(a[1]+b[1])/2 for a,b in zip(pts,pts[1:]))
+        idle=sorted(r['watts'] for r in self.db.execute('SELECT watts FROM node_telemetry WHERE node=? AND watts IS NOT NULL AND at<? ORDER BY at DESC LIMIT 200',(node,start)))
+        base=idle[len(idle)//2] if idle else None
+        span=max(end-start,1e-9)
+        above=max(0.0,joules-base*span) if base is not None else None
+        return dict(joules=round(joules,1),joulesAboveIdle=None if above is None else round(above,1),avgWatts=round(joules/span,2),idleWatts=base,samples=len(rows))
     def meter(self,j):
         if j['started'] is None: return
         seconds=max(0,min(self.clock(),j['expires'] or self.clock())-j['started'])
-        self.db.execute('INSERT INTO usage(job,tenant,node,seconds,gibSeconds,at) VALUES(?,?,?,?,?,?)',(j['id'],j['tenant'],j['node'],seconds,seconds*json.loads(j['body'])['memoryGiB'],self.clock()))
+        en=self.energy(j['node'],j['started'],j['started']+seconds) if j['node'] else None
+        self.db.execute('INSERT INTO usage(job,tenant,node,seconds,gibSeconds,at,joules) VALUES(?,?,?,?,?,?,?)',(j['id'],j['tenant'],j['node'],seconds,seconds*json.loads(j['body'])['memoryGiB'],self.clock(),(en or {}).get('joules',0) or 0))
+        if en: self.db.execute('INSERT INTO results(at,job,model,kind,node,body) VALUES(?,?,?,?,?,?)',(self.clock(),j['id'],json.loads(j['body']).get('modelId') or '','energy',j['node'],json.dumps(dict(success=True,**en,estimate=True))))
     def expire(self):
         for row in self.db.execute("SELECT * FROM jobs WHERE state IN ('running','cancelling') AND expires<=?",(self.clock(),)).fetchall():
             self.meter(row)
             b=json.loads(row['body'])
-            state='cancelled' if row['state']=='cancelling' and row['reason']!='job timeout' else ('queued' if row['attempt']<=b['retries'] else 'failed')
-            self.db.execute('UPDATE jobs SET state=?,node=NULL,lease=NULL,expires=NULL,reason=?,finished=? WHERE id=?',(state,'lease expired; old worker must stop',self.clock() if state in ('cancelled','failed') else None,row['id'])); self.event('lease.expired',row['id']); self.decide(row['id'],row['node'],'expired','lease expired → '+state)
+            state=('queued' if row['reason']==OWNER_RETURNED else 'cancelled') if row['state']=='cancelling' and row['reason']!='job timeout' else ('queued' if row['attempt']<=b['retries'] else 'failed')
+            self.db.execute('UPDATE jobs SET state=?,node=NULL,lease=NULL,expires=NULL,reason=?,finished=?,attempt=attempt-? WHERE id=?',(state,'lease expired; old worker must stop' if row['reason']!=OWNER_RETURNED else 'owner returned; will resume when the Mac is idle',self.clock() if state in ('cancelled','failed') else None,1 if (row['state']=='cancelling' and row['reason']==OWNER_RETURNED) else 0,row['id'])); self.event('lease.expired',row['id']); self.decide(row['id'],row['node'],'expired','lease expired → '+state)
             if json.loads(row['body']).get('kind')=='serve': self.job_followup(row['id'],False,row['node'] or '')
         # Timeout requests a stop, but holds capacity until acknowledgement or lease expiry.
         for row in self.db.execute("SELECT * FROM jobs WHERE state='running'").fetchall():
@@ -146,6 +246,7 @@ class Store:
             if n['drain'] or self.clock()-n['seen']>30: return None
             nb=json.loads(n['body'])
             if nb.get('thermal') in ['serious','critical'] or nb.get('pressure')=='critical': return None
+            if not self.gate(node,nb)[0]: return None
             active=self.db.execute("SELECT * FROM jobs WHERE state IN ('running','cancelling')").fetchall()
             local=[j for j in active if j['node']==node]
             if len(local)>=nb['slots'] or any(json.loads(j['body'])['mode']=='exclusive' for j in local): return None
@@ -170,7 +271,10 @@ class Store:
                     self.db.execute('UPDATE jobs SET reason=? WHERE id=?',(reason,j['id'])); continue
                 lease=uuid.uuid4().hex
                 self.db.execute("UPDATE jobs SET state='running',node=?,lease=?,expires=?,started=?,attempt=attempt+1,reason='' WHERE id=?",(node,lease,self.clock()+20,self.clock(),j['id'])); self.event('job.claimed',j['id'],node); self.decide(j['id'],node,'admit','admitted on '+node)
-                return dict(id=j['id'],lease=lease,spec=self.resolve(b),expires=self.clock()+20)
+                spec=self.resolve(b)
+                spec_sha=hashlib.sha256(json.dumps(spec,sort_keys=True,separators=(',',':')).encode()).hexdigest()
+                self.db.execute('UPDATE jobs SET spec_sha=? WHERE id=?',(spec_sha,j['id']))
+                return dict(id=j['id'],lease=lease,spec=spec,expires=self.clock()+20,specSha256=spec_sha)
             return None
         return self.tx(run)
     def resolve(self, spec):
@@ -197,15 +301,17 @@ class Store:
             self.db.execute('UPDATE jobs SET expires=? WHERE id=?',(expires,ident))
             return {'cancel':j['state']=='cancelling','expires':expires,'reason':j['reason']}
         return self.tx(run)
-    def complete(self,node,ident,lease,success,result):
+    def complete(self,node,ident,lease,success,result,attestation=None):
         def run():
             self.expire(); j=self.db.execute('SELECT * FROM jobs WHERE id=?',(ident,)).fetchone()
             if not j or j['node']!=node or j['lease']!=lease or j['state'] not in ['running','cancelling']: raise Problem('stale completion',409)
             self.meter(j)
+            att=self.check_attestation(node,j,attestation)
             b=json.loads(j['body']); timed_out=j['reason']=='job timeout'
-            state='cancelled' if j['state']=='cancelling' and not timed_out else ('succeeded' if success and not timed_out else ('queued' if j['attempt']<=b['retries'] else 'failed'))
-            self.db.execute('UPDATE jobs SET state=?,result=?,lease=NULL,node=NULL,expires=NULL,finished=? WHERE id=?',(state,json.dumps(result),self.clock() if state!='queued' else None,ident)); self.event('job.'+state,ident); self.decide(ident,node,state,'finished on '+node)
-            if state in ('succeeded','failed','cancelled'): self.job_followup(ident,state=='succeeded',node)
+            yielded=j['state']=='cancelling' and j['reason']==OWNER_RETURNED
+            state='queued' if yielded else 'cancelled' if j['state']=='cancelling' and not timed_out else ('succeeded' if success and not timed_out else ('queued' if j['attempt']<=b['retries'] else 'failed'))
+            self.db.execute('UPDATE jobs SET state=?,result=?,lease=NULL,node=NULL,expires=NULL,finished=?,attempt=attempt-?,reason=? WHERE id=?',(state,json.dumps(result),self.clock() if state!='queued' else None,1 if yielded else 0,'owner returned; will resume when the Mac is idle' if yielded else j['reason'],ident)); self.event('job.'+state,ident); self.decide(ident,node,state,'finished on '+node)
+            if state in ('succeeded','failed','cancelled'): self.job_followup(ident,state=='succeeded',node,att)
         self.tx(run)
     def cancel(self,ident,tenant=None):
         def run():
@@ -315,7 +421,19 @@ class Store:
                   args=['--dataset','--repo',repo,'--file',file_,'--revision',str(src.get('revision','main')),'--max-gib',str(min(float(max_gib),50))],labels=['dataset'])
         if body.get('node'): spec['node']=body['node']
         return self.submit(tenant,spec)
-    def job_followup(self,ident,success,node=''):
+    def _prov(self,ident,kind,attestation,parent_id=None):
+        """Provenance record attached to the artifact a job produced. `chainVerified` is true only if this link is signed
+        and every locally attested parent link is too (a base model pulled by an external tool is reported as unattested)."""
+        link=dict(job=ident,kind=kind,verified=bool(attestation and attestation['verified']),signer=(attestation or {}).get('signer'),
+                  attestation=(attestation or {}).get('id'),why=(attestation or {}).get('why',''),at=self.clock())
+        parent=None
+        if parent_id:
+            row=self.db.execute('SELECT body FROM models WHERE id=?',(parent_id,)).fetchone()
+            if row: parent=json.loads(row['body']).get('provenance')
+        chain=[link]+((parent or {}).get('chain',[]) if parent else [])
+        base_attested=parent_id is None or (parent is not None and bool(parent.get('chainVerified')))
+        return dict(verified=link['verified'],chainVerified=link['verified'] and base_attested,baseUnattested=(parent_id is not None and parent is None),chain=chain[:8])
+    def job_followup(self,ident,success,node='',attestation=None):
         """When a model-related job finishes, fold its structured `result` log line into the registry and results table."""
         j=self.db.execute('SELECT * FROM jobs WHERE id=?',(ident,)).fetchone()
         if not j: return
@@ -347,14 +465,14 @@ class Store:
         if kind=='download' and row:
             m=json.loads(row['body'])
             if success and result:
-                m.update(status='ready',path=result.get('path',''),sha256=result.get('sha256',''),sizeBytes=result.get('bytes',0),node=node)
+                m.update(status='ready',path=result.get('path',''),sha256=result.get('sha256',''),sizeBytes=result.get('bytes',0),node=node,provenance=self._prov(ident,'download',attestation))
             else: m['status']='failed'
             m['updated']=self.clock(); self.db.execute('UPDATE models SET body=? WHERE id=?',(json.dumps(m),model))
             self.event('model.'+m['status'],model,ident)
         if kind=='train' and success and result and row:
             base=json.loads(row['body']); tag=ident[:6]
             child=dict(runtime='mlx',memoryGiB=base.get('memoryGiB',4),status='ready',path=result.get('adapterPath',''),parent=model,source=base.get('source',''),quant=base.get('quant',''),
-                       kind='lora-adapter',dataset=spec.get('datasetId',''),trainJob=ident,finalValLoss=result.get('finalValLoss'),finalTrainLoss=result.get('finalTrainLoss'),node=node,updated=self.clock())
+                       kind='lora-adapter',dataset=spec.get('datasetId',''),trainJob=ident,finalValLoss=result.get('finalValLoss'),finalTrainLoss=result.get('finalTrainLoss'),node=node,updated=self.clock(),provenance=self._prov(ident,'train',attestation,model))
             self.db.execute('INSERT OR REPLACE INTO models VALUES(?,?)',(f'{model}-lora-{tag}',json.dumps(child))); self.event('model.adapter',f'{model}-lora-{tag}',ident)
         if kind=='serve' and row:
             m=json.loads(row['body']); m.pop('deployJob',None); m['endpoints']=[]; m['status']='ready' if m.get('path') else m.get('status','ready')
@@ -362,14 +480,39 @@ class Store:
         if kind=='fuse' and success and result and row:
             parent=json.loads(row['body'])
             child=dict(runtime='mlx',memoryGiB=parent.get('memoryGiB',4),status='ready',path=result.get('path',''),sizeBytes=result.get('bytes',0),parent=model,
-                       source=parent.get('source',''),quant=parent.get('quant',''),kind='fused',fusedFrom=parent.get('trainJob',''),dataset=parent.get('dataset',''),node=node,updated=self.clock())
+                       source=parent.get('source',''),quant=parent.get('quant',''),kind='fused',fusedFrom=parent.get('trainJob',''),dataset=parent.get('dataset',''),node=node,updated=self.clock(),provenance=self._prov(ident,'fuse',attestation,model))
             fid=f'{model}-fused'
             self.db.execute('INSERT OR REPLACE INTO models VALUES(?,?)',(fid,json.dumps(child))); self.event('model.fused',fid,ident)
         if kind=='quantize' and success and result and row:
             parent=json.loads(row['body']); q=result.get('quant','quant')
-            child=dict(parent,status='ready',path=result.get('path',''),sha256=result.get('sha256',''),sizeBytes=result.get('bytes',0),quant=q,parent=model,updated=self.clock())
+            child=dict(parent,status='ready',path=result.get('path',''),sha256=result.get('sha256',''),sizeBytes=result.get('bytes',0),quant=q,parent=model,updated=self.clock(),provenance=self._prov(ident,'quantize',attestation,model))
             child.pop('endpoints',None); child['memoryGiB']=round(parent['memoryGiB']*self.estimate_memory_gib(1,q)/max(self.estimate_memory_gib(1,parent.get('quant','')),0.1),1) if parent.get('paramsB') is None else self.estimate_memory_gib(parent['paramsB'],q)
             self.db.execute('INSERT OR REPLACE INTO models VALUES(?,?)',(f'{model}-{q}',json.dumps(child))); self.event('model.quantized',f'{model}-{q}',ident)
+    def check_attestation(self,node,job,att):
+        """Verify a node-signed statement about a finished job. Returns {verified, why, id} or None when none was sent."""
+        if att is None: return None
+        def record(verified,why,payload='',sig=''):
+            cur=self.db.execute('INSERT INTO attestations(at,job,node,kind,verified,why,payload,signature) VALUES(?,?,?,?,?,?,?,?)',
+                                (self.clock(),job['id'],node,json.loads(job['body']).get('kind','inference'),int(verified),why,payload[:8192],sig[:256]))
+            return dict(verified=verified,why=why,id=cur.lastrowid,signer=node)
+        if not isinstance(att,dict) or not isinstance(att.get('payload'),str) or not isinstance(att.get('signature'),str) or len(att['payload'])>8192:
+            return record(False,'malformed attestation')
+        payload,sig=att['payload'],att['signature']
+        key=self.db.execute('SELECT pub FROM node_keys WHERE node=?',(node,)).fetchone()
+        if not key: return record(False,'no pinned signing key for this node',payload,sig)
+        if not ed25519.verify_hex(key['pub'],payload.encode(),sig): return record(False,'signature does not verify against the pinned key',payload,sig)
+        try: obj=json.loads(payload)
+        except ValueError: return record(False,'payload is not JSON',payload,sig)
+        if not isinstance(obj,dict) or obj.get('job')!=job['id']: return record(False,'attestation is for a different job',payload,sig)
+        if obj.get('specSha256')!=job['spec_sha']: return record(False,'job spec hash does not match what was claimed',payload,sig)
+        if obj.get('resultSha256'):
+            last=None
+            for row in self.db.execute("SELECT text FROM logs WHERE job=? AND text LIKE '{\"kind\": \"result\"%' ORDER BY seq DESC LIMIT 1",(job['id'],)): last=row['text']
+            if last is None or hashlib.sha256(last.encode()).hexdigest()!=obj['resultSha256']: return record(False,'result line does not match the signed hash',payload,sig)
+        return record(True,'',payload,sig)
+    def attestations(self,job=None,limit=100):
+        q='SELECT id,at,job,node,kind,verified,why FROM attestations'+(' WHERE job=?' if job else '')+' ORDER BY id DESC LIMIT ?'
+        with self.lock: return [dict(r,verified=bool(r['verified'])) for r in self.db.execute(q,((job,) if job else ())+(max(1,min(int(limit),500)),))]
     def results(self,model=None,kind=None,limit=100):
         q='SELECT * FROM results WHERE 1=1'; a=[]
         if model: q+=' AND model=?'; a.append(model)
@@ -471,5 +614,5 @@ class Store:
                 j=dict(row)
                 if tenant and j['tenant']!=tenant: continue
                 j['spec']=json.loads(j.pop('body')); j['result']=json.loads(j['result']); j.pop('lease'); jobs.append(j)
-            return {'jobs':jobs,'nodes':[] if tenant else [dict(id=r['id'],seen=r['seen'],drain=bool(r['drain']),online=self.clock()-r['seen']<=30,**json.loads(r['body'])) for r in self.db.execute('SELECT * FROM nodes')], 'tenants':[dict(r) for r in self.db.execute('SELECT * FROM tenants') if not tenant or r['id']==tenant], 'models':[dict(id=r['id'],**json.loads(r['body'])) for r in self.db.execute('SELECT * FROM models') if not tenant or not json.loads(r['body']).get('tenants') or tenant in json.loads(r['body'])['tenants']], 'events':[dict(r) for r in self.db.execute('SELECT * FROM events ORDER BY seq DESC LIMIT 100')] if not tenant else [], 'usage':[dict(r) for r in self.db.execute('SELECT tenant,SUM(seconds) AS workerSeconds,SUM(gibSeconds) AS reservedGiBSeconds FROM usage GROUP BY tenant') if not tenant or r['tenant']==tenant], 'decisions':[] if tenant else self.recent_decisions(40),'datasets':[dict(id=r['id'],**json.loads(r['body'])) for r in self.db.execute('SELECT * FROM datasets')],'workflows':[dict(id=r['id'],at=r['at'],**json.loads(r['body'])) for r in self.db.execute('SELECT * FROM workflows ORDER BY at DESC LIMIT 50') if not tenant or json.loads(r['body'])['tenant']==tenant],'time':self.clock()}
+            return {'jobs':jobs,'nodes':[] if tenant else [dict(id=r['id'],seen=r['seen'],drain=bool(r['drain']),online=self.clock()-r['seen']<=30,policy=self.node_policy(r['id']),gate=dict(zip(('allowed','reason'),policy_gate(self.node_policy(r['id']),json.loads(r['body']).get('presence')))),**json.loads(r['body'])) for r in self.db.execute('SELECT * FROM nodes')], 'tenants':[dict(r) for r in self.db.execute('SELECT * FROM tenants') if not tenant or r['id']==tenant], 'models':[dict(id=r['id'],**json.loads(r['body'])) for r in self.db.execute('SELECT * FROM models') if not tenant or not json.loads(r['body']).get('tenants') or tenant in json.loads(r['body'])['tenants']], 'events':[dict(r) for r in self.db.execute('SELECT * FROM events ORDER BY seq DESC LIMIT 100')] if not tenant else [], 'usage':[dict(r,kWh=round((r['joules'] or 0)/3.6e6,6)) for r in self.db.execute('SELECT tenant,SUM(seconds) AS workerSeconds,SUM(gibSeconds) AS reservedGiBSeconds,SUM(joules) AS joules FROM usage GROUP BY tenant') if not tenant or r['tenant']==tenant], 'decisions':[] if tenant else self.recent_decisions(40),'datasets':[dict(id=r['id'],**json.loads(r['body'])) for r in self.db.execute('SELECT * FROM datasets')],'workflows':[dict(id=r['id'],at=r['at'],**json.loads(r['body'])) for r in self.db.execute('SELECT * FROM workflows ORDER BY at DESC LIMIT 50') if not tenant or json.loads(r['body'])['tenant']==tenant],'time':self.clock()}
         return self.tx(run)

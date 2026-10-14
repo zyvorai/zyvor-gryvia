@@ -4,6 +4,8 @@
 import json
 import os
 import shutil
+import signal
+import subprocess
 import sys
 from pathlib import Path
 
@@ -31,6 +33,33 @@ def mlx_python() -> str:
         if c and Path(c).is_file():
             return c
     return sys.executable
+
+
+def _kill_group(proc: subprocess.Popen) -> None:
+    try:
+        os.killpg(proc.pid, signal.SIGTERM)
+    except (ProcessLookupError, PermissionError):
+        pass
+
+
+def run_group(cmd, timeout=None, **kw) -> subprocess.CompletedProcess:
+    """subprocess.run in its own process group; a SIGTERM to this wrapper (job cancelled, owner returned, agent
+    restarted) terminates the whole group instead of orphaning the child."""
+    kw.setdefault("capture_output", True)
+    kw.setdefault("text", True)
+    kw.setdefault("stdin", subprocess.DEVNULL)
+    proc = subprocess.Popen(cmd, start_new_session=True, stdout=subprocess.PIPE if kw.pop("capture_output") else None,
+                            stderr=subprocess.PIPE, **kw)
+    previous = signal.signal(signal.SIGTERM, lambda *_: (_kill_group(proc), sys.exit(143)))
+    try:
+        out, err = proc.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        _kill_group(proc)
+        proc.communicate()
+        raise
+    finally:
+        signal.signal(signal.SIGTERM, previous)
+    return subprocess.CompletedProcess(cmd, proc.returncode, out, err)
 
 
 def emit(**obj) -> None:

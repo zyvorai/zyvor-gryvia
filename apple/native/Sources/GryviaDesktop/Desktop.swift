@@ -108,6 +108,20 @@ enum Pane: String, CaseIterable, Identifiable {
         await action("api/jobs", ["runtime": "demo", "model": "Hello Gryvia", "memoryGiB": 1.0, "priority": 50,
                                   "args": ["--seconds", "3"], "mode": "exclusive", "timeoutSeconds": 60, "labels": ["demo"]])
     }
+    /// The registered node that is this Mac (matched by host name), if any.
+    var localNode: Node? {
+        let host = ProcessInfo.processInfo.hostName.lowercased()
+        let short = host.split(separator: ".").first.map(String.init) ?? host
+        return state?.nodes.first { n in
+            let h = (n.host ?? "").lowercased()
+            return h == host || h.split(separator: ".").first.map(String.init) == short || n.id.lowercased() == short
+        }
+    }
+    func setPolicy(node: Node, mode: String) async {
+        var body: [String: Any] = ["id": node.id, "mode": mode]
+        if let p = node.policy { body["idleMinutes"] = p.idleMinutes; body["allowOnBattery"] = p.allowOnBattery; body["minBatteryPct"] = p.minBatteryPct; body["pauseOnCall"] = p.pauseOnCall; body["preempt"] = p.preempt }
+        await action("api/nodes/policy", body)
+    }
     func bump(_ job: Job) async { await action("api/priority", ["id": job.id, "priority": min(100, job.spec.priority + 10)]) }
     func retry(_ job: Job) async {
         await action("api/jobs", ["runtime": job.spec.runtime, "model": job.spec.model ?? "", "memoryGiB": job.spec.memoryGiB,
@@ -832,6 +846,10 @@ struct ContentView: View {
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 Spacer()
+                if let g = n.gate, !g.allowed { Text(g.reason).font(.caption).foregroundStyle(.orange) }
+                Picker("Work", selection: Binding(get: { n.policy?.mode ?? "always" }, set: { m in Task { await fleet.setPolicy(node: n, mode: m) } })) {
+                    Text("Always").tag("always"); Text("When I'm away").tag("idle"); Text("Paused").tag("paused")
+                }.labelsHidden().frame(width: 140)
                 Text(n.drain ? "Draining" : (n.online ? "Online" : "Offline")).foregroundStyle(.secondary)
                 Button(n.drain ? "Resume" : "Drain") { Task { await fleet.action("api/drain", ["id": n.id, "drain": !n.drain]) } }
             }
@@ -960,7 +978,7 @@ struct SettingsView: View {
             }
             Picker("Refresh every", selection: $refresh) { ForEach([2, 5, 15, 60], id: \.self) { Text("\($0) s").tag($0) } }
             Section("About") {
-                Text("Gryvia Apple 0.2.0 · Business Source License 1.1")
+                Text("Gryvia Apple 0.3.0 · Business Source License 1.1")
                 Text("Copyright © 2026 Zyvor AI Labs Private Limited").foregroundStyle(.secondary)
             }
         }.formStyle(.grouped).frame(width: 420).padding()
@@ -992,6 +1010,14 @@ struct SettingsView: View {
                 Button((n.online ? "● " : "○ ") + n.id + (n.drain ? " (draining)" : "")) { Task { await fleet.action("api/drain", ["id": n.id, "drain": !n.drain]) } }
             }
             if fleet.state?.nodes.isEmpty == false { Divider() }
+            if let me = fleet.localNode {
+                let paused = me.policy?.mode == "paused"
+                Button(paused ? "Resume fleet work on this Mac" : "Pause fleet work on this Mac") {
+                    Task { await fleet.setPolicy(node: me, mode: paused ? "always" : "paused") }
+                }
+                if let gate = me.gate, !gate.allowed { Text("Not accepting work: \(gate.reason)").font(.caption) }
+                Divider()
+            }
             Button("Refresh") { Task { await fleet.refresh() } }
             Button("Quit Gryvia") { NSApplication.shared.terminate(nil) }
         } label: {

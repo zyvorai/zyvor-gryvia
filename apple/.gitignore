@@ -12,3 +12,7 @@ native/.swiftpm/
 dist/
 *.pem
 .env
+release/
+_site/
+node_modules/
+package-lock.json

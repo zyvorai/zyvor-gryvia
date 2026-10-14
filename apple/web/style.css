@@ -231,3 +231,6 @@ label small { font-weight: 400; }
 .feed .k-admit { color: var(--status-succeeded); } .feed .k-wait { color: var(--status-queued); } .feed .k-failed { color: var(--status-failed); }
 @media (max-width: 1100px) { .live-summary { grid-template-columns: repeat(2, 1fr); } .flow { grid-template-columns: 1fr; } }
 @media (prefers-reduced-motion: reduce) { .core, .memseg, .job-chip { transition: none !important; } }
+
+.policy { margin: 10px 0 4px; }
+.policy select { margin-top: 4px; }
