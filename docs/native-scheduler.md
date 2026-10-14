@@ -12,18 +12,18 @@ cluster is not covered by a CI workflow yet. Kueue stays the supported productio
 
 | Capability | Behaviour |
 |---|---|
-| Fair-share accounting | Per-queue usage, guarantee and weighted dominant share are computed (`used / guarantee`, divided by `weight`, halved while under guarantee). In the gate this orders **preemption victims** (most over-share first); it does not reorder waiting jobs |
+| Fair-share accounting | Per-queue usage, guarantee and weighted dominant share are computed (`used / guarantee`, divided by `weight`, halved while under guarantee). The gate orders waiting jobs by priority, weighted share and FIFO (job ID breaks timestamp ties); it also orders preemption victims |
 | Guarantees and ceilings | `guaranteeGPU` is the queue's entitlement, `maxGPU` a hard cap (0 = none) |
 | Borrowing | A queue with `borrow: true` may exceed its guarantee into idle capacity; with `borrow: false` it is held at the guarantee |
-| Gang admission | A job is admitted only if its `minAvailable` pods fit at once (all-or-nothing). Distributed jobs use `distributed.nodes`; elastic jobs use `distributed.elastic` minNodes |
+| Gang admission | The gate reserves the full declared replica shape. The engine can plan elastic minimums, but the gate holds partial plans until workload resizing can consume them safely |
 | Priority preemption | A higher `spec.priority` job may evict lower-priority allocations that are explicitly marked preemptible. Equal or higher priority is never evicted, and another queue's guarantee is preserved |
 | Fractional GPU | `gryvia.io/gpu-share` requests part of a GPU; accounted in milli-GPU (1 GPU = 1000) |
 
-What it does **not** do: reorder pending jobs (each job is decided on its own when it reconciles, so admission is
-effectively first-come among jobs that fit; `NativeQueueEngine.Order` exists in `pkg/scheduler` but the
-controller does not call it yet), pick nodes (the existing `FindOptimalNodes*` placement still does), backfill by
-time, hierarchical queues, or time-sliced fairness. Live telemetry scoring (`LiveTelemetryScore`) exists as
-a library contract in `pkg/scheduler` but is not called by the controller yet.
+Waiting jobs are ordered before each admission, independently of reconcile order. The gate skips candidates whose quota/gang plan cannot be admitted, so an oversized head does not block smaller fitting jobs. Already-admitted Pending jobs retain their reservation while placement retries. This ordering checks cluster capacity and queue policy; it does not guarantee that a candidate's exact node requirements fit.
+
+What it does **not** do: backfill by predicted duration, hierarchical queues, multi-resource DRF, or time-sliced fairness. It remains an opt-in Kubernetes admission gate, not a macOS/Metal runtime.
+
+GPU jobs fail closed when policy, queue identity, active allocation accounting or capacity reads cannot be validated: they stay native-Queued with a reason and retry every 15 seconds. CPU-only jobs bypass the GPU queue gate. Fixing the policy releases held jobs normally; running jobs are unaffected by this Pending-job gate.
 
 ## Enable it
 
@@ -104,8 +104,7 @@ spec:
    seconds and released back to `Pending` when it fits.
 4. **Preemption:** chosen victims are set to `Preempted` (event `NativePreempted`); the existing
    `Preempted` path tears their workload down.
-5. **Fail-open:** if the policy ConfigMap is missing/invalid, the queue is unknown, or the cluster cannot be
-   listed, the job proceeds and gets an `AdmissionUnchecked` warning condition.
+5. **Fail-closed:** missing/invalid policy, unknown queues and unreadable capacity/accounting hold GPU jobs in `Queued` with a `NativeQueued` reason. No new workload is created. CPU-only jobs bypass this GPU gate.
 
 ```bash
 kubectl get gryviaaijob -o custom-columns=NAME:.metadata.name,PHASE:.status.phase,MSG:.status.message
@@ -135,14 +134,21 @@ time yet, so `auto` never selects MIG or DRA by itself: set `gryvia.io/gpu-isola
 - `crds/patches/gryviaaijob-native-scheduler.jsonpatch.yaml` is a reference for promoting `gpuShare`,
   `gpuIsolation` and `minAvailable` to typed spec fields; the annotations above are what the code reads today.
 - Placement is unchanged: a job the gate admits can still wait in `Pending` if no node fits.
+- Partial elastic admission is held until the full declared shape fits; the current builder cannot apply the engine's partial replica allocation safely. This prevents launching beyond queue ceilings.
 - Not validated on GPU hardware.
 
 ## Troubleshooting
 
 | Symptom | Cause |
 |---|---|
-| Job stays `Pending`, no `NativeAdmitted` | Gate off (check the ai-operator args for `--native-queue-scheduler=true`) or not reached; see `AdmissionUnchecked` |
-| `AdmissionUnchecked` with `NativePolicyUnavailable` | ConfigMap `gryvia-native-scheduler` missing or `policy.yaml` invalid |
-| `NativePlanFailed` | Queue not defined in the policy |
+| Job stays `Pending`, no `NativeAdmitted` | Gate off (check the ai-operator args for `--native-queue-scheduler=true`) or not reached |
+| `NativeQueued` with `NativePolicyUnavailable` | ConfigMap `gryvia-native-scheduler` missing or `policy.yaml` invalid |
+| `NativeQueueUnknown` | Queue not defined in the policy |
 | Everything `Queued: insufficient capacity` | No node advertises `nvidia.com/gpu`, or capacity is fully used and nothing is preemptible |
 | Preemption never happens | Victims need `gryvia.io/native-preemptible: "true"` and strictly lower `spec.priority`; checkpoint guard defers it |
+
+## Opt-in fresh telemetry ranking
+
+Set `gryvia.io/live-telemetry: "true"` on a `GryviaAIJob` to add up to 25 advisory placement points through `LiveTelemetryScore`. Default placement is unchanged. Nodes must have both labels `gryvia.io/gpu-utilization` and `gryvia.io/gpu-memory-used-percent` (finite 0..100), and annotation `gryvia.io/telemetry-observed-at` (RFC3339, no more than 60 seconds old and not in the future). Optional NVLink/RDMA/storage health labels must be valid if present. Missing, stale or invalid observations contribute zero points and never change admission capacity.
+
+An external collector must publish these observations; this change does not add a DCGM scraper. Runtime/hardware validation is still required before relying on the ranking.

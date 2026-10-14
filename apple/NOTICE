@@ -1,0 +1,7 @@
+Gryvia Apple
+Copyright © 2026 Zyvor AI Labs Private Limited. Licensed under the Business Source License 1.1 (see LICENSE).
+
+A standalone native Apple Silicon companion to Gryvia.
+No upstream Gryvia source files are copied into this package.
+Apple, Metal and macOS are trademarks of Apple Inc.
+Runtime dependencies are installed separately and retain their own licenses.

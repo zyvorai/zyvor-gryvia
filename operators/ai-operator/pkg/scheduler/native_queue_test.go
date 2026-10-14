@@ -2,6 +2,7 @@ package scheduler
 
 import (
 	"errors"
+	"math"
 	"testing"
 	"time"
 )
@@ -109,5 +110,35 @@ func TestTelemetry(t *testing.T) {
 	})
 	if got := LiveTelemetryScore(x, true, true); got < 70 {
 		t.Fatalf("score=%d", got)
+	}
+}
+
+func TestElasticAdmissionRespectsCeilingAndWholePods(t *testing.T) {
+	e, _ := NewNativeQueueEngine([]NativeQueuePolicy{{Name: "q", MaxGPU: 2500, Borrow: true}})
+	p, err := e.PlanAdmission(NativeWorkload{ID: "j", Queue: "q", Replicas: 4, MinAvailable: 1, GPUPerPod: 1000}, nil, 8000)
+	if err != nil || p.NeedGPU != 2000 {
+		t.Fatalf("plan=%+v err=%v", p, err)
+	}
+}
+func TestPreemptionCannotBypassBorrowDisabled(t *testing.T) {
+	e, _ := NewNativeQueueEngine([]NativeQueuePolicy{{Name: "q", GuaranteeGPU: 1000, MaxGPU: 4000, Borrow: false}, {Name: "other", Borrow: true}})
+	_, err := e.PlanAdmission(NativeWorkload{ID: "j", Queue: "q", Replicas: 1, GPUPerPod: 1000, Priority: 100}, []NativeAllocation{{WorkloadID: "existing", Queue: "q", GPU: 1000}, {WorkloadID: "victim", Queue: "other", GPU: 1000, Priority: 1, Preemptible: true}}, 0)
+	if !errors.Is(err, ErrGangUnsatisfied) {
+		t.Fatalf("err=%v", err)
+	}
+}
+func TestOrderDeterministicAtIdenticalTimestamp(t *testing.T) {
+	e, _ := NewNativeQueueEngine([]NativeQueuePolicy{{Name: "q", Borrow: true}})
+	now := time.Now()
+	order, err := e.Order([]NativeWorkload{{ID: "z", Queue: "q", Replicas: 1, GPUPerPod: 1000, CreatedAt: now}, {ID: "a", Queue: "q", Replicas: 1, GPUPerPod: 1000, CreatedAt: now}}, nil)
+	if err != nil || order[0].ID != "a" {
+		t.Fatalf("order=%v err=%v", order, err)
+	}
+}
+func TestRejectEmptyDuplicateAndNonFinitePolicies(t *testing.T) {
+	for _, policies := range [][]NativeQueuePolicy{nil, {{Name: "q"}, {Name: "q"}}, {{Name: "q", Weight: math.NaN()}}} {
+		if _, err := NewNativeQueueEngine(policies); err == nil {
+			t.Fatal("invalid policy accepted")
+		}
 	}
 }

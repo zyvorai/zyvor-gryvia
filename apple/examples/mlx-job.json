@@ -1,0 +1,1 @@
+{"tenant":"default","runtime":"mlx","model":"Local pinned MLX model","memoryGiB":6,"priority":70,"mode":"exclusive","timeoutSeconds":600,"retries":0,"args":["--model","/absolute/path/to/pinned-model","--prompt","Explain unified memory in one sentence.","--max-tokens","128"]}

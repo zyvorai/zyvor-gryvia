@@ -134,16 +134,31 @@ func (r *GryviaAIJobReconciler) nativeEngine(ctx context.Context) (*scheduler.Na
 }
 
 // nativeQueueGate runs the native DRF/gang/preemption admission for a Pending (or native-Queued) job.
-// It fails open (job proceeds, Warning condition) when policy or capacity cannot be read, like admissionGate.
+// It fails closed while policy, workload or capacity cannot be validated.
 // done=true means the gate handled the reconcile (job queued, or released back to Pending).
 func (r *GryviaAIJobReconciler) nativeQueueGate(ctx context.Context, job *gryviav1.GryviaAIJob) (bool, ctrl.Result, error) {
 	if !r.NativeQueueScheduler || (job.Status.Phase != PhasePending && !(job.Status.Phase == PhaseQueued && isNativeQueued(job))) {
 		return false, ctrl.Result{}, nil
 	}
-	fail := func(reason string, err error) (bool, ctrl.Result, error) {
-		r.setGateCondition(ctx, job, ConditionAdmissionUnchecked, metav1.ConditionTrue, reason,
-			"native queue gate skipped: "+err.Error(), corev1.EventTypeWarning)
+	// CPU-only work does not consume GPU queue capacity.
+	if scheduler.GPUsPerPlacedNode(job) == 0 && job.Annotations[AnnotationGPUShare] == "" {
 		return false, ctrl.Result{}, nil
+	}
+	queue := func(reason, message string) (bool, ctrl.Result, error) {
+		base := job.DeepCopy()
+		job.Status.Phase = PhaseQueued
+		job.Status.Message = message
+		meta.RemoveStatusCondition(&job.Status.Conditions, ConditionNativeAdmitted)
+		meta.RemoveStatusCondition(&job.Status.Conditions, ConditionAdmissionUnchecked)
+		meta.SetStatusCondition(&job.Status.Conditions, metav1.Condition{Type: ConditionNativeQueued,
+			Status: metav1.ConditionTrue, Reason: reason, Message: message, LastTransitionTime: metav1.Now()})
+		if err := r.Status().Patch(ctx, job, client.MergeFrom(base)); err != nil {
+			return true, ctrl.Result{}, err
+		}
+		return true, ctrl.Result{RequeueAfter: nativeRequeue}, nil
+	}
+	fail := func(reason string, err error) (bool, ctrl.Result, error) {
+		return queue(reason, "native queue admission blocked: "+err.Error())
 	}
 	engine, err := r.nativeEngine(ctx)
 	if err != nil {
@@ -152,6 +167,9 @@ func (r *GryviaAIJobReconciler) nativeQueueGate(ctx context.Context, job *gryvia
 	w, err := NativeWorkloadFromAIJob(job)
 	if err != nil {
 		return fail("NativeWorkloadInvalid", err)
+	}
+	if _, ok := engine.Policies[w.Queue]; !ok {
+		return fail("NativeQueueUnknown", fmt.Errorf("queue %q is not configured", w.Queue))
 	}
 	var jobs gryviav1.GryviaAIJobList
 	if err := r.List(ctx, &jobs); err != nil {
@@ -163,7 +181,14 @@ func (r *GryviaAIJobReconciler) nativeQueueGate(ctx context.Context, job *gryvia
 		if j.Namespace == job.Namespace && j.Name == job.Name {
 			continue
 		}
-		if a, ok, err := NativeAllocationFromAIJob(j); err == nil && ok {
+		if scheduler.GPUsPerPlacedNode(j) == 0 && j.Annotations[AnnotationGPUShare] == "" {
+			continue
+		}
+		a, active, err := NativeAllocationFromAIJob(j)
+		if err != nil {
+			return fail("NativeAccountingInvalid", err)
+		}
+		if active {
 			allocs = append(allocs, a)
 		}
 	}
@@ -186,7 +211,55 @@ func (r *GryviaAIJobReconciler) nativeQueueGate(ctx context.Context, job *gryvia
 		free = 0
 	}
 
+	// Order all waiting jobs before admitting the current reconcile. Skip blocked
+	// heads; already-admitted Pending jobs retain their reservation while placing.
+	if !meta.IsStatusConditionTrue(job.Status.Conditions, ConditionNativeAdmitted) {
+		pending := []scheduler.NativeWorkload{w}
+		for i := range jobs.Items {
+			j := &jobs.Items[i]
+			if j.Namespace == job.Namespace && j.Name == job.Name {
+				continue
+			}
+			if !j.DeletionTimestamp.IsZero() || j.Annotations["gryvia.io/cancel"] == "true" {
+				continue
+			}
+			if j.Status.Phase != PhasePending && !(j.Status.Phase == PhaseQueued && isNativeQueued(j)) {
+				continue
+			}
+			if meta.IsStatusConditionTrue(j.Status.Conditions, ConditionNativeAdmitted) {
+				continue
+			}
+			other, err := NativeWorkloadFromAIJob(j)
+			if err != nil || other.GPUPerPod <= 0 {
+				continue
+			}
+			if _, known := engine.Policies[other.Queue]; known {
+				if _, err := engine.Order([]scheduler.NativeWorkload{other}, allocs); err == nil {
+					pending = append(pending, other)
+				}
+			}
+		}
+		ordered, err := engine.Order(pending, allocs)
+		if err != nil {
+			return fail("NativeOrderInvalid", err)
+		}
+		for _, candidate := range ordered {
+			candidatePlan, candidateErr := engine.PlanAdmission(candidate, allocs, free)
+			if candidateErr != nil || !candidatePlan.Allow || candidatePlan.NeedGPU < int64(candidate.Replicas)*candidate.GPUPerPod || (r.CheckpointGuard && len(candidatePlan.Victims) > 0) {
+				continue
+			}
+			if candidate.ID != w.ID {
+				return queue("WaitingForQueueOrder", "waiting behind "+candidate.ID+" in native queue order")
+			}
+			break
+		}
+	}
 	plan, err := engine.PlanAdmission(w, allocs, free)
+	if err == nil && plan.NeedGPU < int64(w.Replicas)*w.GPUPerPod {
+		// The workload builder cannot consume a partial replica reservation yet.
+		// Never admit a partial plan and then launch the full declared workload.
+		err, plan.Reason = scheduler.ErrGangUnsatisfied, "partial admission requires workload resizing; waiting for full declared shape"
+	}
 	if err == nil && len(plan.Victims) > 0 && r.CheckpointGuard {
 		// Victims cannot be checkpointed by this gate; never evict through an active checkpoint guard.
 		err, plan.Reason = scheduler.ErrNoPreemptionPlan, "preemption deferred: checkpoint guard active"

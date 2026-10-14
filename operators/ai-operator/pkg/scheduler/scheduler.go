@@ -317,6 +317,10 @@ func scoreNodes(nodes []corev1.Node, job *gryviav1.GryviaAIJob, gpuUsage map[str
 			}
 		}
 
+		if job.Annotations[AnnotationLiveTelemetry] == "true" {
+			score += FreshLiveTelemetryScore(node.Labels, node.Annotations, time.Now(), GPUsPerPlacedNode(job) > 1, job.Spec.Network == "rdma")
+		}
+
 		// Score based on general node resources
 		score += calculateResourceScore(node)
 
