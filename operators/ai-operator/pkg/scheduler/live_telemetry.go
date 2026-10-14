@@ -1,8 +1,10 @@
 package scheduler
 
 import (
+	"math"
 	"strconv"
 	"strings"
+	"time"
 )
 
 const (
@@ -38,7 +40,7 @@ func percentDefault(s string, d float64) float64 {
 		return d
 	}
 	v, err := strconv.ParseFloat(s, 64)
-	if err != nil {
+	if err != nil || math.IsNaN(v) || math.IsInf(v, 0) {
 		return d
 	}
 	if v < 0 {
@@ -73,4 +75,28 @@ func LiveTelemetryScore(t LiveNodeTelemetry, multiGPU, needsRDMA bool) int {
 		score = 100
 	}
 	return int(score + 0.5)
+}
+
+// Live telemetry is advisory ranking only; it never changes admission capacity.
+const AnnotationLiveTelemetry = "gryvia.io/live-telemetry"
+const AnnotationTelemetryObservedAt = "gryvia.io/telemetry-observed-at"
+
+// FreshLiveTelemetryScore ignores missing, malformed, future or stale observations.
+// Require both demand measurements; optional health values must be valid if supplied.
+func FreshLiveTelemetryScore(labels, annotations map[string]string, now time.Time, multiGPU, needsRDMA bool) int {
+	observed, err := time.Parse(time.RFC3339, annotations[AnnotationTelemetryObservedAt])
+	if err != nil || observed.After(now) || now.Sub(observed) > time.Minute {
+		return 0
+	}
+	for _, key := range []string{LabelGPUUtilization, LabelGPUMemoryUsed, LabelNVLinkHealth, LabelRDMAHealth, LabelStorageHealth} {
+		raw := strings.TrimSuffix(strings.TrimSpace(labels[key]), "%")
+		if raw == "" && key != LabelGPUUtilization && key != LabelGPUMemoryUsed {
+			continue
+		}
+		value, err := strconv.ParseFloat(raw, 64)
+		if err != nil || math.IsNaN(value) || math.IsInf(value, 0) || value < 0 || value > 100 {
+			return 0
+		}
+	}
+	return LiveTelemetryScore(TelemetryFromLabels(labels), multiGPU, needsRDMA) / 4
 }

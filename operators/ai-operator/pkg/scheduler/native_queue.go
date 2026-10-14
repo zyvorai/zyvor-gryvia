@@ -74,12 +74,21 @@ type NativeQueueEngine struct {
 
 func NewNativeQueueEngine(policies []NativeQueuePolicy) (*NativeQueueEngine, error) {
 	e := &NativeQueueEngine{Policies: map[string]NativeQueuePolicy{}}
+	if len(policies) == 0 {
+		return nil, fmt.Errorf("%w: no queues configured", ErrQueuePolicy)
+	}
 	for _, p := range policies {
 		if p.Name == "" || p.GuaranteeGPU < 0 || p.MaxGPU < 0 {
 			return nil, fmt.Errorf("%w: bad policy for %q", ErrQueuePolicy, p.Name)
 		}
 		if p.MaxGPU > 0 && p.GuaranteeGPU > p.MaxGPU {
 			return nil, fmt.Errorf("%w: guarantee exceeds max for %s", ErrQueuePolicy, p.Name)
+		}
+		if _, exists := e.Policies[p.Name]; exists {
+			return nil, fmt.Errorf("%w: duplicate queue %q", ErrQueuePolicy, p.Name)
+		}
+		if math.IsNaN(p.Weight) || math.IsInf(p.Weight, 0) {
+			return nil, fmt.Errorf("%w: non-finite queue weight", ErrQueuePolicy)
 		}
 		if p.Weight <= 0 {
 			p.Weight = 1
@@ -92,6 +101,9 @@ func NewNativeQueueEngine(policies []NativeQueuePolicy) (*NativeQueueEngine, err
 func normalizeNativeWorkload(w NativeWorkload) (NativeWorkload, error) {
 	if w.ID == "" || w.Queue == "" || w.Replicas <= 0 || w.GPUPerPod <= 0 {
 		return w, fmt.Errorf("%w: workload fields", ErrQueuePolicy)
+	}
+	if int64(w.Replicas) > math.MaxInt64/w.GPUPerPod {
+		return w, fmt.Errorf("%w: GPU request overflows", ErrQueuePolicy)
 	}
 	if w.MinAvailable == 0 {
 		w.MinAvailable = w.Replicas
@@ -171,6 +183,9 @@ func (e *NativeQueueEngine) Order(pending []NativeWorkload, allocs []NativeAlloc
 		if math.Abs(si-sj) > 1e-12 {
 			return si < sj
 		}
+		if out[i].CreatedAt.Equal(out[j].CreatedAt) {
+			return out[i].ID < out[j].ID
+		}
 		return out[i].CreatedAt.Before(out[j].CreatedAt)
 	})
 	return out, nil
@@ -195,16 +210,23 @@ func (e *NativeQueueEngine) PlanAdmission(w NativeWorkload, allocs []NativeAlloc
 	if p.MaxGPU > 0 && used[w.Queue]+minNeed > p.MaxGPU {
 		return AdmissionPlan{Reason: "queue max GPU exceeded"}, ErrQuotaExceeded
 	}
+	if !p.Borrow && p.GuaranteeGPU > 0 && used[w.Queue]+minNeed > p.GuaranteeGPU {
+		return AdmissionPlan{Reason: "borrowing disabled and guarantee exhausted"}, ErrGangUnsatisfied
+	}
 	if freeGPU >= minNeed {
 		admit := fullNeed
 		if admit > freeGPU {
 			admit = freeGPU
 		}
+		if p.MaxGPU > 0 && admit > p.MaxGPU-used[w.Queue] {
+			admit = p.MaxGPU - used[w.Queue]
+		}
+		admit = (admit / w.GPUPerPod) * w.GPUPerPod
 		borrowed := int64(0)
 		after := used[w.Queue] + admit
 		if after > p.GuaranteeGPU && p.GuaranteeGPU > 0 {
 			if !p.Borrow && after > p.GuaranteeGPU {
-				admit = p.GuaranteeGPU - used[w.Queue]
+				admit = ((p.GuaranteeGPU - used[w.Queue]) / w.GPUPerPod) * w.GPUPerPod
 				if admit < minNeed {
 					return AdmissionPlan{Reason: "borrowing disabled and guarantee exhausted"}, ErrGangUnsatisfied
 				}

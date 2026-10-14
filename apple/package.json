@@ -1,0 +1,11 @@
+{
+  "name": "gryvia-apple-web-tests",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "test:web": "bash scripts/browser-test.sh"
+  },
+  "devDependencies": {
+    "playwright": "1.62.1"
+  }
+}

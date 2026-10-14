@@ -1,0 +1,14 @@
+.DS_Store
+__pycache__/
+*.pyc
+*.db
+*.db-shm
+*.db-wal
+local/
+config.json
+credentials.env
+native/.build/
+native/.swiftpm/
+dist/
+*.pem
+.env

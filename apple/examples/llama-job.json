@@ -1,0 +1,1 @@
+{"tenant":"default","runtime":"llama","model":"Local GGUF model","memoryGiB":6,"priority":50,"mode":"exclusive","timeoutSeconds":600,"args":["-m","/absolute/path/to/model.gguf","-p","Explain Metal","-n","128","-ngl","99"]}

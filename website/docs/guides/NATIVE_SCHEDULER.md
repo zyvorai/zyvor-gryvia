@@ -71,12 +71,14 @@ kubectl describe gryviaaijob train-a
 | Condition `NativeAdmitted=True` | The gate admitted it; placement proceeds as usual |
 | Phase `Queued`, condition `NativeQueued`, event `NativeQueued` | Did not fit now (queue max, gang, or no safe preemption); re-checked every 15 s |
 | Phase `Preempted`, event `NativePreempted` | Evicted by a higher-priority job |
-| Condition `AdmissionUnchecked` | The gate could not decide (missing ConfigMap, unknown queue, list failure) and let the job through |
+| Condition `NativeQueued` with a policy/accounting/list reason | Admission is blocked until policy or capacity can be validated |
 
 ## Know the limits
 
 - Capacity is the sum of node allocatable `nvidia.com/gpu`. A node with no GPU resource contributes zero, so on a GPU-less cluster every GPU job queues unless capacity is advertised.
-- Waiting jobs are not reordered; each is decided when it reconciles. Dominant share only orders preemption victims.
+- Waiting jobs are ordered by priority, weighted share and FIFO before admission; blocked quota/gang candidates are skipped. Existing admitted reservations are retained.
 - Preemption is deferred while a `GryviaCheckpointGuard` is active; the gate does not checkpoint victims itself.
 - Isolation is the runtime's job: MPS shares compute but does not enforce memory, DRA only emits intent annotations.
-- Live telemetry scoring exists as a library function and is not used by the controller yet.
+- Per-job `gryvia.io/live-telemetry: "true"` enables bounded ranking from validated node telemetry no more than 60 seconds old; missing/invalid observations have no effect. An external collector must supply labels and the observation timestamp.
+
+GPU jobs now wait on invalid/missing policy, unknown queues or unreadable capacity/accounting. CPU-only jobs bypass GPU admission. See `docs/native-scheduler.md` in the repository for observation fields and recovery behavior.
