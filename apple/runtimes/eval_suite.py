@@ -69,8 +69,9 @@ def main(argv=None) -> int:
                 text, ok = "", False
             passed += ok
             results.append(dict(index=i, prompt=case["prompt"][:200], output=text.strip()[:400], passed=ok, seconds=round(time.monotonic() - started, 2)))
+            emit(kind="case", **results[-1])
             emit(kind="progress", stage="eval", case=i, total=len(cases), passed=ok)
-        emit(kind="result", passed=passed, total=len(cases), passRate=round(passed / len(cases), 4), cases=results, engine="mlx", adapter=adapter)
+        emit(kind="result", passed=passed, total=len(cases), passRate=round(passed / len(cases), 4), engine="mlx", adapter=adapter)
         return 0
     model = confine(a.model)
     if not model.is_file():
@@ -90,8 +91,9 @@ def main(argv=None) -> int:
             text, ok = "", False
         passed += ok
         results.append(dict(index=i, prompt=case["prompt"][:200], output=text.strip()[:400], passed=ok, seconds=round(time.monotonic() - started, 2)))
+        emit(kind="case", **results[-1])
         emit(kind="progress", stage="eval", case=i, total=len(cases), passed=ok)
-    emit(kind="result", passed=passed, total=len(cases), passRate=round(passed / len(cases), 4), cases=results)
+    emit(kind="result", passed=passed, total=len(cases), passRate=round(passed / len(cases), 4))
     return 0 if passed == len(cases) else 0
 
 

@@ -81,3 +81,16 @@ Accent `#0088ff` (shared tokens), BUSL-1.1, new Z icon, web dashboard v2 (palett
 - New `fuse` job (mlx_lm fuse → `models/_fused/<adapter>`) registers `<adapter>-fused` as a standalone MLX model; `serve --engine mlx` runs it with `mlx_lm.server` and the gateway routes to it (`workerModel=default_model`).
 - Through the gateway the fused model answered "What is a tenant?" with the Gryvia definition and "capital of France" correctly, but answered "What does drain do?" with a generic plumbing answer: training used raw `Q:/A:` text while the chat endpoint applies the chat template. Train on chat-formatted rows if you intend to serve through chat.
 - Bugs caught by these runs: adapter folder was outside the confined models directory (now `state/runs` is an allowed managed root); mlx_lm.server needed `model: default_model`.
+
+## Held-out fine-tune experiment (2026-10-14, Mac mini, Llama-3.2-1B-Instruct-4bit)
+Setup: 8 Gryvia facts × 5 training phrasings = 40 rows, 150 iterations, batch 2, 8 LoRA layers, lr 5e-5, identical for both adapters; only the row format differs (raw `Q:/A:` text vs chat `messages`). Evaluated inside Gryvia with `eval --remote-cases` on 24 **unseen phrasings** (3 per fact, plain user questions) plus 4 general-knowledge controls. Keyword-containment scoring (strict: a correct paraphrase can miss the key phrase).
+
+| Model | Held-out phrasings | Controls |
+|---|---|---|
+| base | 0 / 24 | 4 / 4 |
+| adapter, raw-text rows | 18 / 24 | 4 / 4 |
+| adapter, chat-format rows | 20 / 24 | 3 / 4 |
+
+- The chat adapter's failures: two answers borrowed another fact's text (cross-contamination), one on-topic paraphrase missed the key phrase, one hallucinated what the Training page does, and one control regressed ("Red Planet" → Mercury, i.e. some forgetting).
+- n is tiny (24 + 4); the 18 vs 20 difference is not significant. Takeaway: both adapters generalise to new wordings of seen facts; chat format helps a little for chat-style use but did not remove contamination or forgetting.
+- Bugs found and fixed while running it: the agent deadlocked in `Process.waitUntilExit()` after a child exited, leaving the job unfinished and the Mac offline (now polls `isRunning`); large eval result lines were truncated by the 2,000-character log cap (the wrapper now emits one `case` line per case and the server assembles them).

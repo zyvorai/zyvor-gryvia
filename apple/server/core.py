@@ -334,6 +334,13 @@ class Store:
                 self.event('dataset.ready',ds,ident)
             return
         if kind=='inference' or not model: return
+        if result is not None and kind=='evaluate' and 'cases' not in result:
+            cases=[]
+            for row in self.db.execute("SELECT text FROM logs WHERE job=? AND text LIKE '{\"kind\": \"case\"%' ORDER BY seq",(ident,)):
+                try: obj=json.loads(row['text'])
+                except ValueError: continue
+                obj.pop('kind',None); cases.append(obj)
+            if cases: result['cases']=cases[:200]
         node=node or j['node'] or ''
         self.db.execute('INSERT INTO results(at,job,model,kind,node,body) VALUES(?,?,?,?,?,?)',(self.clock(),ident,model,kind,node,json.dumps(dict(success=bool(success and result),**(result or {})))))
         row=self.db.execute('SELECT body FROM models WHERE id=?',(model,)).fetchone()

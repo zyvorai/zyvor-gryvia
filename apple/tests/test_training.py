@@ -121,6 +121,16 @@ class TrainingTests(unittest.TestCase):
         m = next(x for x in self.s.snapshot()["models"] if x["id"] == "adapter-fused")
         self.assertEqual((m["kind"], m["path"], m["runtime"], m["parent"]), ("fused", "/models/_fused/adapter", "mlx", "adapter"))
 
+    def test_eval_cases_assembled_from_case_lines(self):
+        self.s.model("m", dict(memoryGiB=1, runtime="llama", status="ready", path="/m.gguf"))
+        j = self.s.submit("default", self.spec(runtime="download", kind="evaluate", modelId="m"))
+        c = self.s.claim("mini")
+        self.finish(c, [json.dumps(dict(kind="case", index=1, prompt="p", output="o", passed=True, seconds=0.1)),
+                        json.dumps(dict(kind="case", index=2, prompt="q", output="x", passed=False, seconds=0.2)),
+                        json.dumps(dict(kind="result", passed=1, total=2, passRate=0.5))])
+        r = self.s.results(kind="evaluate")[0]["body"]
+        self.assertEqual((r["passed"], len(r["cases"]), r["cases"][1]["passed"]), (1, 2, False))
+
     def test_tenant_budget_stored(self):
         self.s.tenant("team", 8, 1, 100)
         t = next(x for x in self.s.snapshot()["tenants"] if x["id"] == "team")
