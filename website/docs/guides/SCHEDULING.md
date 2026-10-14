@@ -10,7 +10,7 @@ What Gryvia does today when a `GryviaAIJob` is submitted, and which of the more 
 | Indexed batch Job (training, fine-tuning, evaluation) or StatefulSet (inference), headless Service and PVC creation, NCCL/`MASTER_ADDR`/`WORLD_SIZE`/`RANK` env for distributed jobs | Implemented; unit-tested against fake clients, kind end-to-end in CI, not run on GPUs. See [AIJob lifecycle](https://github.com/zyvorai/gryvia/blob/main/docs/aijob-lifecycle.md) |
 | Validating admission webhook (job sanity, quota and SKU policy) | Implemented, served by the ai-operator when enabled; fails open by default |
 | Gang admission, queueing, quotas, borrowing between tenants, priority preemption | **Opt-in, backed by Kueue** (`--kueue-integration`, off by default): the Job is created suspended and Kueue admits all its pods together. Unit-tested with fake clients; the kind workflow `e2e-kueue.yml` (real Kueue, CPU pods) passes in CI; not run on GPUs. See the [Kueue integration](https://github.com/zyvorai/gryvia/blob/main/docs/kueue-integration.md) |
-| In-tree gang scheduler and DRF queue | Removed (they were never called); Kueue does gang admission and queueing when enabled |
+| Native queue gate (queue guarantees, borrowing, gang admission, priority preemption, fractional GPU) | **Opt-in, alpha** (`--native-queue-scheduler`, chart `aiOperator.nativeQueueScheduler`, off by default; mutually exclusive with Kueue). Unit-tested against fake clients; not run on GPUs and no CI cluster workflow yet. It does not reorder waiting jobs or pick nodes. See [Native queue scheduler](https://github.com/zyvorai/gryvia/blob/main/docs/native-scheduler.md) and the [guide](NATIVE_SCHEDULER.md) |
 | Placement holds (`--placement-holds`) | **Opt-in, off by default.** While a job's pods come up, the GPUs of the nodes it was placed on count as used for other jobs' placement, so two jobs placed at the same moment do not both take the same free GPUs. In memory, expires after 5 minutes. It does not pin pods; see [Placement holds](#placement-holds-opt-in). Unit-tested with fake clients; nothing on GPUs |
 | Backfill | Not implemented (Kueue's `BestEffortFIFO` lets smaller jobs run past a blocked one, which is not time-based backfill) |
 | Elastic training | Partial, unit-tested only: `distributed.elastic.minNodes` bounds the worker count (launcher `NNODES=min:max`, Job success at `minNodes`, placement between min and max); no resizing of a running job. See [Elastic training](https://github.com/zyvorai/gryvia/blob/main/docs/elastic-training.md) |
@@ -76,7 +76,7 @@ With `--kueue-integration` on both operators (and Kueue installed, for example `
 
 **Verification:** unit tests against fake clients and a kind workflow (`.github/workflows/e2e-kueue.yml`, real Kueue, CPU pods) that passes in CI; nothing was run on GPUs or with real multi-node NCCL.
 
-There is no in-tree gang scheduler (an unused one was removed in favour of Kueue) and no `spec.scheduling` field on `GryviaAIJob`. Volcano is not integrated.
+Kueue is the supported gang path. The only in-tree alternative is the opt-in native queue gate ([guide](NATIVE_SCHEDULER.md)), which cannot run together with Kueue. There is no `spec.scheduling` field on `GryviaAIJob`. Volcano is not integrated.
 
 ### Placement holds (opt-in)
 
@@ -111,9 +111,9 @@ spec:
 
 ## Queues, quotas and fair sharing
 
-Status: **Kueue-backed and opt-in** (same switch as above; no in-tree fair-share queue runs). With the quota operator's `--kueue-integration`, every `GryviaTenant` gets a LocalQueue `gryvia` in `tenant-<name>` and a ClusterQueue `gryvia-<tenant>` whose nominal quota comes from `spec.quotas.concurrentGPUs` (else the `maxGPUs` of a `GryviaQuota` covering the namespace, else unlimited). All tenant ClusterQueues share the cohort `gryvia`: idle quota is borrowed between tenants and reclaimed by preemption, with `BestEffortFIFO` ordering. Kueue's own fair-sharing modes and DRF are **not** enabled; what you get is nominal quota + borrowing + preemption. Details, limits and the exact objects: [Kueue integration](https://github.com/zyvorai/gryvia/blob/main/docs/kueue-integration.md).
+Status: **Kueue-backed and opt-in** (same switch as above; the in-tree native queue gate is a separate opt-in). With the quota operator's `--kueue-integration`, every `GryviaTenant` gets a LocalQueue `gryvia` in `tenant-<name>` and a ClusterQueue `gryvia-<tenant>` whose nominal quota comes from `spec.quotas.concurrentGPUs` (else the `maxGPUs` of a `GryviaQuota` covering the namespace, else unlimited). All tenant ClusterQueues share the cohort `gryvia`: idle quota is borrowed between tenants and reclaimed by preemption, with `BestEffortFIFO` ordering. Kueue's own fair-sharing modes and DRF are **not** enabled; what you get is nominal quota + borrowing + preemption. Details, limits and the exact objects: [Kueue integration](https://github.com/zyvorai/gryvia/blob/main/docs/kueue-integration.md).
 
-There is no in-tree DRF calculator or priority queue (an unused one was removed). There is no `GryviaQueue` kind, no hierarchical queues and no time-based backfill.
+The in-tree alternative is the opt-in native queue gate ([guide](NATIVE_SCHEDULER.md)): queues come from a ConfigMap, with guarantees, ceilings and borrowing, and weighted dominant share only orders preemption victims. There is no `GryviaQueue` kind, no hierarchical queues and no time-based backfill.
 
 Other multi-tenant limits, independent of Kueue:
 
@@ -227,7 +227,7 @@ kubectl describe gryviaaijob my-job
 |---------|-----------|
 | Node selection | Runs; recorded in status, pods are placed by the Kubernetes scheduler using selectors |
 | Gang admission (all pods together) | Kueue-backed, opt-in (`--kueue-integration`); unit-tested; the kind e2e (real Kueue, CPU pods) passes in CI; never on GPUs. |
-| Queues, per-tenant quota, borrowing | Kueue-backed, opt-in; nominal quota + cohort borrowing, not DRF. |
+| Queues, per-tenant quota, borrowing | Kueue-backed, opt-in; nominal quota + cohort borrowing, not DRF. Or the opt-in native queue gate (ConfigMap queues, guarantee/ceiling/borrow; alpha) |
 | Hierarchical queues, backfill | Not implemented |
 | Elastic training | Live resize on request (`distributed.elastic.desiredNodes`, `POST /api/jobs/{name}/resize`, dashboard), grow and shrink tested in a kind e2e on CPU; no automatic sizing from free capacity |
 | Validating webhook | Runs when enabled; quota and SKU policy; fails open by default |

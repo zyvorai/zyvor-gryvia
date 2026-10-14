@@ -35,6 +35,7 @@ is verified, what is experimental and what is only a CRD or design so far. Start
 - [ML Workflows](guides/ML_WORKFLOWS.md) - Hyperparameter tuning, DAG pipelines, model registry, inference serving, workspaces
 - [Network Intelligence](guides/NETWORK_INTELLIGENCE.md) - eBPF-powered observability, security, and traffic analysis
 - [Scheduling](guides/SCHEDULING.md) - What the scheduler does today and the design for gang scheduling, fair-share queues and elastic training
+- [Native queue scheduler](guides/NATIVE_SCHEDULER.md) - Opt-in queues, gang admission, priority preemption and fractional GPU requests (alpha)
 
 ### Reference
 - [FAQ](guides/FAQ.md) - Frequently asked questions

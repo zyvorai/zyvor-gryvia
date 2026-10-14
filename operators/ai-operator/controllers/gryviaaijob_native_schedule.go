@@ -68,6 +68,10 @@ func NativeWorkloadFromAIJob(job *gryviav1.GryviaAIJob) (scheduler.NativeWorkloa
 func NativeAllocationFromAIJob(job *gryviav1.GryviaAIJob) (scheduler.NativeAllocation, bool, error) {
 	switch job.Status.Phase {
 	case "Scheduling", "Running":
+	case "Pending":
+		if !meta.IsStatusConditionTrue(job.Status.Conditions, ConditionNativeAdmitted) {
+			return scheduler.NativeAllocation{}, false, nil
+		}
 	default:
 		return scheduler.NativeAllocation{}, false, nil
 	}
@@ -87,6 +91,9 @@ func NativeAllocationFromAIJob(job *gryviav1.GryviaAIJob) (scheduler.NativeAlloc
 const (
 	// ConditionNativeQueued marks a job held by the native queue scheduler (phase Queued).
 	ConditionNativeQueued = "NativeQueued"
+	// ConditionNativeAdmitted marks a job the gate admitted. It counts against queue usage while the job is
+	// still Pending (placement not finished), so concurrent admissions cannot over-commit capacity.
+	ConditionNativeAdmitted = "NativeAdmitted"
 	// NativeConfigMapName / NativeConfigNamespace locate the queue policy (deploy/native-scheduler-config.yaml).
 	NativeConfigMapName   = "gryvia-native-scheduler"
 	NativeConfigNamespace = "gryvia-system"
@@ -191,15 +198,20 @@ func (r *GryviaAIJobReconciler) nativeQueueGate(ctx context.Context, job *gryvia
 				return true, ctrl.Result{}, perr
 			}
 		}
-		if job.Status.Phase == PhaseQueued {
+		if job.Status.Phase == PhaseQueued || !meta.IsStatusConditionTrue(job.Status.Conditions, ConditionNativeAdmitted) {
+			released := job.Status.Phase == PhaseQueued
 			base := job.DeepCopy()
 			job.Status.Phase = PhasePending
 			job.Status.Message = ""
 			meta.RemoveStatusCondition(&job.Status.Conditions, ConditionNativeQueued)
+			meta.SetStatusCondition(&job.Status.Conditions, metav1.Condition{Type: ConditionNativeAdmitted,
+				Status: metav1.ConditionTrue, Reason: "Admitted", Message: plan.Reason, LastTransitionTime: metav1.Now()})
 			if perr := r.Status().Patch(ctx, job, client.MergeFrom(base)); perr != nil {
 				return true, ctrl.Result{}, perr
 			}
-			return true, ctrl.Result{Requeue: true}, nil
+			if released {
+				return true, ctrl.Result{Requeue: true}, nil
+			}
 		}
 		return false, ctrl.Result{}, nil
 	case errors.Is(err, scheduler.ErrQuotaExceeded), errors.Is(err, scheduler.ErrGangUnsatisfied), errors.Is(err, scheduler.ErrNoPreemptionPlan):
@@ -208,6 +220,7 @@ func (r *GryviaAIJobReconciler) nativeQueueGate(ctx context.Context, job *gryvia
 			base := job.DeepCopy()
 			job.Status.Phase = PhaseQueued
 			job.Status.Message = msg
+			meta.RemoveStatusCondition(&job.Status.Conditions, ConditionNativeAdmitted)
 			meta.SetStatusCondition(&job.Status.Conditions, metav1.Condition{Type: ConditionNativeQueued,
 				Status: metav1.ConditionTrue, Reason: "WaitingForCapacity", Message: msg, LastTransitionTime: metav1.Now()})
 			if perr := r.Status().Patch(ctx, job, client.MergeFrom(base)); perr != nil {

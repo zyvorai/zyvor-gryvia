@@ -75,7 +75,7 @@ SHA256 detects corruption, not malicious writers; trust and isolate the checkpoi
 `platformCompletion.kueueFairSharing=true` adds equal weight to managed ClusterQueues.
 Enable `fairSharing` in the Kueue manager configuration too. BestEffortFIFO remains the
 queueing strategy, allowing Kueue to consider jobs behind a blocked head job; Gryvia does
-not implement a second DRF/backfill scheduler.
+not implement a second DRF/backfill scheduler. The opt-in [native queue scheduler](native-scheduler.md) is a separate, alpha path and cannot run with Kueue.
 
 Create a Kueue Topology first, then set `platformCompletion.kueueTopologyName`, or also set
 `platformCompletion.kueueGenerateTopology=true` (with `quotaOperator.kueueIntegration`) and the quota operator creates

@@ -2,7 +2,7 @@
 
 Example YAML manifests for Gryvia GPU scheduling CRDs covering elastic training, gang scheduling, and priority-based preemption.
 
-> **Status.** Design examples. `GryviaPriority` has no registered controller. The `gryvia.io/elastic*` annotations and in-tree gang scheduling are not implemented (the unused package code was removed), so they have no effect today.
+> **Status.** Design examples. `GryviaPriority` has no registered controller. The `gryvia.io/elastic*` annotations are not implemented, so they have no effect today. The opt-in native queue gate is the in-tree gang/queue path: see [docs/native-scheduler.md](../../docs/native-scheduler.md) and `deploy/native-scheduler-config.yaml`.
 >
 > Real gang admission, queues and priority preemption exist only through the opt-in Kueue integration (`--kueue-integration`): see [docs/kueue-integration.md](../../docs/kueue-integration.md). The manifests below do not use it.
 

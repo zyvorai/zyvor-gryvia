@@ -359,7 +359,7 @@ For full documentation, CRD examples, and CLI commands, see the **[Network Intel
 
 ## Advanced Scheduling
 
-What runs: GPU-aware node selection and a validating admission webhook (quota and SKU policy, fails open). Opt-in and Kueue-backed (`--kueue-integration`; unit-tested, the kind e2e with CPU pods passes in CI): gang admission, per-tenant queues and quota with borrowing, priority preemption ([Kueue integration](https://github.com/zyvorai/gryvia/blob/main/docs/kueue-integration.md)). Not called by anything: the mutating NCCL-injection webhook. Not implemented: an in-tree gang scheduler, DRF queue and elastic scaling (unused code for these was removed). Backfill is not implemented.
+What runs: GPU-aware node selection and a validating admission webhook (quota and SKU policy, fails open). Opt-in and Kueue-backed (`--kueue-integration`; unit-tested, the kind e2e with CPU pods passes in CI): gang admission, per-tenant queues and quota with borrowing, priority preemption ([Kueue integration](https://github.com/zyvorai/gryvia/blob/main/docs/kueue-integration.md)). Not called by anything: the mutating NCCL-injection webhook. Opt-in and alpha (`--native-queue-scheduler`, not combinable with Kueue; unit-tested only): the native queue gate with queue guarantees, borrowing, gang admission, priority preemption and fractional GPU requests ([native scheduler](https://github.com/zyvorai/gryvia/blob/main/docs/native-scheduler.md)). Not implemented: automatic elastic scaling and backfill.
 
 For details, see the **[Scheduling Guide](SCHEDULING.md)**.
 
