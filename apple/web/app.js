@@ -440,15 +440,63 @@ $('#eval-save').onclick = async () => {
   try { const id = 'suite-' + new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-'); await api('suites', {id, cases: evalCases()}); suites[id] = evalCases(); toast('Saved suite ' + id); } catch (e) { fail(e); }
 };
 $('#compare').onclick = openCompare;
+let pgMessages = [], pgAbort = null;
+function pgRender(partial = '') {
+  const lines = pgMessages.map(m => (m.role === 'user' ? 'You: ' : 'Model: ') + m.content);
+  if (partial !== null) lines.push('Model: ' + partial);
+  $('#pg-output').textContent = lines.length ? lines.join('\n\n') : 'No reply yet.';
+  $('#pg-output').scrollTop = $('#pg-output').scrollHeight;
+}
+$('#pg-clear').onclick = () => { pgMessages = []; $('#pg-meta').textContent = ''; pgRender(null); };
+$('#pg-stop').onclick = () => { if (pgAbort) pgAbort.abort(); };
 $('#pg-send').onclick = async () => {
-  const out = $('#pg-output'); out.textContent = 'Thinking…';
+  const prompt = $('#pg-prompt').value.trim();
+  if (!prompt) return;
+  pgMessages.push({role: 'user', content: prompt}); $('#pg-prompt').value = '';
+  pgAbort = new AbortController(); $('#pg-send').disabled = true; $('#pg-stop').hidden = false;
+  let reply = '', chunks = 0; const t0 = performance.now();
+  pgRender('');
   try {
-    const r = await fetch('/v1/chat/completions', {method: 'POST', headers: {'Content-Type': 'application/json', Authorization: 'Bearer ' + token},
-      body: JSON.stringify({model: $('#pg-model').value, messages: [{role: 'user', content: $('#pg-prompt').value}]})});
-    const d = await r.json();
-    if (!r.ok) throw Error(d.error || 'Request failed');
-    out.textContent = d.choices?.[0]?.message?.content ?? JSON.stringify(d, null, 2);
-  } catch (e) { out.textContent = 'Error: ' + hint(e.message) + '\n\nThe model needs an inference replica origin registered (Model hub → Register an existing model).'; }
+    if (demo) {   // simulated replica: stream a canned answer token by token
+      for (const w of ('This is a simulated reply from the demo fleet. In a real deployment tokens stream from llama-server or mlx_lm.server running on a Mac.').split(' ')) {
+        if (pgAbort.signal.aborted) break;
+        reply += (reply ? ' ' : '') + w; chunks++; pgRender(reply); await new Promise(r => setTimeout(r, 60));
+      }
+    } else {
+      const r = await fetch('/v1/chat/completions', {method: 'POST', signal: pgAbort.signal, headers: {'Content-Type': 'application/json', Authorization: 'Bearer ' + token},
+        body: JSON.stringify({model: $('#pg-model').value, messages: pgMessages, max_tokens: 512, stream: true})});
+      if (!r.ok) { const d = await r.json(); throw Error(d.error || 'Request failed'); }
+      const reader = r.body.getReader(), dec = new TextDecoder(); let buf = '';
+      for (;;) {
+        const {value, done} = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, {stream: true});
+        let i;
+        while ((i = buf.indexOf('\n')) >= 0) {
+          const line = buf.slice(0, i).trim(); buf = buf.slice(i + 1);
+          if (!line.startsWith('data:')) continue;
+          const payload = line.slice(5).trim();
+          if (payload === '[DONE]') continue;
+          try {
+            const delta = JSON.parse(payload).choices?.[0]?.delta?.content;
+            if (delta) { reply += delta; chunks++; pgRender(reply); }
+          } catch { /* ignore keep-alives */ }
+        }
+      }
+    }
+  } catch (e) {
+    if (e.name !== 'AbortError') {
+      pgMessages.pop(); $('#pg-prompt').value = prompt;
+      pgRender(null); $('#pg-meta').textContent = 'Error: ' + hint(e.message) + ' (does this model have a deployed replica?)';
+      $('#pg-send').disabled = false; $('#pg-stop').hidden = true; pgAbort = null;
+      return;
+    }
+  }
+  if (reply) pgMessages.push({role: 'assistant', content: reply}); else pgMessages.pop();
+  const secs = (performance.now() - t0) / 1000;
+  $('#pg-meta').textContent = reply ? `${chunks} chunks in ${secs.toFixed(1)} s${pgAbort && pgAbort.signal.aborted ? ' · stopped' : ''}` : '';
+  pgRender(null);
+  $('#pg-send').disabled = false; $('#pg-stop').hidden = true; pgAbort = null;
 };
 
 

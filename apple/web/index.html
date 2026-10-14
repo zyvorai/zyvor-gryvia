@@ -214,12 +214,13 @@ gryvia.py drain MAC_ID               # stop new work on a Mac</pre>
   <section id="playground" class="view hidden">
     <h2>Playground</h2>
     <section class="panel">
-      <p>Chat with a model that has inference replicas registered (see Register an existing model → replica origins).</p>
+      <p>Chat with a model that has an inference replica: deploy one from <em>Deployments</em>, or register origins in the Model hub. Replies stream as they are generated.</p>
       <div class="form-grid">
         <label>Model<select id="pg-model"></select></label>
         <label class="wide">Prompt<textarea id="pg-prompt" placeholder="Ask something…"></textarea></label>
-        <div class="form-action"><button id="pg-send" type="button" class="primary">Send</button></div>
+        <div class="form-action"><button id="pg-send" type="button" class="primary">Send</button><button id="pg-stop" type="button" hidden>Stop</button><button id="pg-clear" type="button">New chat</button></div>
       </div>
+      <div id="pg-meta" class="muted" aria-live="polite"></div>
       <pre id="pg-output">No reply yet.</pre>
     </section>
   </section>

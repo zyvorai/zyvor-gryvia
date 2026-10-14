@@ -24,6 +24,9 @@ public struct Spec: Codable, Sendable {
     public let model: String?
     public let args: [String]
     public let mode: String
+    public let kind: String?
+    public let modelId: String?
+    public let datasetId: String?
 }
 public struct Claim: Codable, Sendable { public let id: String; public let lease: String; public let spec: Spec; public let expires: Double }
 public struct ClaimResponse: Codable, Sendable { public let job: Claim? }
@@ -45,6 +48,8 @@ public struct ModelInfo: Codable, Sendable, Identifiable {
     public let id: String; public let runtime: String; public let memoryGiB: Double
     public let status: String?; public let quant: String?; public let paramsB: Double?; public let source: String?
     public let path: String?; public let node: String?; public let sizeBytes: Double?; public let sha256: String?
+    public let kind: String?; public let parent: String?; public let endpoints: [String]?; public let deployJob: String?
+    public let finalValLoss: Double?; public let trainJob: String?
     public var isReady: Bool { (status ?? "ready") == "ready" && !(path ?? "").isEmpty }
 }
 public struct ResultBody: Codable, Sendable {
@@ -102,6 +107,10 @@ public struct API: Sendable {
     }
     public func results() async throws -> [ResultRow] {
         try JSONDecoder().decode([ResultRow].self, from: await request("api/results"))
+    }
+    /// Loss/throughput history of a training run: key -> [[step, value]].
+    public func runMetrics(_ job: String) async throws -> [String: [[Double]]] {
+        try JSONDecoder().decode([String: [[Double]]].self, from: await request("api/runs/" + job + "/metrics"))
     }
     public func telemetry() async throws -> [String: [TelemetrySample]] {
         try JSONDecoder().decode([String: [TelemetrySample]].self, from: await request("api/telemetry"))

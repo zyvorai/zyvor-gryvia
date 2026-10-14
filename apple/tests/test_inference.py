@@ -8,6 +8,11 @@ class Worker(BaseHTTPRequestHandler):
     def log_message(self,*a):pass
     def do_POST(self):
         body=json.loads(self.rfile.read(int(self.headers['Content-Length'])));self.server.seen=(dict(self.headers),body)
+        if body.get('stream'):
+            self.send_response(200);self.send_header('Content-Type','text/event-stream');self.end_headers()
+            for part in ['Hello',' from',' stream']:
+                self.wfile.write(('data: '+json.dumps({'choices':[{'delta':{'content':part}}]})+'\n\n').encode());self.wfile.flush()
+            self.wfile.write(b'data: [DONE]\n\n');return
         result=json.dumps({'choices':[{'message':{'role':'assistant','content':'Hello from mock worker'}}],'usage':{'completion_tokens':2}}).encode()
         self.send_response(200);self.send_header('Content-Length',str(len(result)));self.end_headers();self.wfile.write(result)
 class InferenceTests(unittest.TestCase):
@@ -31,6 +36,24 @@ class InferenceTests(unittest.TestCase):
         self.assertEqual(e.exception.status,429)
     def test_counter_released(self):
         self.g.chat(self.store,'default',self.body);self.assertEqual(self.g.calls['default'],0);self.assertEqual(self.g.active[self.origin],0)
+    def test_stream_relays_sse_and_releases_slot(self):
+        chunks=list(self.g.stream(self.store,'default',{**self.body,'stream':True}))
+        text=b''.join(chunks).decode()
+        self.assertIn('data: ',text);self.assertIn('[DONE]',text)
+        self.assertTrue(self.worker.seen[1]['stream']);self.assertNotIn('Authorization',self.worker.seen[0])
+        self.assertEqual(self.g.calls['default'],0);self.assertEqual(self.g.active[self.origin],0)
+    def test_stream_releases_slot_when_client_closes_early(self):
+        it=self.g.stream(self.store,'default',{**self.body,'stream':True});next(it);it.close()
+        self.assertEqual(self.g.calls['default'],0)
+    def test_stream_respects_byte_bound(self):
+        got=b''.join(self.g.stream(self.store,'default',{**self.body,'stream':True},max_bytes=30))
+        self.assertLessEqual(len(got),30)
+    def test_stream_gate_and_validation(self):
+        self.g.calls['default']=2
+        with self.assertRaises(Problem) as e:self.g.stream(self.store,'default',{**self.body,'stream':True})
+        self.assertEqual(e.exception.status,429)
+        self.g.calls['default']=0
+        with self.assertRaises(Problem):self.g.stream(self.store,'default',{**self.body,'stream':True,'max_tokens':99999})
 if __name__=='__main__':unittest.main()
 
 
