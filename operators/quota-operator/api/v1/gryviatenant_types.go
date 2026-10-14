@@ -83,6 +83,27 @@ type TenantQuotas struct {
 
 	// PerGPUType is per-GPU-type quotas
 	PerGPUType map[string]TenantGPUTypeQuota `json:"perGPUType,omitempty"`
+
+	// FairShareWeight is the tenant's weight in Kueue fair sharing (default 1). A tenant with
+	// weight 3 is entitled to three times the contended capacity of a tenant with weight 1.
+	// Applied only when the quota operator runs with --kueue-fair-sharing.
+	// +kubebuilder:validation:Minimum=1
+	FairShareWeight int `json:"fairShareWeight,omitempty"`
+
+	// BorrowingLimit caps how many GPUs the tenant may borrow from the cohort above its quota.
+	// Unset means no cap.
+	// +kubebuilder:validation:Minimum=0
+	BorrowingLimit *int `json:"borrowingLimit,omitempty"`
+
+	// LendingLimit caps how many of the tenant's own GPUs other tenants may borrow. Unset means
+	// all idle quota is lendable.
+	// +kubebuilder:validation:Minimum=0
+	LendingLimit *int `json:"lendingLimit,omitempty"`
+
+	// Cohort places the tenant's queue in a named cohort instead of the default "gryvia", so
+	// borrowing happens only among tenants sharing the name (for example one cohort per org).
+	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`
+	Cohort string `json:"cohort,omitempty"`
 }
 
 // TenantGPUHoursQuota defines GPU hours quota
