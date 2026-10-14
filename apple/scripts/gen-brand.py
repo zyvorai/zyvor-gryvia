@@ -14,22 +14,31 @@ def css() -> str:
     out.append(f"  --accent-color: {t['accent']};")
     out.append("  --accent-soft: color-mix(in srgb, var(--accent-color) 14%, transparent);")
     out.append("  --accent-text: color-mix(in srgb, var(--accent-color) 82%, black);")
+    out.append("  --accent-2: color-mix(in srgb, var(--accent-color) 60%, white);")
+    out.append("  --accent-strong: color-mix(in srgb, var(--accent-color) 86%, black);   /* white text on this is >= 4.5:1 for the default blue */")
     out.append("  --on-accent: #fff;")
     for k, v in t["status"].items():
         out.append(f"  --status-{k}: {v};")
     for k, v in t["light"].items():
         out.append(f"  --{k}: {v};")
+    for name, spec in t["type"].items():
+        out.append(f"  --t-{name}-size: {spec['size']}; --t-{name}-line: {spec['line']}; --t-{name}-track: {spec['track']}; --t-{name}-weight: {spec['weight']};")
+    for k, v in t["radius"].items():
+        out.append(f"  --r-{k}: {v};")
+    for k, v in t["motion"].items():
+        out.append(f"  --m-{k}: {v};")
+    out.append("  --shadow-1: 0 1px 2px rgba(0,0,0,.06), 0 1px 1px rgba(0,0,0,.04);")
+    out.append("  --shadow-2: 0 2px 6px rgba(0,0,0,.06), 0 12px 32px rgba(0,0,0,.08);")
+    out.append("  --shadow-3: 0 4px 12px rgba(0,0,0,.08), 0 28px 70px rgba(0,0,0,.16);")
+    for i, h in enumerate(t["jobHues"]):
+        out.append(f"  --job-{i}: hsl({h} 72% 40%);")
     out.append("}")
     for name, hexv in t["accents"].items():
         out.append(f':root[data-accent="{name}"] {{ --accent-color: {hexv}; }}')
-    out.append("@media (prefers-color-scheme: dark) {\n  :root:not([data-theme=\"light\"]) {")
-    for k, v in t["dark"].items():
-        out.append(f"    --{k}: {v};")
-    out.append("  }\n}")
-    out.append(":root[data-theme=\"dark\"] {")
-    for k, v in t["dark"].items():
-        out.append(f"  --{k}: {v};")
-    out.append("}")
+    dark = "\n".join(f"    --{k}: {v};" for k, v in t["dark"].items())
+    dshadow = "    --shadow-1: 0 1px 2px rgba(0,0,0,.5);\n    --shadow-2: 0 2px 8px rgba(0,0,0,.5), 0 14px 40px rgba(0,0,0,.45);\n    --shadow-3: 0 6px 16px rgba(0,0,0,.55), 0 32px 80px rgba(0,0,0,.6);"
+    out.append("@media (prefers-color-scheme: dark) {\n  :root:not([data-theme=\"light\"]) {\n" + dark + "\n" + dshadow + "\n  }\n}")
+    out.append(":root[data-theme=\"dark\"] {\n" + "\n".join(f"  --{k}: {v};" for k, v in t["dark"].items()) + "\n" + dshadow.replace("    ", "  ") + "\n}")
     return "\n".join(out) + "\n"
 
 

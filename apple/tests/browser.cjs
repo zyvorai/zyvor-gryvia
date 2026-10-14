@@ -2,10 +2,8 @@
 // Copyright © 2026 Zyvor AI Labs Private Limited
 const {chromium}=require('playwright');
 (async()=>{const browser=await chromium.launch({headless:true});const page=await browser.newPage({viewport:{width:1440,height:1100}});let errors=[];page.on('pageerror',e=>errors.push(e.message));
-await page.goto('http://127.0.0.1:8765');await page.fill('#token','browser-test-admin-token-00000000');await page.click('#login button');await page.waitForSelector('#live-summary .live-big');await page.click('[data-view="overview"]');await page.waitForSelector('#metrics .metric');
+await page.goto('http://127.0.0.1:8765');await page.fill('#token','browser-test-admin-token-00000000');await page.click('#login button');await page.waitForSelector('#hero .num');await page.waitForFunction(()=>document.querySelector('#hero .num').textContent==='92');if((await page.locator('#live-summary .heat-cell').count())!==2)throw Error('heat strip missing');if(!(await page.getAttribute('#hero svg.ring','aria-label')).includes('%'))throw Error('ring missing');await page.click('[data-view="overview"]');await page.waitForSelector('#metrics .metric');
 if(await page.locator('#metrics .metric').count()!==4)throw Error('metrics missing');await page.click('[data-view="live"]');
-await page.waitForSelector('#live-summary .live-big');
-if((await page.textContent('#live-summary')).indexOf('92')<0)throw Error('GPU cores total (12+80=92) missing');
 if(await page.locator('#gpu-cards .gpu-card').count()!==2)throw Error('gpu cards missing');
 if(await page.locator('#gpu-cards .core').count()!==92)throw Error('core grid wrong');
 await page.waitForSelector('#flow .job-chip');
@@ -13,7 +11,7 @@ if(await page.locator('#welcome:not([hidden])').count()!==1)throw Error('welcome
 await page.click('#run-demo');await page.waitForSelector('#toasts .toast');
 await page.click('[data-view="guide"]');await page.waitForSelector('#guide .glossary');await page.click('[data-view="overview"]');
 await page.click('[data-view="fleet"]');await page.waitForSelector('#nodes .node-card');if(await page.locator('#nodes .node-card').count()!==2)throw Error('fleet missing');
-await page.selectOption('[data-policy-mode="mini-01"]','idle');await page.waitForFunction(()=>document.querySelector('[data-policy-mode="mini-01"]').value==='idle');
+await page.click('[data-policy-set="mini-01"][data-mode="idle"]');await page.waitForFunction(()=>document.querySelector('[data-policy-set="mini-01"][data-mode="idle"]').getAttribute('aria-pressed')==='true');
 await page.click('[data-drain="mini-01"]');await page.waitForFunction(()=>document.querySelector('[data-drain="mini-01"]').textContent.includes('Resume'));
 await page.click('[data-view="jobs"]');await page.fill('#submit input[name="model"]','Browser submitted job');await page.fill('#submit input[name="memoryGiB"]','2');await page.click('#submit button');await page.waitForFunction(()=>document.querySelector('#job-table').textContent.includes('Browser submitted job'));
 await page.click('#job-table [data-logs]');await page.waitForSelector('dialog[open]');await page.click('#close-logs');
@@ -46,4 +44,12 @@ if(await page.evaluate(()=>document.documentElement.scrollWidth>window.innerWidt
 await p2.fill('#pg-prompt','hello');await p2.click('#pg-send');await p2.waitForFunction(()=>document.querySelector('#pg-output').textContent.includes('simulated reply'));
 await p2.waitForFunction(()=>!document.querySelector('#pg-send').disabled);if(!(await p2.textContent('#pg-meta')).includes('chunks'))throw Error('stream meta missing');
 await p2.fill('#pg-prompt','again');await p2.click('#pg-send');await p2.waitForFunction(()=>document.querySelector('#pg-output').textContent.split('You:').length===3);await p2.close();}
-if(errors.length)throw Error(errors.join('\n'));console.log('PASS: dashboard login, metrics, fleet, drain, job submit, logs, filter, cancel, quotas, models, palette, timeline, alerts, settings, streaming playground, responsive layout; no JS errors');await browser.close();})().catch(e=>{console.error(e);process.exit(1)});
+{const p3=await browser.newPage({viewport:{width:1440,height:900}});p3.on('pageerror',e=>errors.push(e.message));await p3.goto('http://127.0.0.1:8765/#live');await p3.click('#demo-start');await p3.waitForSelector('.areachart svg');
+await p3.locator('.areachart').first().scrollIntoViewIfNeeded();await p3.waitForTimeout(600);const box=await p3.locator('.areachart').first().boundingBox();await p3.mouse.move(box.x+box.width*0.6,box.y+box.height/2);
+await p3.waitForFunction(()=>{const c=document.querySelector('.areachart.hover .tip');return c&&/%/.test(c.textContent)});
+if((await p3.locator('.fx-dot').count())<1)throw Error('flow particles missing');
+if((await p3.locator('#hero svg.ring').count())!==1)throw Error('hero ring missing');await p3.close();
+const ctx=await browser.newContext({reducedMotion:'reduce',viewport:{width:1440,height:900}});const p4=await ctx.newPage();p4.on('pageerror',e=>errors.push(e.message));await p4.goto('http://127.0.0.1:8765/#live');await p4.click('#demo-start');await p4.waitForSelector('.gpu-card');
+if((await p4.locator('.fx-dot').count())!==0)throw Error('particles must be off under reduced motion');
+const anim=await p4.evaluate(()=>getComputedStyle(document.querySelector('.core.on')||document.body).animationName);if(anim!=='none'&&anim!=='shimmer')throw Error('unexpected animation '+anim);await ctx.close();}
+if(errors.length)throw Error(errors.join('\n'));console.log('PASS: dashboard login, metrics, fleet, drain, job submit, logs, filter, cancel, quotas, models, palette, timeline, alerts, settings, streaming playground, chart hover, flow particles, reduced motion, responsive layout; no JS errors');await browser.close();})().catch(e=>{console.error(e);process.exit(1)});

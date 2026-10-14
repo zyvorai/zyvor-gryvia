@@ -24,3 +24,10 @@ Sidebar: **Monitor** (Overview, Mac fleet, Workloads, Timeline), **Manage** (Mod
 3. Empty and error states explain themselves.
 4. Keyboard: palette, `/`, `r`, `p`, `1`–`9`, `?`.
 5. Screenshots come from demo or fixture data only.
+
+## Visual system (v0.3)
+- **Type**: system font stack only (SF on Apple platforms; SF Pro cannot be bundled). Sizes come from the ramp `--t-*` in `brand/tokens.json`; display sizes use negative tracking and `text-wrap: balance`; hero numerals are tabular.
+- **Materials**: `--mat-thin/regular/thick` blur surfaces, hairline borders, two-layer `--shadow-*`, concentric radii `--r-*`. In-app "Reduce transparency" and `prefers-reduced-transparency` swap materials for opaque fills.
+- **Motion**: one spring curve and three durations (`--m-*`). Everything animated is gated by `motionOK()` / `prefers-reduced-motion`; every animated graphic has a static equivalent.
+- **Graphics encode data**: hero numbers, GPU ring, heat strip, area charts, flow particles, loss chart, timeline bars and idle sparklines are all drawn from measured state. Idle sparklines cover only the time the page has been open. No decorative data.
+- **Contrast**: text and muted text meet WCAG AA in light and dark (checked from `tokens.json`). `forced-colors` has a fallback.

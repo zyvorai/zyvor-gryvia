@@ -2,15 +2,12 @@
  * Copyright © 2026 Zyvor AI Labs Private Limited */
 :root {
   color-scheme: light dark;
-  --accent: #0088ff; --accent-2: #5cb8ff; --green: #30d158; --amber: #ff9f0a; --red: #ff383c; --purple: #a550e0;
-  --bg: #fbfbfd; --bg-2: #f2f2f7; --surface: #ffffff; --text: #1d1d1f; --muted: #6e6e73; --line: #d2d2d7;
-  --shadow: 0 1px 2px #0000000d, 0 12px 40px #0000001a;
-  --sans: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", system-ui, sans-serif;
+  --accent: var(--accent-color); --green: var(--status-succeeded); --amber: var(--status-queued); --red: var(--status-failed); --purple: #a550e0;
+  --bg-2: color-mix(in srgb, var(--text) 4%, var(--bg)); --shadow: var(--shadow-2);
+  --sans: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", system-ui, "Segoe UI", Roboto, sans-serif;
   --rounded: ui-rounded, "SF Pro Rounded", -apple-system, system-ui, sans-serif;
   --mono: ui-monospace, "SF Mono", Menlo, monospace;
 }
-:root[data-theme="dark"] { --bg: #000; --bg-2: #111113; --surface: #1c1c1e; --text: #f5f5f7; --muted: #98989d; --line: #38383a; --shadow: 0 1px 2px #0006, 0 12px 40px #0008; }
-@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg: #000; --bg-2: #111113; --surface: #1c1c1e; --text: #f5f5f7; --muted: #98989d; --line: #38383a; --shadow: 0 1px 2px #0006, 0 12px 40px #0008; } }
 * { box-sizing: border-box; }
 html { scroll-behavior: smooth; scroll-padding-top: 72px; }
 body { margin: 0; background: var(--bg); color: var(--text); font: 17px/1.5 var(--sans); -webkit-font-smoothing: antialiased; font-optical-sizing: auto; }
@@ -37,9 +34,9 @@ nav.top .sp { flex: 1; }
 
 /* hero */
 .hero { padding: 84px 0 48px; text-align: center; position: relative; overflow: hidden; }
-.hero::before { content: ""; position: absolute; inset: -20% -10% auto; height: 520px; background: radial-gradient(60% 60% at 50% 0%, color-mix(in srgb, var(--accent) 22%, transparent), transparent 70%); pointer-events: none; }
+.hero::before { content: none; }
 .eyebrow { font-size: 13px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); }
-h1 { font: 700 clamp(40px, 7vw, 76px)/1.04 var(--sans); letter-spacing: -.035em; margin: 14px auto 18px; max-width: 14ch; }
+h1 { font: 700 clamp(46px, 9vw, 104px)/1.0 var(--sans); letter-spacing: -.045em; margin: 14px auto 20px; max-width: 12ch; text-wrap: balance; }
 h1 em { font-style: normal; background: linear-gradient(90deg, var(--accent), var(--accent-2)); -webkit-background-clip: text; background-clip: text; color: transparent; }
 .lede { font-size: clamp(18px, 2.2vw, 23px); color: var(--muted); max-width: 46ch; margin: 0 auto 28px; line-height: 1.4; }
 .cta { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
@@ -111,3 +108,34 @@ footer .cols { display: flex; gap: 28px; flex-wrap: wrap; justify-content: space
 .tiers, .tier { max-width: 100%; }
 pre { max-width: 100%; white-space: pre; }
 @media (max-width: 860px) { .tier { grid-template-columns: minmax(0, 1fr); } }
+
+/* ---- cinematic hero: moving gradient mesh + a wave of GPU cores ---- */
+.hero { padding: 96px 0 40px; }
+.mesh { position: absolute; inset: 0; overflow: hidden; pointer-events: none; z-index: 0; }
+.mesh i { position: absolute; width: 60vw; height: 60vw; max-width: 760px; max-height: 760px; border-radius: 50%; filter: blur(80px); opacity: .5; animation: drift 22s ease-in-out infinite alternate; }
+.mesh i:nth-child(1) { background: var(--accent); left: -10%; top: -30%; }
+.mesh i:nth-child(2) { background: #5ac8fa; right: -12%; top: -20%; animation-delay: -7s; opacity: .38; }
+.mesh i:nth-child(3) { background: var(--purple); left: 30%; top: 10%; animation-delay: -13s; opacity: .22; }
+@keyframes drift { to { transform: translate(8%, 10%) scale(1.15); } }
+.hero .wrap { position: relative; z-index: 1; }
+.hero-grid { display: grid; grid-template-columns: repeat(40, 1fr); gap: 5px; max-width: 980px; margin: 54px auto 0; }
+.hero-grid i { aspect-ratio: 1; border-radius: 4px; background: color-mix(in srgb, var(--text) 9%, transparent); animation: wave 4.8s ease-in-out infinite; animation-delay: calc(var(--x) * 70ms + var(--y) * 110ms); }
+@keyframes wave { 0%, 100% { background: color-mix(in srgb, var(--text) 9%, transparent); box-shadow: none; } 45% { background: linear-gradient(180deg, var(--accent-2, #5cb8ff), var(--accent)); box-shadow: 0 0 12px var(--glow, rgba(0,136,255,.4)); } }
+@media (prefers-reduced-motion: reduce) { .mesh i, .hero-grid i { animation: none; } .hero-grid i:nth-child(3n) { background: var(--accent); } }
+
+/* ---- scroll story: sticky stage swaps the screenshot per step ---- */
+.story { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 56px; align-items: start; margin-top: 36px; }
+.story-steps .step { min-height: 62vh; display: flex; flex-direction: column; justify-content: center; opacity: .38; transition: opacity .5s; }
+.story-steps .step.active { opacity: 1; }
+.story-steps h3 { font: 700 clamp(26px, 3.4vw, 38px)/1.1 var(--sans); letter-spacing: -.03em; margin: 0 0 12px; }
+.story-steps p { color: var(--muted); font-size: 19px; line-height: 1.4; max-width: 34ch; }
+.story-stage { position: sticky; top: 90px; }
+.stage-imgs { position: relative; aspect-ratio: 1440 / 900; background: var(--bg-2); }
+.stage-imgs .shot { position: absolute; inset: 0; opacity: 0; transform: scale(1.015); transition: opacity .6s, transform .8s; }
+.stage-imgs .shot.on { opacity: 1; transform: none; }
+.shot img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.shot .dark { display: none; }
+:root[data-theme="dark"] .shot .light { display: none; } :root[data-theme="dark"] .shot .dark { display: block; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .shot .light { display: none; } :root:not([data-theme="light"]) .shot .dark { display: block; } }
+html:not(.js) .story { display: block; } html:not(.js) .story-stage { display: none; }
+@media (max-width: 860px) { .story { grid-template-columns: 1fr; gap: 24px; } .story-stage { position: sticky; top: 60px; z-index: 2; } .story-steps .step { min-height: 46vh; } }

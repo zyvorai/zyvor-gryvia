@@ -35,6 +35,25 @@
     if (!reduce) { var t = 0; setInterval(function () { t += 0.4; paint(55 + 30 * Math.sin(t) + 8 * Math.sin(t * 2.7)); }, 900); }
   }
 
+  // hero: a wave of GPU cores (40 x 6)
+  var hg = document.getElementById('hero-grid');
+  if (hg) { var f = document.createDocumentFragment(); for (var y = 0; y < 6; y++) for (var x = 0; x < 40; x++) { var c = document.createElement('i'); c.style.setProperty('--x', x); c.style.setProperty('--y', y); f.appendChild(c); } hg.appendChild(f); }
+
+  // scroll story: highlight the step nearest the middle and show its screenshot
+  var steps = document.querySelectorAll('.story-steps .step'), shots = document.querySelectorAll('.stage-imgs .shot');
+  if ('IntersectionObserver' in window && steps.length) {
+    var stepObserver = new IntersectionObserver(function (es) {
+      es.forEach(function (e) {
+        if (!e.isIntersecting) return;
+        var n = e.target.dataset.step;
+        steps.forEach(function (s) { s.classList.toggle('active', s.dataset.step === n); });
+        shots.forEach(function (s) { s.classList.toggle('on', s.dataset.step === n); });
+      });
+    }, { rootMargin: '-45% 0px -45% 0px' });
+    steps.forEach(function (s) { stepObserver.observe(s); });
+    steps[0].classList.add('active');
+  }
+
   // active nav link
   var links = document.querySelectorAll('nav.top a.link[href^="#"]');
   if ('IntersectionObserver' in window && links.length) {

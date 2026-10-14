@@ -14,7 +14,7 @@ const ACTIVE = ['running', 'cancelling'];
 const DEMO_JOB = {runtime: 'demo', model: 'Hello Gryvia', memoryGiB: 1, priority: 50, mode: 'exclusive', retries: 0, timeoutSeconds: 60, args: ['--seconds', '3'], labels: ['demo']};
 
 /* ---------- state ---------- */
-let runMetrics = {}, chartJob = null, results = [], suites = {}, compareSet = new Set(), activeModel = null, token = '', state = null, view = 'live', telemetry = {}, streaming = false, streamAbort = null, flowSig = '', view0 = 0, busy = false, paused = false, lastOk = 0, failures = 0;
+let idleHist = {}, runMetrics = {}, chartJob = null, results = [], suites = {}, compareSet = new Set(), activeModel = null, token = '', state = null, view = 'live', telemetry = {}, streaming = false, streamAbort = null, flowSig = '', view0 = 0, busy = false, paused = false, lastOk = 0, failures = 0;
 let demo = null, timer = null, logJob = null, logTimer = null, logLines = [], samples = [], selected = new Set();
 try { token = sessionStorage.getItem('gryvia.token') || ''; } catch {}
 
@@ -152,7 +152,7 @@ function jobRow(j, withSelect) {
     <td>${esc(j.tenant)}</td><td>${badge(j.state)}</td><td>${j.spec.memoryGiB} GiB</td><td>${esc(j.node || j.reason || '—')}</td><td>${act.join('')}</td></tr>`;
 }
 function table(jobs, withSelect) {
-  if (!jobs.length) return '<div class="empty">No workloads match. Submit a native job to get started.</div>';
+  if (!jobs.length) return emptyArt('queue', 'No workloads match', 'Submit a native job, or press <strong>Run demo job</strong>.');
   return `<div class="table-wrap"><table><thead><tr><th></th><th>Workload</th><th>Tenant</th><th>State</th><th>Reservation</th><th>Placement</th><th>Actions</th></tr></thead><tbody>${jobs.map(j => jobRow(j, withSelect)).join('')}</tbody></table></div>`;
 }
 function filtered() {
@@ -192,17 +192,19 @@ function render() {
   $('#recent').innerHTML = table(jobs.slice(0, 5), false);
   $('#job-table').innerHTML = table(filtered(), true);
   $('#bulk').hidden = selected.size === 0; $('#bulk-count').textContent = `${selected.size} selected`;
+  nodes.forEach(n => { const h = idleHist[n.id] = idleHist[n.id] || []; const v = n.presence?.idleSeconds; if (typeof v === 'number' && (!h.length || h[h.length - 1].t !== state.time)) { h.push({t: state.time, v: n.presence?.locked ? 3600 : v}); if (h.length > 60) h.shift(); } });
   $('#nodes').innerHTML = nodes.map(n => {
     const pol = n.policy || {mode: 'always', idleMinutes: 5}, gate = n.gate || {allowed: true, reason: ''}, pr = n.presence || {};
     const presence = [pr.idleSeconds !== undefined ? (pr.locked ? 'screen locked' : 'idle ' + (pr.idleSeconds < 90 ? Math.round(pr.idleSeconds) + ' s' : Math.round(pr.idleSeconds / 60) + ' min')) : null,
       pr.onBattery ? `battery ${Math.round(pr.batteryPct ?? 0)}%` : (pr.batteryPct !== undefined ? 'plugged in' : null), pr.lowPowerMode ? 'Low Power Mode' : null, pr.micInUse ? 'mic in use' : null].filter(Boolean).join(' · ');
     return `<article class="node-card"><div class="section-head"><h3>${esc(n.id)}</h3>${badge(n.online ? 'online' : 'offline')}</div>
     <p>${esc(n.gpu || n.host || 'Native Mac worker')}</p><p>${n.budgetGiB} GiB budget · ${esc(n.thermal || 'unknown')} thermal · ${reservedOn(n.id, jobs).toFixed(1)} GiB reserved</p><p>${esc(n.runtimes.join(' · '))}</p>
-    <p>${gate.allowed ? '<span class="badge succeeded">accepting work</span>' : `<span class="badge queued">not accepting: ${esc(gate.reason)}</span>`} <span class="muted">${esc(presence)}</span></p>
-    <label class="policy">When may this Mac run fleet work?
-      <select data-policy-mode="${esc(n.id)}"><option value="always" ${pol.mode === 'always' ? 'selected' : ''}>Always</option><option value="idle" ${pol.mode === 'idle' ? 'selected' : ''}>Only when I am away (${pol.idleMinutes ?? 5} min idle)</option><option value="paused" ${pol.mode === 'paused' ? 'selected' : ''}>Paused</option></select></label>
+    <p>${!n.online ? '<span class="badge">offline</span>' : gate.allowed ? '<span class="badge succeeded">accepting work</span>' : `<span class="badge queued">not accepting: ${esc(gate.reason)}</span>`} <span class="muted">${esc(presence)}</span></p>
+    ${idleSpark(idleHist[n.id] || [])}
+    <div class="policy"><small>When may this Mac run fleet work?</small>
+      <div class="seg" role="group" aria-label="Work policy for ${esc(n.id)}" style="margin-top:6px">${[['always', 'Always'], ['idle', `When I'm away`], ['paused', 'Paused']].map(([m, l]) => `<button type="button" data-policy-set="${esc(n.id)}" data-mode="${m}" aria-pressed="${pol.mode === m}">${l}</button>`).join('')}</div></div>
     <div class="actions"><button data-node="${esc(n.id)}">Details</button><button data-drain="${esc(n.id)}" data-value="${!n.drain}">${n.drain ? 'Resume admission' : 'Drain node'}</button></div></article>`;
-  }).join('') || '<div class="empty">No registered Mac workers.</div>';
+  }).join('') || emptyArt('fleet', 'No Macs registered', 'Install the agent on a Mac and it appears here.');
   renderGantt();
   $('#tenant-list').innerHTML = `<table><tr><th>Tenant</th><th>Quota</th><th>Reserved now</th><th>Weight</th><th>Budget used</th></tr>${tenants.map(t => { const used = ((state.usage || []).find(u => u.tenant === t.id)?.reservedGiBSeconds || 0) / 3600; return `<tr><td>${esc(t.id)}</td><td>${t.quota} GiB</td><td>${sum(jobs.filter(j => j.tenant === t.id && ACTIVE.includes(j.state)), j => j.spec.memoryGiB)} GiB</td><td>${t.weight}</td><td>${t.budget ? `${used.toFixed(1)} / ${t.budget} GiB-h` : 'no budget'}</td></tr>`; }).join('')}</table>`;
   $('#usage-list').innerHTML = (state.usage || []).map(u => `<div class="queue-line"><span>${esc(u.tenant)}</span><strong>${u.workerSeconds.toFixed(1)} worker-seconds · ${u.reservedGiBSeconds.toFixed(1)} GiB-seconds${u.kWh ? ` · ≈${(u.kWh * 1000).toFixed(1)} Wh (estimate)` : ''}</strong></div>`).join('') || '<div class="empty">Metered attempts appear after completion or lease expiry.</div>';
@@ -210,11 +212,12 @@ function render() {
   $('#events').innerHTML = events.length ? `<table><tr><th>Time</th><th>Event</th><th>Subject</th><th>Detail</th></tr>${events.map(e => `<tr><td>${esc(new Date(e.at * 1000).toLocaleString())}</td><td>${esc(e.kind)}</td><td>${esc(e.subject)}</td><td>${esc(e.detail)}</td></tr>`).join('')}</table>` : '<div class="empty">No administrator activity visible.</div>';
   const al = alerts(), badgeEl = $('#alert-count');
   badgeEl.hidden = al.length === 0; badgeEl.textContent = al.length;
-  $('#alert-list').innerHTML = al.length ? al.map(a => `<div class="queue-line"><span>${badge(a.level === 'error' ? 'failed' : a.level === 'warn' ? 'queued' : 'running')} <strong>${esc(a.title)}</strong></span><span class="muted">${esc(a.detail)}</span></div>`).join('') : '<div class="empty">All clear: no offline Macs, thermal limits or long waits.</div>';
+  $('#alert-list').innerHTML = al.length ? al.map(a => `<div class="queue-line"><span>${badge(a.level === 'error' ? 'failed' : a.level === 'warn' ? 'queued' : 'running')} <strong>${esc(a.title)}</strong></span><span class="muted">${esc(a.detail)}</span></div>`).join('') : emptyArt('chart', 'All clear', 'No offline Macs, thermal limits or long waits.');
   renderTemplates();
   renderWelcome();
   renderLive();
   renderBuild();
+  renderHero();
 }
 function renderWelcome() {
   const hasNode = state.nodes.some(n => n.online), hasJob = state.jobs.length > 0, done = state.jobs.some(j => j.state === 'succeeded');
@@ -228,34 +231,152 @@ async function runDemoJob() {
   } catch (e) { fail(e); }
 }
 
+/* ---------- graphics: rings, area charts, heat strip (SVG/CSS only; every graphic is driven by state) ---------- */
+const motionOK = () => !matchMedia('(prefers-reduced-motion: reduce)').matches;
+const JOB_VARS = 8;
+const jobIdx = id => { let h = 0; for (const c of String(id)) h = (h * 31 + c.charCodeAt(0)) >>> 0; return h % JOB_VARS; };
+const jobColor = id => `var(--job-${jobIdx(id)})`;
+let gradSeq = 0;
+function ring({pct, size = 168, stroke = 14, label, sub = ''}) {
+  const r = (size - stroke) / 2, c = 2 * Math.PI * r, p = Math.max(0, Math.min(100, pct ?? 0));
+  const gid = 'rg' + (++gradSeq);
+  return `<svg class="ring" viewBox="0 0 ${size} ${size}" role="img" aria-label="${esc(label ?? Math.round(p) + '%')} ${esc(sub)}">
+    <defs><linearGradient id="${gid}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="var(--accent-2)"/><stop offset="1" stop-color="var(--accent-color)"/></linearGradient></defs>
+    <circle class="track" cx="${size / 2}" cy="${size / 2}" r="${r}" stroke-width="${stroke}"/>
+    <circle class="bar glow" cx="${size / 2}" cy="${size / 2}" r="${r}" stroke-width="${stroke}" stroke="url(#${gid})" stroke-dasharray="${c.toFixed(1)}" stroke-dashoffset="${(c * (1 - p / 100)).toFixed(1)}"/>
+    <text x="${size / 2}" y="${size / 2 + (sub ? 4 : 11)}" font-size="${Math.round(size * 0.24)}">${esc(label ?? Math.round(p) + '%')}</text>
+    ${sub ? `<text class="sub" x="${size / 2}" y="${size / 2 + size * 0.17}">${esc(sub)}</text>` : ''}</svg>`;
+}
+// Catmull-Rom spline through points, as cubic Béziers
+function smooth(pts) {
+  if (pts.length < 2) return '';
+  let d = `M${pts[0][0].toFixed(1)},${pts[0][1].toFixed(1)}`;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const p0 = pts[i - 1] || pts[i], p1 = pts[i], p2 = pts[i + 1], p3 = pts[i + 2] || p2;
+    const c1 = [p1[0] + (p2[0] - p0[0]) / 6, p1[1] + (p2[1] - p0[1]) / 6], c2 = [p2[0] - (p3[0] - p1[0]) / 6, p2[1] - (p3[1] - p1[1]) / 6];
+    d += ` C${c1[0].toFixed(1)},${c1[1].toFixed(1)} ${c2[0].toFixed(1)},${c2[1].toFixed(1)} ${p2[0].toFixed(1)},${p2[1].toFixed(1)}`;
+  }
+  return d;
+}
+// values: [number], times: [epoch seconds] (optional); max defaults to 100 (percent)
+function areaChart(values, times = [], {max = 100, unit = '%', label = 'trend'} = {}) {
+  if (values.length < 2) return '<div class="muted" style="margin-top:8px;font-size:12px">Collecting samples…</div>';
+  const W = 300, H = 72, pad = 4, gid = 'ag' + (++gradSeq);
+  const pts = values.map((v, i) => [i / (values.length - 1) * W, H - pad - Math.min(1, v / max) * (H - pad * 2)]);
+  const line = smooth(pts);
+  return `<div class="areachart" data-v='${JSON.stringify(values.map(v => Math.round(v * 10) / 10))}' data-t='${JSON.stringify(times)}' data-u="${esc(unit)}">
+    <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="${esc(label)}">
+      <defs><linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--accent-color)" stop-opacity=".32"/><stop offset="1" stop-color="var(--accent-color)" stop-opacity="0"/></linearGradient></defs>
+      <path d="${line} L${W},${H} L0,${H} Z" fill="url(#${gid})"/><path class="line" d="${line}" vector-effect="non-scaling-stroke"/>
+      <line class="cross" x1="0" y1="0" x2="0" y2="${H}" vector-effect="non-scaling-stroke"/><circle class="pt" r="4" cx="0" cy="0"/>
+    </svg><span class="tip"></span></div>`;
+}
+document.addEventListener('pointermove', e => {
+  const box = e.target.closest && e.target.closest('.areachart');
+  $$('.areachart.hover').forEach(c => { if (c !== box) c.classList.remove('hover'); });
+  if (!box) return;
+  const v = JSON.parse(box.dataset.v), t = JSON.parse(box.dataset.t || '[]'), r = box.getBoundingClientRect();
+  const f = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)), i = Math.round(f * (v.length - 1));
+  const svg = box.querySelector('svg'), W = 300, H = 72, pad = 4, max = 100;
+  const x = i / (v.length - 1) * W, y = H - pad - Math.min(1, v[i] / max) * (H - pad * 2);
+  box.querySelector('.cross').setAttribute('x1', x); box.querySelector('.cross').setAttribute('x2', x);
+  const pt = box.querySelector('.pt'); pt.setAttribute('cx', x); pt.setAttribute('cy', y);
+  const tip = box.querySelector('.tip');
+  tip.textContent = `${v[i]}${box.dataset.u}` + (t[i] ? ' · ' + new Date(t[i] * 1000).toLocaleTimeString() : '');
+  tip.style.left = (f * 100) + '%';
+  box.classList.add('hover');
+});
+document.addEventListener('pointerleave', () => $$('.areachart.hover').forEach(c => c.classList.remove('hover')), true);
+function countUp(el, to, {digits = 0, ms = 700} = {}) {
+  const from = Number(el.dataset.v ?? 0);
+  el.dataset.v = String(to);
+  if (!motionOK() || from === to) { el.textContent = to.toFixed(digits); return; }
+  const t0 = performance.now();
+  const step = now => { const k = Math.min(1, (now - t0) / ms), e = 1 - Math.pow(1 - k, 3); el.textContent = (from + (to - from) * e).toFixed(digits); if (k < 1) requestAnimationFrame(step); };
+  requestAnimationFrame(step);
+}
+const idleSpark = h => {
+  if (h.length < 2) return '';
+  const max = Math.max(600, ...h.map(p => p.v)), W = 200, H = 28;
+  const pts = h.map((p, i) => [i / (h.length - 1) * W, H - 2 - p.v / max * (H - 4)]);
+  return `<div class="idle-spark" role="img" aria-label="Owner idle time, last ${h.length} samples since this page opened"><small>Owner idle time · since this page opened</small><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none"><path class="fill" d="M0,${H} L${pts.map(p => p.map(n => n.toFixed(1)).join(',')).join(' L')} L${W},${H}Z"/><path d="M${pts.map(p => p.map(n => n.toFixed(1)).join(',')).join(' L')}"/></svg></div>`;
+};
+const emptyArt = (kind, title, body) => {
+  const art = {
+    queue: '<path d="M10 20h60M10 40h44M10 60h28"/><rect x="82" y="14" width="30" height="52" rx="8"/>',
+    model: '<path d="M60 10l40 22-40 22-40-22z"/><path d="M20 50l40 22 40-22"/>',
+    fleet: '<rect x="14" y="18" width="46" height="32" rx="6"/><path d="M26 62h22M37 50v12"/><rect x="72" y="30" width="38" height="26" rx="6"/>',
+    chart: '<path d="M12 70V14M12 70h100"/><path d="M20 56l22-18 18 10 26-28 20 12"/>',
+  }[kind];
+  return `<div class="empty-art"><svg viewBox="0 0 124 80" aria-hidden="true">${art}</svg><strong style="color:var(--text);font-weight:600">${esc(title)}</strong><span>${body}</span></div>`;
+};
+
+/* ---------- hero: the one number that matters on each view ---------- */
+function heroData() {
+  if (!state) return null;
+  const {nodes, jobs} = state, online = nodes.filter(n => n.online);
+  const cores = sum(online, n => n.gpuCores || 0), reserved = sum(online, n => reservedOn(n.id, jobs)), budget = sum(online, n => n.budgetGiB);
+  const utils = online.filter(n => typeof n.gpuUtilPct === 'number'), avg = utils.length ? sum(utils, n => n.gpuUtilPct) / utils.length : null;
+  const running = jobs.filter(j => j.state === 'running').length, queued = jobs.filter(j => j.state === 'queued').length;
+  const best = state.models.map(m => latest(m.id, 'benchmark')?.body.generationTokensPerSecond).filter(Number.isFinite);
+  const accepting = nodes.filter(n => n.online && (!n.gate || n.gate.allowed)).length;
+  switch (view) {
+    case 'live': return {kicker: 'Live', big: cores || online.length, unit: cores ? 'GPU cores' : (online.length === 1 ? 'GPU' : 'GPUs'),
+      text: `across ${online.length} online Mac${online.length === 1 ? '' : 's'}. One GPU per Mac, measured as macOS reports it.`,
+      stats: [[avg === null ? '—' : Math.round(avg) + '%', 'GPU busy'], [`${reserved.toFixed(0)} of ${budget.toFixed(0)} GiB`, 'reserved'], [running, 'running'], [queued, 'queued']],
+      art: ring({pct: avg ?? 0, label: avg === null ? '—' : Math.round(avg) + '%', sub: 'GPU busy'})};
+    case 'overview': return {kicker: 'Overview', big: running, unit: running === 1 ? 'job running' : 'jobs running', text: `${queued} waiting for admission across ${online.length} Mac${online.length === 1 ? '' : 's'}.`,
+      stats: [[jobs.filter(j => j.state === 'succeeded').length, 'completed'], [jobs.filter(j => j.state === 'failed').length, 'failed']],
+      art: ring({pct: budget ? reserved / budget * 100 : 0, label: budget ? Math.round(reserved / budget * 100) + '%' : '—', sub: 'memory reserved'})};
+    case 'fleet': return {kicker: 'Mac fleet', big: accepting, unit: `of ${nodes.length} accepting work`, text: 'Owner policy decides when each Mac may run fleet work.',
+      stats: [[online.length, 'online'], [nodes.filter(n => n.drain).length, 'draining']], art: ring({pct: nodes.length ? accepting / nodes.length * 100 : 0, label: `${accepting}/${nodes.length}`, sub: 'accepting'})};
+    case 'models': return {kicker: 'Model hub', big: best.length ? Math.max(...best).toFixed(0) : state.models.length, unit: best.length ? 'tok/s best generation' : 'models',
+      text: best.length ? 'Fastest measured generation across your benchmarked models.' : 'Onboard a model, then benchmark and evaluate it on any Mac.',
+      stats: [[state.models.filter(m => (m.status || 'ready') === 'ready').length, 'ready'], [state.models.filter(m => m.status === 'onboarding').length, 'onboarding'], [state.models.filter(m => (m.endpoints || []).length).length, 'deployed']]};
+    case 'training': {
+      const vals = state.models.map(m => m.finalValLoss).filter(Number.isFinite);
+      return {kicker: 'Training', big: vals.length ? Math.min(...vals).toFixed(3) : jobs.filter(j => j.spec.kind === 'train').length, unit: vals.length ? 'best validation loss' : 'training runs',
+        text: 'LoRA fine-tuning on one Mac with MLX. Loss updates as MLX reports it.', stats: [[jobs.filter(j => j.spec.kind === 'train' && j.state === 'running').length, 'running']]};
+    }
+    case 'jobs': return {kicker: 'Workloads', big: jobs.length, unit: 'workloads', text: 'Every job, with the scheduler\'s reason when it is waiting.',
+      stats: [[running, 'running'], [queued, 'queued'], [jobs.filter(j => j.state === 'failed').length, 'failed']]};
+    case 'deployments': return {kicker: 'Deployments', big: state.models.filter(m => (m.endpoints || []).length).length, unit: 'serving', text: 'Models served by llama-server or mlx_lm.server on a Mac, over loopback.', stats: []};
+    case 'datasets': return {kicker: 'Datasets', big: (state.datasets || []).length, unit: 'datasets', text: 'Data you train and evaluate with, recorded with row counts and SHA-256.', stats: []};
+    default: return null;
+  }
+}
+function renderHero() {
+  const el = $('#hero'), d = heroData();
+  if (!d || (!token && !demo)) { el.hidden = true; document.body.classList.remove('has-hero'); return; }
+  const big = typeof d.big === 'number' ? '<span class="num" id="hero-num" data-v="' + (el.dataset.view === view ? (el.dataset.last ?? 0) : 0) + '">0</span>' : esc(d.big);
+  el.innerHTML = `<div><div class="kicker">${esc(d.kicker)}</div><h1><span id="hero-big">${big}</span><span class="unit">${esc(d.unit)}</span></h1><p>${esc(d.text)}</p>
+    ${d.stats.length ? `<div class="stats">${d.stats.map(([v, l]) => `<span><b>${esc(v)}</b> ${esc(l)}</span>`).join('')}</div>` : ''}</div>${d.art ? `<div class="hero-art">${d.art}</div>` : ''}`;
+  const n = document.getElementById('hero-num');
+  if (n && typeof d.big === 'number') { countUp(n, d.big, {digits: Number.isInteger(d.big) ? 0 : 3}); el.dataset.last = String(d.big); } else if (n) n.textContent = d.big;
+  el.dataset.view = view; el.hidden = false;
+  document.body.classList.add('has-hero');
+}
+
 /* ---------- Live: GPUs + real-time scheduling ---------- */
-const hue = id => { let h = 0; for (const c of id) h = (h * 31 + c.charCodeAt(0)) % 360; return h; };
-const chip = (j, extra = '') => `<div class="job-chip ${extra}" data-chip="${esc(j.id)}" style="--hue:${hue(j.id)}"><span>${esc(j.spec.model || j.spec.runtime)}</span><small>${j.spec.memoryGiB} GiB · prio ${j.spec.priority}</small></div>`;
+const chip = (j, extra = '') => `<div class="job-chip ${extra}" data-chip="${esc(j.id)}" style="--hue-c:${jobColor(j.id)}"><span>${esc(j.spec.model || j.spec.runtime)}</span><small>${j.spec.memoryGiB} GiB · prio ${j.spec.priority}</small></div>`;
 function renderLive() {
   if (!state) return;
   const {nodes, jobs} = state, online = nodes.filter(n => n.online);
   const cores = sum(online, n => n.gpuCores || 0), reserved = sum(online, n => reservedOn(n.id, jobs)), budget = sum(online, n => n.budgetGiB);
   const utils = online.filter(n => typeof n.gpuUtilPct === 'number'), avg = utils.length ? sum(utils, n => n.gpuUtilPct) / utils.length : null;
-  $('#live-summary').innerHTML = [
-    [online.length, 'Macs online'], [online.length, online.length === 1 ? 'GPU (1 per Mac)' : 'GPUs (1 per Mac)'], [cores || '—', 'GPU cores'],
-    [`${reserved.toFixed(0)}<small>/${budget.toFixed(0)}</small>`, 'GiB reserved'], [avg === null ? '—' : avg.toFixed(0) + '%', 'avg GPU busy (measured)']
-  ].map(([v, l]) => `<div class="live-big"><strong>${v}</strong><span>${l}</span></div>`).join('');
+  $('#live-summary').innerHTML = nodes.length ? `<div class="heat-labelled" aria-label="Per-Mac GPU busy">${nodes.map(n => { const v = Math.round(n.online ? (n.gpuUtilPct ?? 0) : 0); return `<div class="heat-cell"><i style="--v:${v}"></i><span>${esc(n.id)}</span><b>${n.online ? v + '%' : 'offline'}</b></div>`; }).join('')}</div>` : '';
 
   $('#gpu-cards').innerHTML = nodes.map(n => {
     const util = typeof n.gpuUtilPct === 'number' ? n.gpuUtilPct : null, nc = n.gpuCores || 0;
     const lit = util === null ? 0 : util / 100 * nc, full = Math.floor(lit), part = lit - full > 0.15 ? 1 : 0;
-    const coreCells = nc ? Array.from({length: nc}, (_, i) => `<div class="core ${i < full ? 'on' : i < full + part ? 'part' : ''}"></div>`).join('') : '';
+    const coreCells = nc ? Array.from({length: nc}, (_, i) => `<div class="core ${i < full ? 'on' : i < full + part ? 'part' : ''}" style="--i:${i}"></div>`).join('') : '';
     const mine = jobs.filter(j => j.node === n.id && ACTIVE.includes(j.state));
     const total = n.totalGiB || n.budgetGiB;
-    const segs = mine.map(j => `<div class="memseg" title="${esc(j.spec.model || j.spec.runtime)} · ${j.spec.memoryGiB} GiB reserved" style="width:${Math.min(100, j.spec.memoryGiB / total * 100)}%;background:hsl(${hue(j.id)} 70% 46%)"></div>`).join('');
+    const segs = mine.map(j => `<div class="memseg" title="${esc(j.spec.model || j.spec.runtime)} · ${j.spec.memoryGiB} GiB reserved" style="width:${Math.min(100, j.spec.memoryGiB / total * 100)}%;background:${jobColor(j.id)}"></div>`).join('');
     const mark = n.gpuInUseMiB ? `<div class="mem-mark" title="GPU in use: ${(n.gpuInUseMiB / 1024).toFixed(1)} GiB" style="left:${Math.min(100, n.gpuInUseMiB / 1024 / total * 100)}%"></div>` : '';
     const t = (telemetry[n.id] || []).slice(-60);
-    let spark = '<div class="muted">Collecting samples…</div>';
-    if (t.length > 1) {
-      const pts = t.map((s, i) => `${(i / (t.length - 1) * 200).toFixed(1)},${(44 - 2 - s.util / 100 * 40).toFixed(1)}`);
-      spark = `<svg class="usespark" viewBox="0 0 200 44" preserveAspectRatio="none" role="img" aria-label="GPU busy trend"><path d="M0,44 L${pts.join(' L')} L200,44 Z"/><polyline points="${pts.join(' ')}"/></svg>`;
-    }
-    return `<article class="gpu-card" data-gpu="${esc(n.id)}">
+    const spark = areaChart(t.map(s => s.util), t.map(s => s.at), {label: n.id + ' GPU busy over time'});
+    return `<article class="gpu-card" data-gpu="${esc(n.id)}" style="--busy:${Math.round(util ?? 0)}">
       <header><h3>${esc(n.id)}</h3>${badge(n.online ? 'online' : 'offline')}</header>
       <p>${esc([n.gpuModel || n.gpu || 'Apple GPU', nc ? nc + ' GPU cores' : 'cores unknown', n.totalGiB ? n.totalGiB.toFixed(0) + ' GiB unified memory' : ''].filter(Boolean).join(' · '))}</p>
       <div class="gpu-util">${util === null ? '—' : util.toFixed(0) + '%'} <small>GPU busy</small></div>
@@ -264,14 +385,14 @@ function renderLive() {
       <div class="membar" aria-label="Memory">${segs}${mark}</div>
       <div class="legend"><span>${reservedOn(n.id, jobs).toFixed(1)} GiB reserved by ${mine.length} job${mine.length === 1 ? '' : 's'}</span>${n.gpuInUseMiB ? `<span>▏ ${(n.gpuInUseMiB / 1024).toFixed(1)} GiB in use</span>` : ''}<span>${esc(n.thermal || 'thermal unknown')}</span></div>
     </article>`;
-  }).join('') || '<div class="empty">No Macs registered yet. Start an agent: <code>make run-agent</code></div>';
+  }).join('') || emptyArt('fleet', 'No Macs registered yet', 'Start an agent: <code>make run-agent</code>');
 
   // scheduling flow with FLIP animation so chips visibly move queue → Mac
   const queued = jobs.filter(j => j.state === 'queued').sort((a, b) => b.spec.priority - a.spec.priority || a.created - b.created);
   const sig = JSON.stringify([queued.map(j => j.id + j.reason), nodes.map(n => [n.id, n.online, n.drain]), jobs.filter(j => ACTIVE.includes(j.state)).map(j => j.id + j.node)]);
   const feed = state.decisions || [];
   const last = feed[feed.length - 1];
-  const gateText = queued.length ? `<strong>${queued.length} waiting</strong>${esc(queued[0].reason || 'evaluating…')}` : '<strong>Queue empty</strong>nothing waiting';
+  const gateText = queued.length ? `<strong>${queued.length} waiting</strong><span class="reason">${esc(queued[0].reason || 'evaluating…')}</span>` : '<strong>Queue empty</strong>nothing waiting';
   if (sig !== flowSig) {
     flowSig = sig;
     const before = new Map($$('#flow [data-chip]').map(e => [e.dataset.chip, e.getBoundingClientRect()]));
@@ -292,20 +413,41 @@ function renderLive() {
   } else {
     const g = document.getElementById('gate'); if (g) g.innerHTML = gateText + '<small>admission: priority → fairness → fit</small>';
   }
+  drawFlowFx(queued, nodes, jobs);
   const names = new Map(jobs.map(j => [j.id, j.spec.model || j.spec.runtime]));
   $('#decision-feed').innerHTML = feed.slice(-25).reverse().map(d => `<div><time>${new Date(d.at * 1000).toLocaleTimeString()}</time><span class="k-${esc(d.kind)}"><strong>${esc(d.kind)}</strong> ${esc(names.get(d.job) || String(d.job || '').slice(0, 8))}${d.node ? ' · ' + esc(d.node) : ''} — ${esc(d.detail)}</span></div>`).join('') || '<div class="muted">No scheduling decisions yet.</div>';
 }
+
+// curved lanes + travelling particles over the flow columns (decorative; the chips carry the information)
+function drawFlowFx(queued, nodes, jobs) {
+  const flow = $('#flow'); if (!flow) return;
+  flow.querySelector('.fx')?.remove();
+  if (innerWidth < 1181) return;
+  const box = flow.getBoundingClientRect(), rel = el => { const r = el.getBoundingClientRect(); return {l: r.left - box.left, r: r.right - box.left, y: r.top - box.top + r.height / 2}; };
+  const cols = flow.querySelectorAll('.flow-col'), gate = document.getElementById('gate'); if (cols.length < 2 || !gate) return;
+  const q = rel(cols[0]), g = rel(gate), lanes = [...flow.querySelectorAll('.lane-row')];
+  const curve = (x1, y1, x2, y2) => `M${x1},${y1} C${x1 + (x2 - x1) * .55},${y1} ${x1 + (x2 - x1) * .45},${y2} ${x2},${y2}`;
+  const paths = [{d: curve(q.r, q.y, g.l, g.y), color: 'var(--status-queued)', dots: queued.length ? Math.min(3, queued.length) : 0}];
+  lanes.forEach((lane, i) => {
+    const r = rel(lane), running = jobs.filter(j => j.node === nodes[i]?.id && ACTIVE.includes(j.state));
+    paths.push({d: curve(g.r, g.y, r.l, r.y), color: running[0] ? jobColor(running[0].id) : 'var(--line)', dots: running.length ? 2 : 0});
+  });
+  const svg = `<svg class="fx-lines" width="${box.width}" height="${box.height}" aria-hidden="true">${paths.map(p => `<path d="${p.d}"/>`).join('')}</svg>`;
+  const dots = motionOK() ? paths.flatMap(p => Array.from({length: p.dots}, (_, k) => `<i class="fx-dot" style="offset-path:path('${p.d}');--c:${p.color};--delay:${(k * -1.1).toFixed(1)}s"></i>`)).join('') : '';
+  flow.insertAdjacentHTML('afterbegin', `<div class="fx">${svg}${dots}</div>`);
+}
 function renderGantt() {
   const {nodes, jobs, time} = state, span = 1800, t0 = time - span;
+  const axis = [0, 1, 2, 3].map(i => `<span style="left:${(i * 100 / 3).toFixed(1)}%">${i === 3 ? 'now' : '−' + Math.round(span / 60 * (3 - i) / 3) + ' min'}</span>`).join('');
   const rows = nodes.map(n => {
     const bars = jobs.filter(j => j.node === n.id && j.started && ACTIVE.includes(j.state)).map(j => {
-      const left = Math.max(0, (j.started - t0) / span * 100), width = Math.max(1.5, 100 - left);
-      return `<div class="bar ${esc(j.state)}" style="left:${left.toFixed(2)}%;width:${width.toFixed(2)}%" title="${esc(j.spec.model || j.spec.runtime)} · ${j.spec.memoryGiB} GiB">${esc(j.spec.model || j.spec.runtime)} · ${j.spec.memoryGiB} GiB</div>`;
+      const left = Math.max(0, (j.started - t0) / span * 100), width = Math.max(1.5, 100 - left), hue = jobColor(j.id), label = `${j.spec.model || j.spec.runtime} · ${j.spec.memoryGiB} GiB`;
+      return `<div class="bar ${esc(j.state)}" style="left:${left.toFixed(2)}%;width:${width.toFixed(2)}%;--bar:${hue}" tabindex="0" title="${esc(label)} · started ${Math.max(0, Math.round((time - j.started) / 60))} min ago">${esc(label)}</div>`;
     }).join('');
-    return `<div class="gantt-row"><div><strong>${esc(n.id)}</strong><br><small>${reservedOn(n.id, jobs).toFixed(1)} / ${n.budgetGiB} GiB</small></div><div class="lane">${bars}</div></div>`;
+    return `<div class="gantt-row"><div><strong>${esc(n.id)}</strong><br><small>${reservedOn(n.id, jobs).toFixed(1)} / ${n.budgetGiB} GiB</small></div><div class="lane">${bars || '<small class="lane-idle">idle</small>'}<i class="now-line" aria-hidden="true"></i></div></div>`;
   }).join('');
   const queued = jobs.filter(j => j.state === 'queued');
-  $('#gantt').innerHTML = (rows || '<div class="empty">No Macs registered.</div>') + (queued.length ? `<p class="gap">${queued.length} queued: ${queued.slice(0, 6).map(j => esc(j.spec.model || j.spec.runtime) + ' (' + esc(j.reason || 'waiting') + ')').join(', ')}</p>` : '');
+  $('#gantt').innerHTML = rows ? `<div class="gantt-axis" aria-hidden="true"><span></span><div>${axis}</div></div>` + rows + (queued.length ? `<p class="gap">${queued.length} queued: ${queued.slice(0, 6).map(j => esc(j.spec.model || j.spec.runtime) + ' (' + esc(j.reason || 'waiting') + ')').join(', ')}</p>` : '') : emptyArt('fleet', 'No Macs registered', 'Install the agent on a Mac and it appears here.');
 }
 function renderTemplates() {
   $('#templates').innerHTML = prefs.templates.map((t, i) => `<span class="chip"><button data-template="${i}" title="Apply template">${esc(t.name)}</button><button data-template-del="${i}" aria-label="Delete template">×</button></span>`).join('');
@@ -346,15 +488,18 @@ function provBadge(m) {
 }
 function renderModels() {
   const models = state.models;
+  const tps = models.map(m => latest(m.id, 'benchmark')?.body.generationTokensPerSecond).filter(Number.isFinite), top = Math.max(1, ...tps);
   $('#model-list').innerHTML = models.map(m => {
-    const b = latest(m.id, 'benchmark')?.body, e = latest(m.id, 'evaluate')?.body;
-    const st = m.status || 'ready';
-    return `<article class="node-card"><div class="section-head"><h3>${esc(m.id)}</h3>${badge(st === 'ready' ? 'succeeded' : st === 'failed' ? 'failed' : st === 'onboarding' ? 'queued' : 'running').replace(/>[^<]*</, '>' + esc(st) + '<')}</div>
-      <p>${esc(m.runtime)}${m.quant ? ' · ' + esc(m.quant) : ''}${m.paramsB ? ' · ' + m.paramsB + 'B params' : ''} · ~${m.memoryGiB} GiB memory</p>
-      <p>${esc(m.source || 'No pinned source')}${m.sizeBytes ? ' · ' + GB(m.sizeBytes) + ' on disk' : ''}</p>
-      <p>${provBadge(m)}${b ? `<span class="label">${(b.generationTokensPerSecond || 0).toFixed(1)} tok/s gen</span><span class="label">${(b.promptTokensPerSecond || 0).toFixed(0)} tok/s prompt</span>` : ''}${e ? `<span class="label">eval ${e.passed}/${e.total}</span>` : ''}</p>
+    const b = latest(m.id, 'benchmark')?.body, e = latest(m.id, 'evaluate')?.body, st = m.status || 'ready';
+    const gen = b?.generationTokensPerSecond;
+    return `<article class="node-card spec"><div class="section-head"><h3>${esc(m.id)}</h3>${badge(st === 'ready' ? 'succeeded' : st === 'failed' ? 'failed' : st === 'onboarding' ? 'queued' : 'running').replace(/>[^<]*</, '>' + esc(st) + '<')}</div>
+      ${Number.isFinite(gen) ? `<div class="big">${gen.toFixed(0)} <small>tok/s generation</small></div><div class="rel" title="${(gen / top * 100).toFixed(0)}% of the fastest model"><i style="width:${(gen / top * 100).toFixed(0)}%"></i></div>`
+        : `<div class="big" style="color:var(--muted)">—<small> not benchmarked</small></div><div class="rel"><i style="width:0"></i></div>`}
+      <p>${esc(m.runtime)}${m.quant ? ' · ' + esc(m.quant) : ''}${m.paramsB ? ' · ' + m.paramsB + 'B params' : ''} · ~${m.memoryGiB} GiB memory${m.sizeBytes ? ' · ' + GB(m.sizeBytes) : ''}</p>
+      <p>${provBadge(m)}${b ? `<span class="label">${(b.promptTokensPerSecond || 0).toFixed(0)} tok/s prompt</span>` : ''}${e ? `<span class="label">eval ${e.passed}/${e.total}</span>` : ''}</p>
+      <p class="muted" style="font-size:12px">${esc(m.source || 'No pinned source')}</p>
       <div class="actions"><label class="remember"><input type="checkbox" data-compare="${esc(m.id)}" ${compareSet.has(m.id) ? 'checked' : ''}> Compare</label><button data-model="${esc(m.id)}">Open</button></div></article>`;
-  }).join('') || '<div class="empty">No models yet. Press <strong>Onboard a model</strong> to download one onto a Mac.</div>';
+  }).join('') || emptyArt('model', 'No models yet', 'Press <strong>Onboard a model</strong> to download one onto a Mac.');
   $('#compare').disabled = compareSet.size < 2;
   const withEndpoints = models.filter(m => (m.endpoints || []).length);
   $('#pg-model').innerHTML = (withEndpoints.length ? withEndpoints : models).map(m => `<option>${esc(m.id)}</option>`).join('');
@@ -522,7 +667,7 @@ $('#pg-send').onclick = async () => {
 const nodeOptions = (cap) => state.nodes.filter(n => !cap || n.runtimes.includes(cap)).map(n => `<option value="${esc(n.id)}">${esc(n.id)}${n.online ? '' : ' (offline)'}</option>`).join('') || '<option value="">No Mac has this runtime yet</option>';
 function renderBuild() {
   const ds = state.datasets || [];
-  $('#dataset-list').innerHTML = ds.length ? `<table><tr><th>Dataset</th><th>Status</th><th>Rows</th><th>Size</th><th>Mac</th><th>Source</th></tr>${ds.map(d => `<tr><td><strong>${esc(d.id)}</strong></td><td>${badge(d.status === 'ready' ? 'succeeded' : d.status === 'failed' ? 'failed' : 'queued').replace(/>[^<]*</, '>' + esc(d.status) + '<')}</td><td>${d.rows ?? '—'}</td><td>${GB(d.bytes)}</td><td>${esc(d.node || '—')}</td><td>${esc(d.source || d.path || '')}</td></tr>`).join('')}</table>` : '<div class="empty">No datasets yet. Add one from Hugging Face below, or register a file already on a Mac.</div>';
+  $('#dataset-list').innerHTML = ds.length ? `<table><tr><th>Dataset</th><th>Status</th><th>Rows</th><th>Size</th><th>Mac</th><th>Source</th></tr>${ds.map(d => `<tr><td><strong>${esc(d.id)}</strong></td><td>${badge(d.status === 'ready' ? 'succeeded' : d.status === 'failed' ? 'failed' : 'queued').replace(/>[^<]*</, '>' + esc(d.status) + '<')}</td><td>${d.rows ?? '—'}</td><td>${GB(d.bytes)}</td><td>${esc(d.node || '—')}</td><td>${esc(d.source || d.path || '')}</td></tr>`).join('')}</table>` : emptyArt('queue', 'No datasets yet', 'Add one from Hugging Face below, or register a file already on a Mac.');
   $('#dataset-node').innerHTML = nodeOptions('download'); $('#dataset-local-node').innerHTML = nodeOptions();
   $('#workflow-node').innerHTML = nodeOptions('download');
   $('#train-dataset').innerHTML = ds.filter(d => d.status === 'ready').map(d => `<option value="${esc(d.id)}">${esc(d.id)} (${d.rows ?? '?'} rows)</option>`).join('') || '<option value="">Add a dataset first</option>';
@@ -537,10 +682,10 @@ function renderBuild() {
     return `<tr><td><strong>${esc(j.spec.modelId || '')}</strong><br><small>${esc(j.id.slice(0, 10))}</small></td><td>${badge(j.state)}</td><td>${esc(j.spec.datasetId || '—')}</td><td>${esc(iters)}</td>
       <td>${a ? `val loss ${a.finalValLoss?.toFixed(3) ?? '—'}${a.finalValLoss === best ? ' <span class="label">best</span>' : ''}<br><small>${esc(a.path)}</small>` : (j.state === 'running' ? 'training…' : '—')}</td>
       <td><button data-chart="${esc(j.id)}">Loss chart</button> <button data-logs="${esc(j.id)}">Logs</button></td></tr>`;
-  }).join('')}</table>` : '<div class="empty">No training runs yet.</div>';
+  }).join('')}</table>` : emptyArt('chart', 'No training runs yet', 'Add a dataset, then start a fine-tune.');
   // workflows
   const wfs = state.workflows || [], byId = new Map(state.jobs.map(j => [j.id, j]));
-  $('#workflow-list').innerHTML = wfs.length ? wfs.map(w => `<div class="queue-line"><span><strong>${esc(w.name)}</strong> ${w.steps.map(s => { const j = byId.get(s.job); return `<span class="label" title="${esc(s.name)}">${esc(s.name)} · ${esc(j ? j.state : '?')}</span>`; }).join('→')}</span><button data-wf-cancel="${esc(w.id)}">Cancel</button></div>`).join('') : '<div class="empty">No pipelines yet.</div>';
+  $('#workflow-list').innerHTML = wfs.length ? wfs.map(w => `<div class="queue-line"><span><strong>${esc(w.name)}</strong> ${w.steps.map(s => { const j = byId.get(s.job); return `<span class="label" title="${esc(s.name)}">${esc(s.name)} · ${esc(j ? j.state : '?')}</span>`; }).join('→')}</span><button data-wf-cancel="${esc(w.id)}">Cancel</button></div>`).join('') : emptyArt('queue', 'No pipelines yet', 'Chain onboard, benchmark and deploy into one workflow.');
   // deployments
   const ready = state.models.filter(m => (m.runtime === 'llama' || (m.runtime === 'mlx' && m.kind === 'fused')) && m.path);
   $('#deploy-list').innerHTML = ready.map(m => {
@@ -548,16 +693,29 @@ function renderBuild() {
     return `<article class="node-card"><div class="section-head"><h3>${esc(m.id)}</h3>${live ? badge('running').replace('>running<', '>serving<') : badge('offline').replace('>offline<', '>stopped<')}</div>
       <p>${esc(m.quant || '')} · ~${m.memoryGiB} GiB · ${esc(m.node || 'Mac unknown')}</p>${live ? `<p><code>${esc(m.endpoints[m.endpoints.length - 1])}</code></p>` : ''}
       <div class="actions">${live ? `<button data-undeploy="${esc(m.deployJob || '')}">Stop</button><button data-view-go="playground">Open Playground</button>` : `<button class="primary" data-deploy="${esc(m.id)}">Deploy</button>`}</div></article>`;
-  }).join('') || '<div class="empty">No downloaded GGUF models yet. Onboard one in the Model hub.</div>';
+  }).join('') || emptyArt('model', 'No downloaded models yet', 'Onboard a GGUF model in the Model hub.');
 }
 function drawChart(m) {
   const series = [['trainLoss', 'Train loss', 'var(--accent-color)'], ['valLoss', 'Validation loss', 'var(--status-queued)']].filter(([k]) => (m[k] || []).length);
-  if (!series.length) { $('#train-chart').innerHTML = '<div class="empty">No loss reported yet. MLX prints the first line after the model loads.</div>'; return; }
-  const pts = series.flatMap(([k]) => m[k]), maxS = Math.max(...pts.map(p => p[0]), 1), maxV = Math.max(...pts.map(p => p[1])), minV = Math.min(...pts.map(p => p[1]));
-  const W = 640, H = 220, X = s => 36 + s / maxS * (W - 50), Y = v => 12 + (1 - (v - minV) / Math.max(maxV - minV, 1e-6)) * (H - 36);
-  const lines = series.map(([k, label, col]) => `<polyline fill="none" stroke="${col}" stroke-width="2.5" stroke-linejoin="round" points="${m[k].map(p => X(p[0]).toFixed(1) + ',' + Y(p[1]).toFixed(1)).join(' ')}"/>`).join('');
-  $('#train-chart').innerHTML = `<svg viewBox="0 0 ${W} ${H}" style="width:100%;max-height:260px" role="img" aria-label="Training loss over steps"><line x1="36" y1="${H - 24}" x2="${W - 14}" y2="${H - 24}" stroke="var(--line)"/><text x="36" y="${H - 6}" font-size="11" fill="var(--muted)">step 0</text><text x="${W - 60}" y="${H - 6}" font-size="11" fill="var(--muted)">step ${maxS}</text><text x="4" y="22" font-size="11" fill="var(--muted)">${maxV.toFixed(2)}</text><text x="4" y="${H - 28}" font-size="11" fill="var(--muted)">${minV.toFixed(2)}</text>${lines}</svg>
-    <div class="legend">${series.map(([k, l, c]) => `<span><i style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${c};margin-right:6px"></i>${l}${m[k].length ? ' (last ' + m[k][m[k].length - 1][1].toFixed(3) + ')' : ''}</span>`).join(' &nbsp; ')}${m.tokensPerSec ? ` &nbsp; <span class="muted">${m.tokensPerSec[m.tokensPerSec.length - 1][1].toFixed(0)} tok/s</span>` : ''}${m.peakGB ? ` &nbsp; <span class="muted">peak ${m.peakGB[m.peakGB.length - 1][1].toFixed(1)} GB</span>` : ''}</div>`;
+  if (!series.length) { $('#train-chart').innerHTML = emptyArt('chart', 'No loss reported yet', 'MLX prints the first line after the model loads.'); return; }
+  const pts = series.flatMap(([k]) => m[k]), maxS = Math.max(...pts.map(p => p[0]), 1), maxV = Math.max(...pts.map(p => p[1])) * 1.05, minV = Math.min(0, Math.min(...pts.map(p => p[1])));
+  const W = 720, H = 260, L = 44, R = 16, T = 14, B = 30, X = s => L + s / maxS * (W - L - R), Y = v => T + (1 - (v - minV) / Math.max(maxV - minV, 1e-6)) * (H - T - B);
+  const ticks = Array.from({length: 5}, (_, i) => minV + (maxV - minV) * i / 4);
+  const gid = 'lg' + (++gradSeq);
+  const train = (m.trainLoss || []).map(p => [X(p[0]), Y(p[1])]), val = (m.valLoss || []).map(p => [X(p[0]), Y(p[1])]);
+  const bestVal = (m.valLoss || []).reduce((b, p) => (!b || p[1] < b[1] ? p : b), null);
+  const area = train.length > 1 ? `<path d="${smooth(train)} L${train[train.length - 1][0]},${H - B} L${train[0][0]},${H - B} Z" fill="url(#${gid})"/>` : '';
+  $('#train-chart').innerHTML = `<div class="areachart losschart" style="margin:0" data-loss='${JSON.stringify({t: m.trainLoss || [], v: m.valLoss || []})}'>
+    <svg class="lossplot" viewBox="0 0 ${W} ${H}" role="img" aria-label="Training loss over steps">
+      <defs><linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--accent-color)" stop-opacity=".28"/><stop offset="1" stop-color="var(--accent-color)" stop-opacity="0"/></linearGradient></defs>
+      <g class="grid">${ticks.map(v => `<line x1="${L}" x2="${W - R}" y1="${Y(v).toFixed(1)}" y2="${Y(v).toFixed(1)}"/><text x="${L - 8}" y="${(Y(v) + 4).toFixed(1)}" text-anchor="end">${v.toFixed(2)}</text>`).join('')}</g>
+      <text x="${L}" y="${H - 8}">step 0</text><text x="${W - R}" y="${H - 8}" text-anchor="end">step ${maxS}</text>
+      ${area}
+      ${train.length > 1 ? `<path d="${smooth(train)}" fill="none" stroke="var(--accent-color)" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>` : ''}
+      ${val.length ? `<path d="${val.length > 1 ? smooth(val) : ''}" fill="none" stroke="var(--status-queued)" stroke-width="2.4" stroke-dasharray="6 5" stroke-linecap="round"/>${val.map(p => `<circle cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="3.5" fill="var(--status-queued)" stroke="var(--surface)" stroke-width="2"/>`).join('')}` : ''}
+      ${bestVal ? `<g><circle cx="${X(bestVal[0]).toFixed(1)}" cy="${Y(bestVal[1]).toFixed(1)}" r="7" fill="none" stroke="var(--status-succeeded)" stroke-width="2.5"/><text x="${(X(bestVal[0]) + (X(bestVal[0]) > W - 170 ? -12 : 12)).toFixed(1)}" y="${(Y(bestVal[1]) - 10).toFixed(1)}" text-anchor="${X(bestVal[0]) > W - 170 ? 'end' : 'start'}" style="fill:var(--status-succeeded);font-weight:600">best ${bestVal[1].toFixed(3)} @ ${bestVal[0]}</text></g>` : ''}
+    </svg></div>
+    <div class="legend" style="display:flex;gap:18px;flex-wrap:wrap;margin-top:6px">${series.map(([k, l, c]) => `<span><i style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${c};margin-right:6px"></i>${l}${m[k].length ? ' (last ' + m[k][m[k].length - 1][1].toFixed(3) + ')' : ''}</span>`).join('')}${m.tokensPerSec ? `<span class="muted">${m.tokensPerSec[m.tokensPerSec.length - 1][1].toFixed(0)} tok/s</span>` : ''}${m.peakGB ? `<span class="muted">peak ${m.peakGB[m.peakGB.length - 1][1].toFixed(1)} GB</span>` : ''}</div>`;
 }
 async function showChart(job) {
   chartJob = job; $('#train-chart-panel').hidden = false;
@@ -607,13 +765,27 @@ $('#workflow-form').onsubmit = async e => {
 /* ---------- navigation ---------- */
 function select(name) {
   if (!VIEWS.includes(name)) name = 'overview';
-  view = name;
-  $$('.view').forEach(e => e.classList.toggle('hidden', e.id !== name));
-  $$('nav button').forEach(e => e.classList.toggle('selected', e.dataset.view === name));
-  $('#title').textContent = TITLES[name];
-  $('#metrics').hidden = name !== 'overview';
-  try { history.replaceState(null, '', '#' + name); } catch {}
+  const apply = () => {
+    view = name;
+    $$('.view').forEach(e => e.classList.toggle('hidden', e.id !== name));
+    $$('nav button').forEach(e => e.classList.toggle('selected', e.dataset.view === name));
+    $('#title').textContent = TITLES[name];
+    $('#metrics').hidden = name !== 'overview';
+    if (state) { renderHero(); renderLive(); }
+    try { history.replaceState(null, '', '#' + name); } catch {}
+  };
+  if (document.startViewTransition && motionOK() && view !== name && !document.hidden) {
+    // Progressive enhancement: never let an aborted transition surface as an error or skip the update.
+    let ran = false;
+    try {
+      const t = document.startViewTransition(() => { ran = true; apply(); });
+      t.ready.catch(() => {}); t.finished.catch(() => {}); t.updateCallbackDone.catch(() => {});
+    } catch { /* fall through */ }
+    setTimeout(() => { if (!ran) { ran = true; apply(); } }, 400);   // safety net if the browser never runs the callback
+  } else apply();
 }
+addEventListener('scroll', () => $('#bar').classList.toggle('scrolled', scrollY > 72), {passive: true});
+addEventListener('resize', () => { if (state) drawFlowFx(state.jobs.filter(j => j.state === 'queued'), state.nodes, state.jobs); });
 
 /* ---------- refresh loop ---------- */
 function tick() {
@@ -812,6 +984,7 @@ document.addEventListener('click', async e => {
     if (d.template !== undefined) { const t = prefs.templates[Number(d.template)]; fillForm(t.body); toast('Template applied'); }
     if (d.templateDel !== undefined) { prefs.templates.splice(Number(d.templateDel), 1); savePrefs(); renderTemplates(); }
     if (d.accent) { prefs.accent = d.accent; savePrefs(); }
+    if (d.policySet) { const n = state.nodes.find(x => x.id === d.policySet); await api('nodes/policy', {id: d.policySet, ...(n.policy || {}), mode: d.mode}); await refresh(); toast(`${d.policySet}: ${d.mode === 'idle' ? 'runs fleet work only when you are away' : d.mode === 'paused' ? 'fleet work paused' : 'runs fleet work any time'}`); }
     if (d.model) openModel(d.model);
     if (d.chart) { select('training'); showChart(d.chart); }
     if (d.wfCancel) { await api('workflows/cancel', {id: d.wfCancel}); await refresh(); toast('Pipeline cancelled'); }

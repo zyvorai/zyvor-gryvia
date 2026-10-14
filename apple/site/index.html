@@ -13,6 +13,7 @@
 <meta name="twitter:card" content="summary_large_image">
 <link rel="icon" href="img/favicon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="img/apple-touch-icon.png">
+<link rel="stylesheet" href="tokens.css">
 <link rel="stylesheet" href="site.css">
 <script src="theme.js"></script>
 </head>
@@ -37,6 +38,7 @@
 
 <main id="main">
 <header class="hero" id="top">
+  <div class="mesh" aria-hidden="true"><i></i><i></i><i></i></div>
   <div class="wrap">
     <div class="eyebrow">Gryvia for Apple Silicon</div>
     <h1>Your Macs, <em>scheduled.</em></h1>
@@ -46,13 +48,35 @@
       <a class="btn ghost" href="demo/">Try the live demo</a>
     </div>
     <div class="facts"><span>macOS 15+ · Apple Silicon</span><span>Native Swift agent and app</span><span>Zero-dependency control plane</span><span>Source-available (BUSL-1.1)</span></div>
-    <div class="window reveal" aria-label="Screenshot of the Live view">
-      <div class="bar"><i></i><i></i><i></i><span>Gryvia · Live</span></div>
-      <img src="img/live-light.jpg" alt="The Live view: GPU core grids, memory reservations and the scheduling flow" width="1440" height="900">
-    </div>
-    <p class="note" style="margin-top:14px">Screenshots on this page use simulated fleet data and are labelled as such in the product.</p>
+    <div class="hero-grid reveal" id="hero-grid" role="img" aria-label="Illustration: GPU cores lighting up in waves, as in the Live view"></div>
   </div>
 </header>
+
+<section id="story">
+  <div class="wrap">
+    <div class="eyebrow reveal">Watch it work</div>
+    <h2 class="reveal">One fleet, four views.</h2>
+    <div class="story" id="story-root">
+      <div class="story-steps">
+        <article class="step" data-step="0"><h3>Every Mac, counted.</h3><p>GPU cores and measured busy percentage straight from macOS, memory reservations by job, and the scheduler's reasoning as it happens.</p></article>
+        <article class="step" data-step="1"><h3>Models, measured.</h3><p>Onboard from Hugging Face with a size cap and SHA-256, then benchmark and evaluate on any Mac. Throughput is shown against your fastest model.</p></article>
+        <article class="step" data-step="2"><h3>Fine-tune with the loss in view.</h3><p>MLX LoRA runs report train and validation loss as they go; the best checkpoint is marked, and the adapter keeps its lineage.</p></article>
+        <article class="step" data-step="3"><h3>Owners stay in control.</h3><p>Each Mac chooses when it may run fleet work: always, only when its owner is away, or paused, with battery and call guards.</p></article>
+      </div>
+      <div class="story-stage" aria-hidden="true">
+        <div class="window">
+          <div class="bar"><i></i><i></i><i></i><span>Gryvia</span></div>
+          <div class="stage-imgs">
+            <picture class="shot on" data-step="0"><img class="light" src="img/live-light.jpg" alt="" width="1440" height="900"><img class="dark" src="img/live-dark.jpg" alt="" width="1440" height="900"></picture>
+            <picture class="shot" data-step="1"><img class="light" src="img/models-light.jpg" alt="" width="1440" height="900"><img class="dark" src="img/models-dark.jpg" alt="" width="1440" height="900"></picture>
+            <picture class="shot" data-step="2"><img class="light" src="img/training-light.jpg" alt="" width="1440" height="900"><img class="dark" src="img/training-dark.jpg" alt="" width="1440" height="900"></picture>
+            <picture class="shot" data-step="3"><img class="light" src="img/fleet-light.jpg" alt="" width="1440" height="900"><img class="dark" src="img/fleet-dark.jpg" alt="" width="1440" height="900"></picture>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
 
 <section id="visible">
   <div class="wrap grid g2" style="align-items:center">

@@ -117,3 +117,9 @@ Data: 24 Gryvia facts × 5 question stems = 120 chat-format rows; held-out = the
 - **Provenance (real, Mac mini):** CryptoKit-signed attestations verified by the server's pure-Python Ed25519 (benchmark, inference and a fresh Hugging Face download); the downloaded model carries a verified one-link chain; an older model downloaded before attestation shows none. Not exercised: a fine-tune → fuse chain on hardware (covered by unit tests).
 - **Energy:** estimation math and the `powermetrics` plist parser are unit-tested; the helper was **not** run (it needs sudo), so no energy number from real hardware is claimed.
 - **MCP:** 8 tests (read-only default, write tools gated and marked, argument validation, tenant scoping, stdio loop). Not run against a real MCP client.
+
+
+## Web UI and site redesign (2026-10-14, MacBook, Chromium via Playwright)
+- Python suite 154 tests, Swift 19 XCTests, browser test (hero number, ring, segmented policy, chart hover tooltip, flow particles, reduced motion, 390 px layout) and `site-check` pass.
+- Screenshot matrix: light/dark × flat/glass × 1440/390 px for Live, Fleet, Timeline and Model hub, reviewed visually; no horizontal overflow in any of the 32 captures.
+- Not verified: Safari and Firefox rendering (Chromium only), the native SwiftUI app (unchanged), a long-running live fleet with the new idle sparkline (demo mode only).
