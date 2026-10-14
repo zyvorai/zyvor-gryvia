@@ -1,4 +1,0 @@
-User-agent: *
-Allow: /
-Disallow: /demo/
-Sitemap: https://zyvorai.github.io/zyvor-gryvia-apple/sitemap.xml

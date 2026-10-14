@@ -474,6 +474,4 @@ Read the [threat model and known limits](SECURITY.md) before exposing an install
 
 ## Native Apple Silicon companion
 
-The [Apple companion](apple/README.md) provides a native Swift Mac worker, SwiftUI desktop app and Gryvia-style fleet web console. Its own control plane schedules native processes with unified-memory reservations, tenant quotas, leases and bounded inference routing. It runs independently of the Kubernetes `GryviaAIJob` execution path; it does not expose NVIDIA MIG/MPS semantics on Apple hardware.
-
-The companion's Python tests pass; native macOS compilation and real Metal/MLX acceptance require the dedicated Apple CI workflow and your actual Macs. See [validation](apple/TEST_RESULTS.md) and the [feature matrix](apple/docs/FEATURE_MATRIX.md) before relying on hardware/runtime behavior.
+The Apple Silicon companion (native Swift Mac worker, SwiftUI desktop app, fleet web console and its own control plane) lives in its own repository: [zyvorai/zyvor-gryvia-apple](https://github.com/zyvorai/zyvor-gryvia-apple). It runs independently of the Kubernetes `GryviaAIJob` execution path and does not expose NVIDIA MIG/MPS semantics on Apple hardware. See its [validation notes](https://github.com/zyvorai/zyvor-gryvia-apple/blob/main/TEST_RESULTS.md) and [feature matrix](https://github.com/zyvorai/zyvor-gryvia-apple/blob/main/docs/FEATURE_MATRIX.md) before relying on hardware or runtime behaviour.

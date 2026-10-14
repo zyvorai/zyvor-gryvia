@@ -1,1 +1,0 @@
-{"tenant":"default","runtime":"demo","model":"CPU smoke test","memoryGiB":1,"priority":50,"mode":"exclusive","timeoutSeconds":30,"retries":1,"args":["--seconds","3"]}
