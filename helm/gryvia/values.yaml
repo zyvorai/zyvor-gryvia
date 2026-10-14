@@ -94,6 +94,14 @@ aiOperator:
   # instead. Estimates only; fails OPEN on lookup errors. Off by default; the operators ClusterRole already
   # grants the reads it needs. See docs/gpuaas-completion.md.
   admissionGate: false
+  # Idle-GPU reclaim (--idle-reclaim): flag running jobs whose profiler-reported GPU utilization stays under
+  # thresholdPercent for window (condition IdleGPU plus an event). suspend=true also sets spec.suspend to release
+  # the GPUs. Needs a GryviaTrainingProfiler for the job; a job annotated gryvia.io/idle-reclaim=false is exempt.
+  idleReclaim:
+    enabled: false
+    suspend: false
+    thresholdPercent: 10
+    window: 30m
   # Hours assumed for a job without spec.timeout in the gate's cost forecast (--admission-default-hours).
   admissionDefaultHours: 1
   # Preflight enforcement (--preflight-enforce): reject a Pending job whose preflight annotations

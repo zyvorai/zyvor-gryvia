@@ -204,6 +204,12 @@ spec:
             - --admission-gate=true
             - --admission-default-hours={{ $.Values.aiOperator.admissionDefaultHours }}
             {{- end }}
+            {{- if and (eq $name "ai-operator") $.Values.aiOperator.idleReclaim.enabled }}
+            - --idle-reclaim=true
+            - --idle-reclaim-suspend={{ $.Values.aiOperator.idleReclaim.suspend }}
+            - --idle-reclaim-threshold={{ $.Values.aiOperator.idleReclaim.thresholdPercent }}
+            - --idle-reclaim-window={{ $.Values.aiOperator.idleReclaim.window }}
+            {{- end }}
             {{- if and (eq $name "quota-operator") (dig "quotaOperator" "budgetWebhook" "url" nil $.Values.AsMap) }}
             - {{ printf "--budget-webhook-url=%s" (dig "quotaOperator" "budgetWebhook" "url" nil $.Values.AsMap) | quote }}
             {{- end }}
