@@ -19,7 +19,7 @@
 
 **GPU-aware job admission** · **6 Kubernetes operators** · **49 CRDs** · **Opt-in Kueue gang admission** · **Try it on kind, no GPUs**
 
-[**Quickstart**](#quickstart) · [**Docs**](website/docs/intro.md) · [**Architecture**](#architecture) · [**Demo**](#try-it-in-five-minutes-no-gpus) · [**License**](#license)
+[**Quickstart**](#quickstart) · [**Docs**](website/docs/intro.md) · [**Website**](https://zyvorai.github.io/zyvor-gryvia/) · [**Architecture**](#architecture) · [**Demo**](#try-it-in-five-minutes-no-gpus) · [**License**](#license)
 
 </div>
 
@@ -36,6 +36,7 @@ From the Unreleased section of the [changelog](CHANGELOG.md); each entry there s
 
 | Feature | What it does |
 |---|---|
+| **Native queue scheduler** | Opt-in `--native-queue-scheduler`: queue guarantees and ceilings with borrowing, atomic gang admission, conservative priority preemption and fractional-GPU accounting, without Kueue. Alpha, unit-tested and exercised on a CPU-only k3s cluster; not run on GPUs ([guide](docs/native-scheduler.md)) |
 | **Workload intelligence** | A dashboard workbench and typed analysis APIs for preflight, training evidence, useful-work cost, inference SLO recommendations, model benchmarking, checkpoint compatibility, locality, fabric qualification, capacity simulation and sovereign placement. Opt-in operations add durable proposals, separate OIDC review, execution preconditions and rollback ([guide](docs/workload-intelligence.md)) |
 | **Operator copilot** | `POST /api/copilot/chat` and a dashboard page answer plain-language questions about jobs, models, datasets, inference services and lineage over five read-only tools, with the caller's own LLM key |
 | **Data catalog and markings** | Document and search `GryviaDataset`s (owner, tags, column schema); label-based markings hide datasets and models from users outside the marking's OIDC group |
@@ -325,6 +326,7 @@ Storage and network throughput depend on the hardware, filesystem and fabric you
 
 | Topic | Doc |
 |---|---|
+| Project website (overview, how it works, install) | [zyvorai.github.io/zyvor-gryvia](https://zyvorai.github.io/zyvor-gryvia/) |
 | Full documentation index | [website/docs/intro.md](website/docs/intro.md) |
 | Quick start | [website/docs/getting-started/quickstart.md](website/docs/getting-started/quickstart.md) |
 | Bare-metal / complete deployment | [DEPLOYMENT_GUIDE.md](website/docs/guides/DEPLOYMENT_GUIDE.md) · [COMPLETE_DEPLOYMENT_GUIDE.md](website/docs/guides/COMPLETE_DEPLOYMENT_GUIDE.md) |
