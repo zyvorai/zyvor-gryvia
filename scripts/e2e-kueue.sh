@@ -120,6 +120,66 @@ YAML
   [[ "$(kubectl -n "$NS" get localqueue gryvia -o jsonpath='{.spec.clusterQueue}')" == "$CQ" ]] || fail "LocalQueue points elsewhere"
 }
 
+# Per-tenant fairness settings reach Kueue and are enforced: a tenant with borrowingLimit 0 stays inside its
+# quota although a cohort neighbour is idle, while a neighbour without a limit borrows that idle quota. The
+# Queued job also explains itself in status.queueExplanation. Works with or without Kueue's fairSharing mode
+# (the weight is only asserted when the quota operator was started with --kueue-fair-sharing).
+scenario_fairshare() {
+  local cap_ns=tenant-fs-cap free_ns=tenant-fs-free
+  cat <<YAML | kubectl apply -f - >/dev/null
+apiVersion: $API
+kind: GryviaTenant
+metadata: {name: fs-cap}
+spec:
+  displayName: capped
+  quotas: {concurrentGPUs: 1, borrowingLimit: 0, fairShareWeight: 3, cohort: fs-e2e}
+---
+apiVersion: $API
+kind: GryviaTenant
+metadata: {name: fs-free}
+spec:
+  displayName: unrestricted
+  quotas: {concurrentGPUs: 1, cohort: fs-e2e}
+YAML
+  wait_for 120 "ClusterQueue gryvia-fs-cap exists" kubectl get clusterqueue gryvia-fs-cap
+  wait_for 120 "ClusterQueue gryvia-fs-free exists" kubectl get clusterqueue gryvia-fs-free
+  wait_for 120 "LocalQueue $cap_ns/gryvia exists" kubectl -n "$cap_ns" get localqueue gryvia
+  wait_for 120 "LocalQueue $free_ns/gryvia exists" kubectl -n "$free_ns" get localqueue gryvia
+
+  local cq
+  cq() { kubectl get clusterqueue "$1" -o jsonpath="$2" 2>/dev/null; }
+  [[ "$(cq gryvia-fs-cap '{.spec.cohortName}{.spec.cohort}')" == "fs-e2e" ]] || fail "fs-cap cohort != fs-e2e"
+  [[ "$(cq gryvia-fs-cap '{.spec.resourceGroups[0].flavors[0].resources[0].borrowingLimit}')" == "0" ]] || fail "fs-cap borrowingLimit != 0"
+  [[ -z "$(cq gryvia-fs-free '{.spec.resourceGroups[0].flavors[0].resources[0].borrowingLimit}')" ]] || fail "fs-free got a borrowingLimit"
+  local weight; weight="$(cq gryvia-fs-cap '{.spec.fairSharing.weight}')"
+  if [[ -n "$weight" ]]; then [[ "$weight" == "3" ]] || fail "fs-cap fairSharing weight $weight != 3"; echo "ok: fairSharing weight 3"; fi
+  wait_for 120 "gryvia-fs-cap is Active" \
+    bash -c "[[ \"\$(kubectl get clusterqueue gryvia-fs-cap -o jsonpath='{.status.conditions[?(@.type==\"Active\")].status}')\" == True ]]"
+
+  local saved_ns="$NS"
+  # 2 slots against quota 1 and borrowingLimit 0, with fs-free idle: must stay Queued.
+  NS="$cap_ns"; kq_job capped 2 0 30
+  wait_for 120 "capped is Queued" is_phase capped Queued
+  sleep 15
+  is_phase capped Queued || fail "capped left Queued although borrowingLimit is 0 (phase $(phase capped))"
+  job_suspended capped || fail "capped: Job was unsuspended past its borrowing limit"
+  [[ "$(pod_count capped)" == "0" ]] || fail "capped created pods"
+  wait_for 60 "capped explains itself (QuotaExhausted)" \
+    bash -c "[[ \"\$(kubectl -n $cap_ns get gryviaaijob capped -o jsonpath='{.status.queueExplanation.category}')\" == QuotaExhausted ]]"
+  [[ "$(kubectl -n "$cap_ns" get gryviaaijob capped -o jsonpath='{.status.queueExplanation.clusterQueue}')" == "gryvia-fs-cap" ]] || fail "queueExplanation names the wrong ClusterQueue"
+
+  # 2 slots against quota 1 and no limit: borrows the idle slot of fs-cap and runs.
+  NS="$free_ns"; kq_job borrower 2 0 30
+  wait_for 300 "borrower reaches Running (borrowed the idle slot)" is_phase borrower Running
+  [[ "$(pod_count borrower)" == "2" ]] || fail "borrower: expected 2 pods, got $(pod_count borrower)"
+
+  NS="$cap_ns"; kubectl -n "$cap_ns" delete gryviaaijob capped --wait=true --timeout=120s >/dev/null
+  NS="$free_ns"; kubectl -n "$free_ns" delete gryviaaijob borrower --wait=true --timeout=120s >/dev/null
+  NS="$saved_ns"
+  kubectl delete gryviatenant fs-cap fs-free --wait=true --timeout=120s >/dev/null
+  echo "ok: fair-share limits, cohort and queue explanation"
+}
+
 scenario_strict() {
   # A namespace with no LocalQueue must never bypass strict admission.
   kubectl create namespace tenant-no-queue --dry-run=client -o yaml | kubectl apply -f - >/dev/null
@@ -463,6 +523,7 @@ case "${1:-}" in
   preempt-checkpoint) scenario_preempt_checkpoint ;;
   elastic) scenario_elastic ;;
   elastic-torchrun) scenario_elastic_torchrun ;;
+  fairshare) scenario_fairshare ;;
   *) echo "usage: $0 setup|strict|queue|gang|preempt|preempt-checkpoint|elastic|elastic-torchrun" >&2; exit 2 ;;
 esac
 echo "E2E OK: ${1}"

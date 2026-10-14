@@ -96,6 +96,8 @@ jobs:
           kind load docker-image --name gryvia-demo ghcr.io/zyvorai/gryvia-elastic-train:dev
       - name: A real torchrun job admitted with 2 of 4 workers trains as a group of 2
         run: ./scripts/e2e-kueue.sh elastic-torchrun
+      - name: Tenant borrowing limits and cohorts are enforced, and a queued job explains itself
+        run: ./scripts/e2e-kueue.sh fairshare
       - name: Dump state on failure
         if: failure()
         run: |
