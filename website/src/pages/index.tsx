@@ -92,6 +92,34 @@ export default function Home(): ReactNode {
           </div>
         </section>
 
+        <section className={s.bandDark}>
+          <div className={`${s.wrap} ${s.companion}`}>
+            <Reveal>
+              <p className={s.eyebrow}>Apple Silicon companion</p>
+              <h2 className={s.display}>
+                Your Macs, <span className={s.gradient}>scheduled.</span>
+              </h2>
+              <p className={s.lede}>
+                A separate control plane for Mac fleets: native Swift worker and app, unified-memory admission, owner-aware idle
+                harvesting and signed provenance. It lives in its own repository and does not use the Kubernetes path.
+              </p>
+              <div className={s.ctaRow}>
+                <Link className={s.linkArrow} to="https://github.com/zyvorai/zyvor-gryvia-apple">View zyvor-gryvia-apple</Link>
+                <Link className={s.linkArrow} to="https://zyvorai.github.io/zyvor-gryvia-apple/">Companion site</Link>
+              </div>
+            </Reveal>
+            <Reveal>
+              <div className={s.companionCard}>
+                <dl>
+                  <div><dt>Native workers</dt><dd>Swift agent and SwiftUI app for macOS 15+ on Apple Silicon.</dd></div>
+                  <div><dt>Memory-aware</dt><dd>Jobs are admitted against each Mac's unified-memory budget.</dd></div>
+                  <div><dt>Owner first</dt><dd>Work yields when the Mac's owner returns.</dd></div>
+                </dl>
+              </div>
+            </Reveal>
+          </div>
+        </section>
+
         <section className={s.band}>
           <div className={`${s.wrap} ${s.center}`}>
             <Reveal>
