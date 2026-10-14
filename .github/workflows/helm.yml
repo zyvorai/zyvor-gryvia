@@ -113,4 +113,4 @@ jobs:
           done
 
       # The chart repository is published together with the docs site (see
-      # pages.yml), at https://zyvorai.github.io/gryvia/charts.
+      # pages.yml), at https://zyvorai.github.io/zyvor-gryvia/charts.

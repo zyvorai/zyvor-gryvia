@@ -34,7 +34,7 @@ jobs:
           if grep -q '^dependencies:' "$chart/Chart.yaml"; then helm dependency build "$chart"; fi
           helm package "$chart" -d website/build/charts
         done
-        helm repo index website/build/charts --url https://zyvorai.github.io/gryvia/charts
+        helm repo index website/build/charts --url https://zyvorai.github.io/zyvor-gryvia/charts
     - uses: actions/upload-pages-artifact@v3
       with: {path: website/build}
   deploy:

@@ -26,7 +26,7 @@ penetration tested, and the OIDC and tenant paths have only been tested against 
   the namespaces of the `GryviaTenant` objects they match; `GRYVIA_OIDC_ADMIN_GROUPS` (chart
   `apiGateway.oidc.adminGroups`, empty by default) promotes a group to admin. Cluster-wide routes (nodes, network,
   security, GPU metrics) are admin-only. The route-by-route rules are in the
-  [API reference](https://zyvorai.github.io/gryvia/docs/developer-guide/api-reference).
+  [API reference](https://zyvorai.github.io/zyvor-gryvia/docs/developer-guide/api-reference).
 - **Tenant isolation is enforced by the gateway, not by Kubernetes RBAC.** A `GryviaTenant` creates a `tenant-<name>`
   namespace with a ResourceQuota, a LimitRange and (when `networkPolicy.isolated`) a NetworkPolicy. It creates no Role
   or RoleBinding. Anyone who has Kubernetes credentials that can read or write `gryvia.io` objects bypasses the gateway's
@@ -119,4 +119,4 @@ penetration tested, and the OIDC and tenant paths have only been tested against 
   the OCI Helm charts are signed with cosign. The eBPF collector image is part of the release workflow (each
   architecture built natively), but no tagged release has published it yet.
 
-See [Authentication and TLS](https://zyvorai.github.io/gryvia/docs/guides/AUTH_AND_TLS) for configuration.
+See [Authentication and TLS](https://zyvorai.github.io/zyvor-gryvia/docs/guides/AUTH_AND_TLS) for configuration.
