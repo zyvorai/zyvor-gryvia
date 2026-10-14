@@ -61,6 +61,8 @@ const config: Config = {
       title: 'Gryvia',
       logo: {alt: 'Gryvia', src: 'img/favicon.svg'},
       items: [
+        {to: '/how-it-works', label: 'How it works', position: 'left'},
+        {to: '/install', label: 'Install', position: 'left'},
         {type: 'docSidebar', sidebarId: 'docsSidebar', position: 'left', label: 'Docs'},
         {href: 'https://github.com/zyvorai/zyvor-gryvia', label: 'GitHub', position: 'right'},
       ],
@@ -71,6 +73,8 @@ const config: Config = {
         {
           title: 'Docs',
           items: [
+            {label: 'How it works', to: '/how-it-works'},
+            {label: 'Install', to: '/install'},
             {label: 'Quickstart', to: '/docs/getting-started/quickstart'},
             {label: 'CLI guide', to: '/docs/guides/CLI_GUIDE'},
             {label: 'Roadmap', to: '/docs/guides/ROADMAP'},
