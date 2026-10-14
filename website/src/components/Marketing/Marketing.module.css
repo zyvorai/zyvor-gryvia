@@ -454,3 +454,26 @@
     transition: none;
   }
 }
+
+/* Hero glow: a soft accent bloom behind the headline. Decorative, static, no motion. */
+.hero { position: relative; isolation: isolate; }
+.hero::before {
+  content: ''; position: absolute; z-index: -1; inset: -10% 10% auto; height: 70%;
+  background: radial-gradient(60% 60% at 50% 40%, rgba(10, 132, 255, 0.28), transparent 70%),
+              radial-gradient(40% 50% at 78% 30%, rgba(191, 90, 242, 0.20), transparent 70%);
+  filter: blur(24px);
+}
+
+/* Apple Silicon companion callout */
+.companion {
+  display: grid; grid-template-columns: 1.1fr 1fr; gap: clamp(1.5rem, 4vw, 4rem); align-items: center;
+}
+.companionCard {
+  border: 1px solid rgba(255, 255, 255, 0.14); border-radius: 26px; padding: 1.75rem;
+  background: linear-gradient(160deg, rgba(10, 132, 255, 0.16), rgba(255, 255, 255, 0.03));
+}
+.companionCard dl { margin: 0; display: grid; gap: 0.9rem; }
+.companionCard dt { font-weight: 600; letter-spacing: -0.01em; }
+.companionCard dd { margin: 0.1rem 0 0; color: #a1a1a6; font-size: 0.95rem; }
+@media (max-width: 860px) { .companion { grid-template-columns: 1fr; } }
+.companion .ctaRow { justify-content: flex-start; }
