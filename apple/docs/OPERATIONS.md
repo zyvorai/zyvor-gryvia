@@ -39,3 +39,15 @@ The concurrency cap is per authenticated tenant. Administrator requests use the 
 5. Confirm configured budgets leave headroom for macOS and expected model/KV-cache peaks.
 6. Test two real Macs, TLS identities, drain and independent-job dispatch.
 7. Benchmark native MPS/MLX performance; do not publish fixture or CPU-demo figures as GPU results.
+
+
+## Owner policy, energy and provenance
+
+```bash
+python3 scripts/gryvia.py policy my-mac --mode idle --idle-minutes 10 --allow-battery no   # run only when I am away
+python3 scripts/gryvia.py nodes                                                            # shows POLICY and WORK ALLOWED
+python3 scripts/gryvia.py provenance my-model                                              # signed chain
+python3 scripts/gryvia.py rekey my-mac                                                     # after reinstalling an agent
+make power-helper                                                                          # optional, asks for sudo: energy estimates
+python3 -m server.app --config local/config.json --db local/gryvia.db --require-verified   # deploy gate
+```

@@ -41,3 +41,11 @@ Primary references used during design:
 - https://ml-explore.github.io/mlx/build/html/usage/distributed.html
 - https://github.com/ml-explore/mlx-lm/blob/main/mlx_lm/generate.py
 - https://docs.pytorch.org/docs/stable/generated/torch.mps.set_per_process_memory_fraction.html
+
+
+## Fleet policy, provenance and energy (0.3.0)
+
+- **Owner policy.** Each node has a policy (`always`, `idle`, `paused`, plus battery, Low Power Mode and call guards). The agent reports *presence* (seconds since the last input event, screen lock, display sleep, power source, whether an input device is running; nothing else). `Store.gate` combines policy and presence; `claim` returns nothing while the gate is closed; `register` asks running jobs to yield (`owner returned`) and they are requeued without consuming an attempt. LoRA runs resume from the last saved adapter weights because the job keeps its run folder.
+- **Provenance.** Agents hold an Ed25519 identity key (CryptoKit). A completed job carries a signed statement over the job id, spec hash (computed by the server at claim), result-line hash and exit status. The server pins each node's key on first use (trust on first use), verifies with `server/ed25519.py` (RFC 8032, verify only) and records a chain on every model produced by download, fine-tune, fuse or quantise. `requireVerified` makes `serve`, `benchmark`, `evaluate`, `quantize` and `fuse` refuse unverified models.
+- **Energy.** An optional root helper publishes package power (`powermetrics`); the agent reports it; the server integrates it over a job's lease window and subtracts the node's idle median. Always an estimate.
+- **MCP.** `mcp/gryvia_mcp.py` exposes the read API (and, with `--allow-write`, submit/cancel/policy) over stdio; roles are enforced by the server.

@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: BUSL-1.1
 // Copyright © 2026 Zyvor AI Labs Private Limited
 import Foundation
+#if canImport(CryptoKit)
+import CryptoKit
+#endif
 #if canImport(FoundationNetworking)
 import FoundationNetworking
 #endif
@@ -9,6 +12,11 @@ import Metal
 #endif
 #if canImport(IOKit)
 import IOKit
+import IOKit.ps
+#endif
+#if os(macOS)
+import ApplicationServices
+import CoreAudio
 #endif
 
 public enum GryviaError: Error, LocalizedError {
@@ -28,7 +36,7 @@ public struct Spec: Codable, Sendable {
     public let modelId: String?
     public let datasetId: String?
 }
-public struct Claim: Codable, Sendable { public let id: String; public let lease: String; public let spec: Spec; public let expires: Double }
+public struct Claim: Codable, Sendable { public let id: String; public let lease: String; public let spec: Spec; public let expires: Double; public let specSha256: String? }
 public struct ClaimResponse: Codable, Sendable { public let job: Claim? }
 public struct Renewal: Codable, Sendable { public let cancel: Bool; public let expires: Double; public let reason: String? }
 public struct Job: Codable, Sendable, Identifiable {
@@ -41,7 +49,10 @@ public struct Node: Codable, Sendable, Identifiable {
     public let online: Bool; public let drain: Bool; public let thermal: String?
     public let gpu: String?; public let gpuModel: String?; public let gpuCores: Int?; public let gpuUtilPct: Double?; public let gpuInUseMiB: Double?
     public let cpuPerformanceCores: Int?; public let cpuEfficiencyCores: Int?; public let totalGiB: Double?
+    public let host: String?; public let policy: NodePolicy?; public let gate: NodeGate?
 }
+public struct NodePolicy: Codable, Sendable { public let mode: String; public let idleMinutes: Double; public let allowOnBattery: Bool; public let minBatteryPct: Double; public let pauseOnCall: Bool; public let preempt: Bool }
+public struct NodeGate: Codable, Sendable { public let allowed: Bool; public let reason: String }
 public struct Tenant: Codable, Sendable, Identifiable { public let id: String; public let quota: Double; public let weight: Double }
 public struct TelemetrySample: Codable, Sendable, Identifiable { public let at: Double; public let util: Double; public let inUseGiB: Double; public let reservedGiB: Double; public var id: Double { at } }
 public struct ModelInfo: Codable, Sendable, Identifiable {
@@ -164,6 +175,122 @@ public struct GPUInfo: Equatable, Sendable {
     }
 }
 
+/// What the Mac owner is doing, so the control plane can run jobs only when the Mac is idle and yield when they return.
+/// Everything here is read locally, sent only to the control plane you configured, and contains no window titles,
+/// keystrokes or application names.
+public struct PresenceInfo: Equatable, Sendable {
+    public var idleSeconds: Double?      // seconds since the last keyboard/mouse event
+    public var locked: Bool
+    public var displaySleep: Bool
+    public var onBattery: Bool
+    public var batteryPct: Double?
+    public var lowPowerMode: Bool
+    public var micInUse: Bool            // any input device running: a call or recording is likely
+
+    public var dictionary: [String: Any] {
+        var d: [String: Any] = ["locked": locked, "displaySleep": displaySleep, "onBattery": onBattery, "lowPowerMode": lowPowerMode, "micInUse": micInUse]
+        if let idleSeconds { d["idleSeconds"] = idleSeconds }
+        if let batteryPct { d["batteryPct"] = batteryPct }
+        return d
+    }
+
+    /// Pure helper (unit-tested): interpret an IOPowerSources description.
+    public static func battery(from description: [String: Any]) -> (onBattery: Bool, pct: Double?)? {
+        guard (description["Type"] as? String) == "InternalBattery" else { return nil }
+        let state = description["Power Source State"] as? String
+        let cur = (description["Current Capacity"] as? NSNumber)?.doubleValue
+        let max = (description["Max Capacity"] as? NSNumber)?.doubleValue
+        let pct = (cur != nil && (max ?? 0) > 0) ? cur! / max! * 100 : nil
+        return (state == "Battery Power", pct)
+    }
+
+    public static func current() -> PresenceInfo {
+        var p = PresenceInfo(idleSeconds: nil, locked: false, displaySleep: false, onBattery: false, batteryPct: nil,
+                             lowPowerMode: ProcessInfo.processInfo.isLowPowerModeEnabled, micInUse: false)
+        #if os(macOS)
+        let any = CGEventType(rawValue: UInt32.max)!   // kCGAnyInputEventType
+        p.idleSeconds = CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: any)
+        if let dict = CGSessionCopyCurrentDictionary() as? [String: Any] {
+            p.locked = (dict["CGSSessionScreenIsLocked"] as? Bool) ?? ((dict["CGSSessionScreenIsLocked"] as? NSNumber)?.boolValue ?? false)
+        }
+        p.displaySleep = CGDisplayIsAsleep(CGMainDisplayID()) != 0
+        if let info = IOPSCopyPowerSourcesInfo()?.takeRetainedValue(), let list = IOPSCopyPowerSourcesList(info)?.takeRetainedValue() as? [CFTypeRef] {
+            for source in list {
+                if let desc = IOPSGetPowerSourceDescription(info, source)?.takeUnretainedValue() as? [String: Any],
+                   let b = battery(from: desc) { p.onBattery = b.onBattery; p.batteryPct = b.pct }
+            }
+        }
+        p.micInUse = Self.anyInputRunning()
+        #endif
+        return p
+    }
+
+    #if os(macOS)
+    private static func anyInputRunning() -> Bool {
+        var addr = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDevices, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+        var size: UInt32 = 0
+        guard AudioObjectGetPropertyDataSize(AudioObjectID(kAudioObjectSystemObject), &addr, 0, nil, &size) == noErr, size > 0 else { return false }
+        var ids = [AudioDeviceID](repeating: 0, count: Int(size) / MemoryLayout<AudioDeviceID>.size)
+        guard AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &addr, 0, nil, &size, &ids) == noErr else { return false }
+        for id in ids {
+            var inAddr = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyStreams, mScope: kAudioObjectPropertyScopeInput, mElement: kAudioObjectPropertyElementMain)
+            var s: UInt32 = 0
+            guard AudioObjectGetPropertyDataSize(id, &inAddr, 0, nil, &s) == noErr, s > 0 else { continue }   // not an input device
+            var running: UInt32 = 0; var rs = UInt32(MemoryLayout<UInt32>.size)
+            var runAddr = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyDeviceIsRunningSomewhere, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+            if AudioObjectGetPropertyData(id, &runAddr, 0, nil, &rs, &running) == noErr, running != 0 { return true }
+        }
+        return false
+    }
+    #endif
+}
+
+#if canImport(CryptoKit)
+/// Node identity for signed provenance. The Ed25519 private key lives in a 0600 file in the user's Application Support
+/// folder and never leaves the Mac; only the public key is sent (the control plane pins it on first contact).
+public final class Attestor: @unchecked Sendable {
+    private let key: Curve25519.Signing.PrivateKey
+
+    public init(directory: URL? = nil) throws {
+        let dir = directory ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/Gryvia")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        let file = dir.appendingPathComponent("node-ed25519.key")
+        if let data = try? Data(contentsOf: file), data.count == 32 {
+            key = try Curve25519.Signing.PrivateKey(rawRepresentation: data)
+        } else {
+            let fresh = Curve25519.Signing.PrivateKey()
+            FileManager.default.createFile(atPath: file.path, contents: fresh.rawRepresentation, attributes: [.posixPermissions: 0o600])
+            key = fresh
+        }
+    }
+    public var publicKeyHex: String { key.publicKey.rawRepresentation.map { String(format: "%02x", $0) }.joined() }
+    public func sign(_ payload: String) throws -> String {
+        try key.signature(for: Data(payload.utf8)).map { String(format: "%02x", $0) }.joined()
+    }
+    public static func sha256Hex(_ text: String) -> String {
+        SHA256.hash(data: Data(text.utf8)).map { String(format: "%02x", $0) }.joined()
+    }
+    /// Deterministic JSON (sorted keys, no escaped slashes). Receivers verify the exact string that was signed.
+    public static func canonical(_ object: [String: Any]) throws -> String {
+        let data = try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys, .withoutEscapingSlashes])
+        return String(decoding: data, as: UTF8.self)
+    }
+}
+#endif
+
+/// Reads the optional root helper's output (scripts/power-helper.py). Absent or stale (> 15 s) means "not measured".
+public enum PowerFile {
+    public static func read(path: String = "/var/run/gryvia-power.json", now: Date = Date()) -> [String: Any]? {
+        guard let data = FileManager.default.contents(atPath: path),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let at = (obj["at"] as? NSNumber)?.doubleValue, now.timeIntervalSince1970 - at <= 15,
+              let pkg = (obj["packageW"] as? NSNumber)?.doubleValue, pkg >= 0, pkg < 2000 else { return nil }
+        var out: [String: Any] = ["packageW": pkg]
+        for key in ["cpuW", "gpuW", "aneW"] { if let v = (obj[key] as? NSNumber)?.doubleValue { out[key] = v } }
+        return out
+    }
+}
+
 public enum CPUInfo {
     public static func count(_ name: String) -> Int? {
         var value: Int32 = 0; var size = MemoryLayout<Int32>.size
@@ -184,6 +311,8 @@ public enum Hardware {
             result["gpuUtilPct"] = gpu.utilizationPct; result["rendererPct"] = gpu.rendererPct
             result["tilerPct"] = gpu.tilerPct; result["gpuInUseMiB"] = gpu.inUseMiB
         }
+        result["presence"] = PresenceInfo.current().dictionary
+        if let power = PowerFile.read() { result["power"] = power }
         if let p = CPUInfo.count("hw.perflevel0.physicalcpu") { result["cpuPerformanceCores"] = p }
         if let e = CPUInfo.count("hw.perflevel1.physicalcpu") { result["cpuEfficiencyCores"] = e }
         #if canImport(Metal)

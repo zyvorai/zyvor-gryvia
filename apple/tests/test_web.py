@@ -14,7 +14,7 @@ class Document(HTMLParser):
 class WebTests(unittest.TestCase):
     def setUp(self):self.doc=Document();self.doc.feed((ROOT/'web/index.html').read_text())
     def test_unique_ids(self):self.assertEqual(len(self.doc.ids),len(set(self.doc.ids)))
-    def test_local_assets(self):self.assertTrue(all(x.startswith(('/','#')) for x in self.doc.links))
+    def test_local_assets(self):self.assertTrue(all(not x.startswith(('http:','https:','//')) for x in self.doc.links))   # relative so the static demo works under any base path
     def test_required_panels(self):self.assertTrue(set(['live','overview','fleet','jobs','timeline','models','tenants','alerts','audit','settings','guide','welcome','logs','palette','playground','onboard','modeldlg','evaldlg','datasets','training','workflows','deployments']).issubset(self.doc.ids))
     def test_js_ids_exist(self):
         ids=re.findall(r"\$\('#([a-z-]+)'\)",(ROOT/'web/app.js').read_text());self.assertTrue(set(ids).issubset(self.doc.ids),set(ids)-set(self.doc.ids))

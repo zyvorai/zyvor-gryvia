@@ -120,3 +120,34 @@ class TrainCliTests(CliTests):
         self.assertIn("{{dataset.path}}", job["spec"]["args"])
         self.assertEqual(job["spec"]["datasetId"], "d")
         self.assertTrue(any(m["id"] == "mlx-community__tiny" for m in self.store.snapshot()["models"]))
+
+
+class PolicyCliTests(CliTests):
+    test_status_json_when_piped = test_doctor_reports_no_agents = test_bad_token_gives_hint = test_table_alignment = test_completion = None
+
+    def test_policy_sets_idle_mode_and_nodes_shows_it(self):
+        self.store.register("mac", dict(budgetGiB=8, runtimes=["demo"], presence=dict(idleSeconds=1, onBattery=False)))
+        code, out, err = self.run_cli("policy", "mac", "--mode", "idle", "--idle-minutes", "10", "--allow-battery", "no")
+        self.assertEqual(code, 0, err)
+        pol = json.loads(out)["policy"]
+        self.assertEqual((pol["mode"], pol["idleMinutes"], pol["allowOnBattery"]), ("idle", 10, False))
+        node = self.store.snapshot()["nodes"][0]
+        self.assertEqual(node["gate"]["reason"], "owner is active")
+
+    def test_policy_unknown_node(self):
+        code, _, err = self.run_cli("policy", "ghost", "--mode", "paused")
+        self.assertEqual(code, 1)
+        self.assertIn("unknown Mac", err)
+
+
+class ProvenanceCliTests(CliTests):
+    test_status_json_when_piped = test_doctor_reports_no_agents = test_bad_token_gives_hint = test_table_alignment = test_completion = None
+
+    def test_provenance_unattested_and_rekey(self):
+        self.store.model("m", dict(memoryGiB=1, runtime="llama", status="ready", path="/m.gguf"))
+        code, out, _ = self.run_cli("provenance", "m")
+        self.assertEqual((code, json.loads(out)), (0, {}))
+        self.store.register("mac", dict(budgetGiB=8, runtimes=["demo"], attestKey="ab" * 32))
+        code, out, _ = self.run_cli("rekey", "mac")
+        self.assertEqual(code, 0)
+        self.assertIsNone(self.store.db.execute("SELECT pub FROM node_keys WHERE node='mac'").fetchone())

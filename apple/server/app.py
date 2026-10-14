@@ -85,6 +85,10 @@ class API(BaseHTTPRequestHandler):
             if not write and path.startswith('/api/runs/') and path.endswith('/metrics'):
                 if role=='agent': raise Problem('forbidden',403)
                 return self.send(200,store.run_metrics(path.split('/')[3]))
+            if not write and path=='/api/attestations':
+                if role!='admin': raise Problem('forbidden',403)
+                from urllib.parse import parse_qs
+                return self.send(200,store.attestations(parse_qs(urlsplit(self.path).query).get('job',[None])[0]))
             if not write and path=='/api/suites':
                 if role=='agent': raise Problem('forbidden',403)
                 return self.send(200,store.suites())
@@ -116,6 +120,12 @@ class API(BaseHTTPRequestHandler):
             elif path=='/api/models/onboard':
                 if role!='admin': raise Problem('forbidden',403)
                 return self.send(201,{'job':store.onboard(b.pop('tenant','default'),b)})
+            elif path=='/api/nodes/rekey':
+                if role!='admin': raise Problem('forbidden',403)
+                store.reset_key(b['id'])
+            elif path=='/api/nodes/policy':
+                if role!='admin': raise Problem('forbidden',403)
+                node=b.pop('id'); return self.send(200,{'policy':store.set_policy(node,b)})
             elif path=='/api/datasets/onboard':
                 if role!='admin': raise Problem('forbidden',403)
                 return self.send(201,{'job':store.onboard_dataset(b.pop('tenant','default'),b)})
@@ -149,7 +159,7 @@ class API(BaseHTTPRequestHandler):
                 elif op=='renew': return self.send(200,store.renew(node,b['id'],b['lease']))
                 elif op=='complete':
                     if type(b['success']) is not bool: raise Problem('success must be boolean')
-                    store.complete(node,b['id'],b['lease'],b['success'],b.get('result',{}))
+                    store.complete(node,b['id'],b['lease'],b['success'],b.get('result',{}),b.get('attestation'))
                 elif op=='logs': store.logs(node,b['id'],b['lease'],b['lines'])
                 elif op=='log': store.log(node,b['id'],b['lease'],b['text'])
                 else: raise Problem('not found',404)
@@ -164,7 +174,7 @@ def make_server(store,tokens,host='127.0.0.1',port=8443):
     server.web=Path(__file__).resolve().parents[1]/'web'; server.gateway=Gateway(); return server
 
 def main():
-    p=argparse.ArgumentParser(); p.add_argument('--config',default='config.json'); p.add_argument('--db',default='gryvia.db'); p.add_argument('--host',default='127.0.0.1'); p.add_argument('--port',type=int,default=8443); p.add_argument('--cert'); p.add_argument('--inference-loopback',action='store_true',help='allow model replicas registered on 127.0.0.1 (serve jobs on the control-plane Mac)'); p.add_argument('--key'); a=p.parse_args()
+    p=argparse.ArgumentParser(); p.add_argument('--config',default='config.json'); p.add_argument('--db',default='gryvia.db'); p.add_argument('--host',default='127.0.0.1'); p.add_argument('--port',type=int,default=8443); p.add_argument('--cert'); p.add_argument('--require-verified',action='store_true',help='refuse serve/benchmark/evaluate/quantize/fuse on models without verified provenance'); p.add_argument('--inference-loopback',action='store_true',help='allow model replicas registered on 127.0.0.1 (serve jobs on the control-plane Mac)'); p.add_argument('--key'); a=p.parse_args()
     config=json.loads(Path(a.config).read_text()); tokens=config['tokens']
     if not tokens or any(len(t)<24 for t in tokens): p.error('tokens must have at least 24 characters')
     for actor in tokens.values():
@@ -173,6 +183,7 @@ def main():
         if actor['role']=='agent' and not actor.get('node'): p.error('node required')
     if a.host not in ['127.0.0.1','localhost','::1'] and not (a.cert and a.key): p.error('remote bind requires --cert and --key')
     server=make_server(Store(a.db),tokens,a.host,a.port)
+    server.store.require_verified=a.require_verified or bool(config.get('requireVerified',False))
     server.gateway=Gateway(config.get("inferenceOrigins",[]),config.get("inferenceConcurrencyPerTenant",2),allow_loopback=a.inference_loopback or bool(config.get("inferenceAllowLoopback",False)))
     if a.cert:
         ctx=ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER); ctx.minimum_version=ssl.TLSVersion.TLSv1_2; ctx.load_cert_chain(a.cert,a.key); server.socket=ctx.wrap_socket(server.socket,server_side=True)

@@ -7,7 +7,7 @@ G := $(shell tput setaf 2 2>/dev/null)
 Y := $(shell tput setaf 3 2>/dev/null)
 R := $(shell tput sgr0 2>/dev/null)
 .DEFAULT_GOAL := help
-.PHONY: setup-runtimes mini-setup icon brand headers demo help verify test swift-test build smoke web-test package run-server run-agent doctor deploy deploy-quick deploy-verify deploy-dry-run mini-logs mini-status
+.PHONY: setup-runtimes mini-setup icon brand headers demo help site shots site-check release-archives release-mac power-helper verify test swift-test build smoke web-test package run-server run-agent doctor deploy deploy-quick deploy-verify deploy-dry-run mini-logs mini-status
 
 help: ## Show this help
 	@awk 'BEGIN{FS=":.*?## "} /^[a-zA-Z_-]+:.*?## /{printf "  $(G)%-16s$(R) %s\n",$$1,$$2}' $(MAKEFILE_LIST)
@@ -67,3 +67,16 @@ mini-status: ## launchd + health on the mini
 	ssh $(MINI) 'launchctl list | grep gryvia; curl -fsS http://127.0.0.1:8443/healthz; echo'
 mini-logs: ## Tail the mini server/agent logs
 	ssh $(MINI) 'tail -n 40 -f ~/Library/Logs/Gryvia/*.log'
+
+site: ## Build the GitHub Pages site into _site/ (landing page + static demo)
+	bash scripts/build-site.sh
+shots: ## Regenerate marketing screenshots from demo mode (needs npm install)
+	node scripts/shots.mjs
+site-check: site ## Build and check the site (links, phone width, demo boots)
+	node scripts/site-check.mjs
+release-archives: ## Server/SDK tarballs, SBOM and SHA256SUMS into release/
+	bash scripts/package-release.sh
+release-mac: ## DMG, pkg and zip into release/ (macOS)
+	bash scripts/package-mac.sh $$(cat VERSION)
+power-helper: ## Install the optional root power helper for energy estimates (asks for sudo)
+	bash scripts/install-power-helper.sh

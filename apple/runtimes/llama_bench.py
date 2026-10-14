@@ -9,7 +9,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _common import confine, emit, find_tool  # noqa: E402
+from _common import confine, emit, find_tool, run_group  # noqa: E402
 
 
 def parse(output: str) -> dict:
@@ -38,8 +38,8 @@ def main(argv=None) -> int:
         return 1
     tool = find_tool("llama-bench")
     emit(kind="progress", stage="bench", model=model.name)
-    r = subprocess.run([tool, "-m", str(model), "-p", str(a.prompt_tokens), "-n", str(a.gen_tokens), "-r", str(a.repetitions), "-o", "json"],
-                       capture_output=True, text=True, timeout=1800)
+    r = run_group([tool, "-m", str(model), "-p", str(a.prompt_tokens), "-n", str(a.gen_tokens), "-r", str(a.repetitions), "-o", "json"],
+                       timeout=1800)
     if r.returncode != 0:
         emit(kind="error", message=(r.stderr or r.stdout)[-400:])
         return r.returncode

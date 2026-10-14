@@ -180,3 +180,35 @@ class TrainParseTests(unittest.TestCase):
         f.write_text('{"text":"a"}\n')
         with self.assertRaises(SystemExit):
             mlx_lora.prepare(f, d / "run2", 0.1)
+
+
+class SignalForwardingTests(unittest.TestCase):
+    def test_sigterm_kills_the_whole_process_group(self):
+        import signal, subprocess, textwrap, time
+        code = textwrap.dedent(f"""
+            import sys; sys.path.insert(0, {str(ROOT / 'runtimes')!r})
+            from _common import run_group
+            run_group(["sleep", "60"], timeout=100)
+        """)
+        proc = subprocess.Popen([sys.executable, "-c", code])
+        time.sleep(0.8)
+        child = subprocess.run(["pgrep", "-P", str(proc.pid)], capture_output=True, text=True).stdout.split()
+        self.assertTrue(child, "sleep child should exist")
+        proc.send_signal(signal.SIGTERM)
+        self.assertEqual(proc.wait(timeout=10), 143)
+        time.sleep(0.5)
+        alive = subprocess.run(["ps", "-p", child[0]], capture_output=True, text=True).returncode == 0
+        self.assertFalse(alive, "child must not be orphaned")
+
+
+class PowerHelperParseTests(unittest.TestCase):
+    def test_parse_powermetrics_plist_milliwatts(self):
+        import plistlib
+        sys.path.insert(0, str(ROOT / "scripts"))
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("power_helper", ROOT / "scripts/power-helper.py")
+        mod = importlib.util.module_from_spec(spec); spec.loader.exec_module(mod)
+        raw = plistlib.dumps({"processor": {"cpu_power": 3200.0, "gpu_power": 4100.0, "ane_power": 0.0, "combined_power": 7300.0}, "thermal_pressure": "Nominal"})
+        got = mod.parse(raw + b"\x00junk")
+        self.assertEqual(got, {"packageW": 7.3, "cpuW": 3.2, "gpuW": 4.1, "aneW": 0.0})
+        self.assertEqual(mod.parse(plistlib.dumps({"x": 1}))["packageW"], None)

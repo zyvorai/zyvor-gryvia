@@ -13,6 +13,7 @@ if(await page.locator('#welcome:not([hidden])').count()!==1)throw Error('welcome
 await page.click('#run-demo');await page.waitForSelector('#toasts .toast');
 await page.click('[data-view="guide"]');await page.waitForSelector('#guide .glossary');await page.click('[data-view="overview"]');
 await page.click('[data-view="fleet"]');await page.waitForSelector('#nodes .node-card');if(await page.locator('#nodes .node-card').count()!==2)throw Error('fleet missing');
+await page.selectOption('[data-policy-mode="mini-01"]','idle');await page.waitForFunction(()=>document.querySelector('[data-policy-mode="mini-01"]').value==='idle');
 await page.click('[data-drain="mini-01"]');await page.waitForFunction(()=>document.querySelector('[data-drain="mini-01"]').textContent.includes('Resume'));
 await page.click('[data-view="jobs"]');await page.fill('#submit input[name="model"]','Browser submitted job');await page.fill('#submit input[name="memoryGiB"]','2');await page.click('#submit button');await page.waitForFunction(()=>document.querySelector('#job-table').textContent.includes('Browser submitted job'));
 await page.click('#job-table [data-logs]');await page.waitForSelector('dialog[open]');await page.click('#close-logs');

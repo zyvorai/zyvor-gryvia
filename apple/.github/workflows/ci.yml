@@ -1,0 +1,69 @@
+name: verify
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  control-plane:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.14' }
+      - uses: actions/setup-node@v4
+        with: { node-version: '22' }
+      - run: python3 -m unittest discover -s tests -v
+      - run: python3 scripts/check-headers.py
+      - run: python3 scripts/set-version.py --check
+      - run: python3 -m compileall -q server runtimes scripts
+      - run: node --check web/app.js
+      - name: shellcheck
+        run: shellcheck -S warning scripts/*.sh
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.14' }
+      - uses: actions/setup-node@v4
+        with: { node-version: '22' }
+      - run: npm install --no-audit --no-fund
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:web
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with: { name: web-test-logs, path: /tmp/gryvia-browser-test.log }
+  native:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.14' }
+      - uses: maxim-lobanov/setup-xcode@v1
+        with: { xcode-version: latest-stable }
+      - run: swift --version && xcodebuild -version
+      - run: make verify
+      - run: bash scripts/mac-smoke.sh
+      - name: package (ad hoc signed)
+        run: bash scripts/package-mac.sh "$(cat VERSION)"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Gryvia-macOS-development
+          path: release/Gryvia-*.zip
+  site:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.14' }
+      - uses: actions/setup-node@v4
+        with: { node-version: '22' }
+      - run: npm install --no-audit --no-fund && npx playwright install --with-deps chromium
+      - run: bash scripts/build-site.sh
+      - run: node scripts/site-check.mjs

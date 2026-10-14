@@ -18,7 +18,7 @@ trap cleanup EXIT
 source "$workdir/config/credentials.env"
 "$PY" -m server.app --config "$workdir/config/config.json" --db "$workdir/db" > "$workdir/server.log" 2>&1 &
 server_pid=$!
-for i in {1..30}; do
+for _ in {1..30}; do
   if curl -fsS http://127.0.0.1:8443/healthz >/dev/null; then break; fi
   sleep 0.2
 done

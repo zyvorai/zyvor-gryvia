@@ -9,6 +9,7 @@ import argparse
 import json
 import os
 import re
+import signal
 import subprocess
 import sys
 import time
@@ -82,12 +83,27 @@ def main(argv=None) -> int:
     run_dir.mkdir(parents=True, exist_ok=True)
     n_train, n_valid = prepare(data, run_dir, 0.1)
     adapter = run_dir / "adapter"
+    # Resume after the owner returned / the agent restarted: the same job id keeps its run folder, so reuse the last
+    # saved adapter weights. (mlx-lm restarts its iteration counter; the weights are what carries over.)
+    resume = adapter / "adapters.safetensors"
     emit(kind="progress", stage="train", trainRows=n_train, validRows=n_valid, model=a.model)
     cmd = [sys.executable, "-m", "mlx_lm", "lora", "--model", a.model, "--train", "--data", str(run_dir / "data"), "--iters", str(a.iters),
            "--batch-size", str(a.batch_size), "--num-layers", str(a.num_layers), "--learning-rate", str(a.learning_rate),
            "--adapter-path", str(adapter), "--steps-per-report", "1" if a.iters <= 20 else "5", "--steps-per-eval", str(max(1, a.iters // 4)),
-           "--val-batches", "2", "--max-seq-length", str(a.max_seq_length), "--save-every", str(max(10, a.iters))]
-    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
+           "--val-batches", "2", "--max-seq-length", str(a.max_seq_length), "--save-every", str(max(10, min(50, a.iters // 4)))]
+    if resume.is_file():
+        cmd += ["--resume-adapter-file", str(resume)]
+        emit(kind="progress", stage="resume", adapter=str(resume))
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, start_new_session=True)
+
+    def _term(*_):
+        try:
+            os.killpg(proc.pid, signal.SIGTERM)
+        except (ProcessLookupError, PermissionError):
+            pass
+        emit(kind="progress", stage="yielded")
+        sys.exit(143)
+    signal.signal(signal.SIGTERM, _term)
     last_train = last_val = None
     tail = []
     for line in proc.stdout:

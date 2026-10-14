@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SPDX = "SPDX-License-Identifier: BUSL-1.1"
 COPY = "Copyright © 2026 Zyvor AI Labs Private Limited"
 SKIP = {".build", "node_modules", "local", "dist", "__pycache__", ".git"}
-STYLES = {".py": "#", ".sh": "#", ".swift": "//", ".js": "//", ".cjs": "//", ".css": None}
+STYLES = {".py": "#", ".sh": "#", ".swift": "//", ".js": "//", ".cjs": "//", ".mjs": "//", ".css": None}
 
 
 def files():

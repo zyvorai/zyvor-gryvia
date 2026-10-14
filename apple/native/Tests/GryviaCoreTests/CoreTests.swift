@@ -51,3 +51,46 @@ final class GPUInfoTests: XCTestCase {
         if GPUInfo.current() != nil { XCTAssertNotNil(r["gpuCores"]); XCTAssertNotNil(r["gpuUtilPct"]) }
     }
 }
+
+
+final class PresenceTests: XCTestCase {
+    func testBatteryParsing() {
+        let b = PresenceInfo.battery(from: ["Type": "InternalBattery", "Power Source State": "Battery Power", "Current Capacity": 42, "Max Capacity": 100])
+        XCTAssertEqual(b?.onBattery, true)
+        XCTAssertEqual(b?.pct, 42)
+        let ac = PresenceInfo.battery(from: ["Type": "InternalBattery", "Power Source State": "AC Power", "Current Capacity": 80, "Max Capacity": 100])
+        XCTAssertEqual(ac?.onBattery, false)
+        XCTAssertNil(PresenceInfo.battery(from: ["Type": "UPS"]))
+    }
+    func testDictionaryOmitsUnknownValues() {
+        let p = PresenceInfo(idleSeconds: nil, locked: true, displaySleep: false, onBattery: false, batteryPct: nil, lowPowerMode: false, micInUse: false)
+        XCTAssertNil(p.dictionary["idleSeconds"])
+        XCTAssertEqual(p.dictionary["locked"] as? Bool, true)
+    }
+    func testCurrentDoesNotCrashAndReportsIdle() {
+        let p = PresenceInfo.current()
+        #if os(macOS)
+        XCTAssertNotNil(p.idleSeconds)
+        #endif
+        XCTAssertTrue(Hardware.report(budget: 1, runtimes: [])["presence"] is [String: Any])
+    }
+}
+
+
+final class PowerFileTests: XCTestCase {
+    func write(_ json: String) -> String {
+        let path = NSTemporaryDirectory() + "power-\(UUID().uuidString).json"
+        try? json.write(toFile: path, atomically: true, encoding: .utf8)
+        return path
+    }
+    func testFreshFileIsReadAndStaleOrMissingIsNot() {
+        let now = Date()
+        let fresh = write("{\"at\": \(now.timeIntervalSince1970 - 2), \"packageW\": 12.5, \"gpuW\": 4.2}")
+        XCTAssertEqual(PowerFile.read(path: fresh, now: now)?["packageW"] as? Double, 12.5)
+        let stale = write("{\"at\": \(now.timeIntervalSince1970 - 60), \"packageW\": 12.5}")
+        XCTAssertNil(PowerFile.read(path: stale, now: now))
+        XCTAssertNil(PowerFile.read(path: "/nonexistent/gryvia-power.json", now: now))
+        let absurd = write("{\"at\": \(now.timeIntervalSince1970), \"packageW\": 99999}")
+        XCTAssertNil(PowerFile.read(path: absurd, now: now))
+    }
+}

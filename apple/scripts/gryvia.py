@@ -168,10 +168,14 @@ def doctor(client: Client) -> int:
     return 0 if ok else 1
 
 
-VERSION = "0.2.0"
+VERSION = "0.3.0"  # fallback; the VERSION file next to scripts/ wins
+try:
+    VERSION = (__import__("pathlib").Path(__file__).resolve().parents[1] / "VERSION").read_text().strip() or VERSION
+except OSError:
+    pass
 LICENSE_LINE = "Gryvia Apple " + VERSION + " · BUSL-1.1 · Copyright © 2026 Zyvor AI Labs Private Limited"
 ZSH_COMPLETION = """#compdef gryvia.py gryvia
-_arguments '--server=[server origin]' '--json[raw JSON output]' '--output=[table|json|csv]' '1:command:(status top nodes jobs models fuse datasets dataset-add train metrics-run deploy undeploy onboard bench eval results submit cancel priority logs drain tenant metrics quickstart doctor completion)'
+_arguments '--server=[server origin]' '--json[raw JSON output]' '--output=[table|json|csv]' '1:command:(status top nodes policy jobs models provenance rekey fuse datasets dataset-add train metrics-run deploy undeploy onboard bench eval results submit cancel priority logs drain tenant metrics quickstart doctor completion)'
 """
 
 
@@ -189,9 +193,12 @@ def render_nodes(state) -> str:
     rows = []
     for n in state["nodes"]:
         used = sum(j["spec"]["memoryGiB"] for j in state["jobs"] if j.get("node") == n["id"] and j["state"] in ("running", "cancelling"))
+        gate = n.get("gate") or {}
+        availability = "open" if gate.get("allowed", True) else (gate.get("reason") or "closed")
         rows.append((n["id"], "draining" if n.get("drain") else ("online" if n.get("online") else "offline"),
-                     f'{used:.1f}/{n["budgetGiB"]:.1f} GiB', ",".join(n.get("runtimes", [])), n.get("thermal") or "-", n.get("gpu") or n.get("host") or "-"))
-    return table(["NODE", "STATE", "RESERVED", "RUNTIMES", "THERMAL", "HARDWARE"], rows, 1) if rows else "  none registered"
+                     f'{used:.1f}/{n["budgetGiB"]:.1f} GiB', ",".join(n.get("runtimes", [])), n.get("thermal") or "-",
+                     (n.get("policy") or {}).get("mode", "always"), availability))
+    return table(["NODE", "STATE", "RESERVED", "RUNTIMES", "THERMAL", "POLICY", "WORK ALLOWED"], rows, 1) if rows else "  none registered"
 
 
 def quickstart(client: Client) -> int:
@@ -225,6 +232,10 @@ def build_parser():
     s = sub.add_parser("drain"); s.add_argument("id"); s.add_argument("--resume", action="store_true")
     s = sub.add_parser("tenant"); s.add_argument("id"); s.add_argument("--quota", type=float, required=True); s.add_argument("--weight", type=float, default=1)
     s = sub.add_parser("nodes", help="list Macs and their reservations")
+    s = sub.add_parser("policy", help="set when a Mac may run fleet work (idle harvesting, battery rules)"); s.add_argument("node")
+    s.add_argument("--mode", choices=["always", "idle", "paused"]); s.add_argument("--idle-minutes", type=float)
+    s.add_argument("--allow-battery", choices=["yes", "no"]); s.add_argument("--min-battery", type=float)
+    s.add_argument("--pause-on-call", choices=["yes", "no"]); s.add_argument("--no-preempt", action="store_true")
     s = sub.add_parser("jobs", help="list workloads"); s.add_argument("--state"); s.add_argument("--tenant"); s.add_argument("--label"); s.add_argument("--limit", type=int, default=50)
     s = sub.add_parser("top", help="live fleet view (refreshes every 2s)")
     s = sub.add_parser("priority", help="set a queued job's priority"); s.add_argument("id"); s.add_argument("value", type=int)
@@ -246,6 +257,8 @@ def build_parser():
     s = sub.add_parser("metrics-run", help="print loss history of a training run"); s.add_argument("job")
     s = sub.add_parser("deploy", help="serve a ready GGUF model with llama-server"); s.add_argument("model")
     s = sub.add_parser("undeploy", help="stop a deployment"); s.add_argument("model")
+    s = sub.add_parser("provenance", help="show the signed provenance chain of a model"); s.add_argument("model")
+    s = sub.add_parser("rekey", help="forget a Mac's pinned signing key (after reinstalling the agent)"); s.add_argument("node")
     s = sub.add_parser("results", help="show benchmark/eval/download history"); s.add_argument("--model"); s.add_argument("--kind")
     sub.add_parser("quickstart", help="what to do next, based on your fleet's state")
     sub.add_parser("doctor", help="check server, token and agents")
@@ -382,6 +395,22 @@ def run(args) -> int:
             spec["node"] = m["node"]
         emit(c.call("jobs", spec), args, lambda j: f'deploying: job {j["id"][:10]}; endpoint appears in `gryvia.py models`')
         return 0
+    if args.op == "provenance":
+        m = next((m for m in c.call("state")["models"] if m["id"] == args.model), None)
+        if not m:
+            raise CliError("unknown model")
+        prov = m.get("provenance")
+        def pretty(_):
+            if not prov:
+                return f"{m['id']}: no attestation (registered manually, or downloaded without a signing key)"
+            rows = [(l["kind"], "verified" if l["verified"] else "UNVERIFIED", l.get("signer") or "-", time.strftime("%m-%d %H:%M", time.localtime(l["at"])), l.get("why", "")) for l in prov["chain"]]
+            head = f"{m['id']}: " + ("verified chain" if prov["chainVerified"] else "signed, base unattested" if prov["verified"] else "UNVERIFIED")
+            return head + "\n" + table(["STEP", "SIGNATURE", "SIGNER", "WHEN", "NOTE"], rows, 1)
+        emit(prov or {}, args, pretty)
+        return 0
+    if args.op == "rekey":
+        emit(c.call("nodes/rekey", {"id": args.node}), args, lambda _: f"pinned key for {args.node} cleared; the next heartbeat pins the new one")
+        return 0
     if args.op == "results":
         q = "&".join(f"{k}={v}" for k, v in (("model", args.model), ("kind", args.kind)) if v)
         res = json.loads(c.raw("/api/results" + ("?" + q if q else "")))
@@ -402,6 +431,23 @@ def run(args) -> int:
     if args.op == "nodes":
         state = c.call("state")
         emit(state["nodes"], args, lambda _: render_nodes(state))
+        return 0
+    if args.op == "policy":
+        node = next((n for n in c.call("state")["nodes"] if n["id"] == args.node or n.get("host") == args.node), None)
+        if not node:
+            raise CliError(f"unknown Mac '{args.node}' (see: gryvia.py nodes)")
+        pol = dict(node.get("policy") or {})
+        for key, val in (("mode", args.mode), ("idleMinutes", args.idle_minutes), ("minBatteryPct", args.min_battery)):
+            if val is not None:
+                pol[key] = val
+        if args.allow_battery:
+            pol["allowOnBattery"] = args.allow_battery == "yes"
+        if args.pause_on_call:
+            pol["pauseOnCall"] = args.pause_on_call == "yes"
+        if args.no_preempt:
+            pol["preempt"] = False
+        res = c.call("nodes/policy", {"id": node["id"], **pol})
+        emit(res, args, lambda r: "policy for %s: %s" % (node["id"], ", ".join(f"{k}={v}" for k, v in r["policy"].items())))
         return 0
     if args.op == "jobs":
         jobs = [j for j in c.call("state")["jobs"]
