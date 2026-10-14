@@ -51,7 +51,18 @@ class API(BaseHTTPRequestHandler):
             if path == '/v1/chat/completions':
                 actor=self.actor()
                 if not write or actor['role'] not in ['admin','tenant']: raise Problem('forbidden',403)
-                return self.send(200,self.server.gateway.chat(self.server.store,actor.get('tenant','default'),self.body()))
+                body=self.body()
+                if body.get('stream') is True:
+                    chunks=self.server.gateway.stream(self.server.store,actor.get('tenant','default'),body)
+                    self.send_response(200); self.send_header('Content-Type','text/event-stream'); self.send_header('Cache-Control','no-store'); self.send_header('X-Content-Type-Options','nosniff')
+                    self.end_headers()
+                    try:
+                        for c in chunks: self.wfile.write(c); self.wfile.flush()
+                    except (BrokenPipeError,ConnectionResetError,OSError): pass
+                    finally: chunks.close()
+                    self.close_connection=True
+                    return
+                return self.send(200,self.server.gateway.chat(self.server.store,actor.get('tenant','default'),body))
             if not path.startswith('/api/') and path!='/metrics':
                 if write: raise Problem('not found',404)
                 names={'/':'index.html','/app.js':'app.js','/style.css':'style.css','/tokens.css':'tokens.css','/favicon.svg':'favicon.svg','/icon.png':'icon.png'}

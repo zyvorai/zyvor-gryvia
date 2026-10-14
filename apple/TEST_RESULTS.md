@@ -94,3 +94,17 @@ Setup: 8 Gryvia facts × 5 training phrasings = 40 rows, 150 iterations, batch 2
 - The chat adapter's failures: two answers borrowed another fact's text (cross-contamination), one on-topic paraphrase missed the key phrase, one hallucinated what the Training page does, and one control regressed ("Red Planet" → Mercury, i.e. some forgetting).
 - n is tiny (24 + 4); the 18 vs 20 difference is not significant. Takeaway: both adapters generalise to new wordings of seen facts; chat format helps a little for chat-style use but did not remove contamination or forgetting.
 - Bugs found and fixed while running it: the agent deadlocked in `Process.waitUntilExit()` after a child exited, leaving the job unfinished and the Mac offline (now polls `isRunning`); large eval result lines were truncated by the 2,000-character log cap (the wrapper now emits one `case` line per case and the server assembles them).
+
+## Larger held-out fine-tune: facts-only vs facts + self-rehearsal (2026-10-14, Mac mini, Llama-3.2-1B-Instruct-4bit)
+Data: 24 Gryvia facts × 5 question stems = 120 chat-format rows; held-out = the same 24 facts asked with 3 **unseen stems** (72 prompts) plus 24 general-knowledge controls. The "rehearsal" variant adds 60 general Q&A rows answered by the *base model itself* (self-distillation) to preserve its behaviour. Both: 120 iterations, batch 2, 8 LoRA layers, lr 3e-5. Scoring is keyword containment, which is strict (e.g. "three" does not match "3").
+
+| Model | Held-out phrasings | Controls | Final val loss |
+|---|---|---|---|
+| base | 3 / 72 | 23 / 24 | – |
+| adapter, facts only | **71 / 72** | 20 / 24 | 0.117 |
+| adapter, facts + rehearsal | 65 / 72 | **23 / 24** | 0.178 |
+
+- Facts-only: 2 of its 4 control misses are scoring artifacts ("seven continents", "three sides"); 2 are real regressions ("Romeo and Juliet" with no author, "7 times 8" answered with an instruction instead of 56).
+- Rehearsal removed the real regressions (its one control miss, "three sides", is an artifact the base model also hits) at the cost of 6 more missed facts (65 vs 71 of 72). Pick by use case; neither run is statistically strong (n = 72 / 24, one seed).
+- Compared with the earlier 8-fact run (18–20/24 held-out, controls 3–4/4) the larger and more varied set generalises to new stems far better, but the stems are templated, so unseen *templates* remain untested.
+- Playground now streams (SSE relay with byte/time bounds). Measured on the mini with Llama-3.2-1B Q4_K_M through the gateway: 120 chunks, 0.28 s to first token, 1.07 s total.
