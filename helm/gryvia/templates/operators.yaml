@@ -204,6 +204,13 @@ spec:
             - --admission-gate=true
             - --admission-default-hours={{ $.Values.aiOperator.admissionDefaultHours }}
             {{- end }}
+            {{- /* dig + default: `helm upgrade --reuse-values` from a release that predates these keys must still render valid flags */}}
+            {{- if and (eq $name "ai-operator") (dig "aiOperator" "idleReclaim" "enabled" false $.Values.AsMap) }}
+            - --idle-reclaim=true
+            - --idle-reclaim-suspend={{ dig "aiOperator" "idleReclaim" "suspend" false $.Values.AsMap }}
+            - --idle-reclaim-threshold={{ dig "aiOperator" "idleReclaim" "thresholdPercent" 10 $.Values.AsMap }}
+            - --idle-reclaim-window={{ dig "aiOperator" "idleReclaim" "window" "30m" $.Values.AsMap }}
+            {{- end }}
             {{- if and (eq $name "quota-operator") (dig "quotaOperator" "budgetWebhook" "url" nil $.Values.AsMap) }}
             - {{ printf "--budget-webhook-url=%s" (dig "quotaOperator" "budgetWebhook" "url" nil $.Values.AsMap) | quote }}
             {{- end }}

@@ -1,0 +1,47 @@
+name: GPU validation (self-hosted)
+
+# Manual only. Needs a self-hosted runner labelled `gpu` that has kubectl, a kubeconfig for a cluster with at least
+# one NVIDIA GPU node, and the Gryvia chart installed. Nothing here runs on GitHub-hosted runners, and no
+# GPU claim in the docs rests on this workflow until it has produced a passing report.
+# What the checks are and how to read the report: docs/gpu-validation.md.
+on:
+  workflow_dispatch:
+    inputs:
+      namespace:
+        description: Gryvia namespace
+        default: gryvia-system
+      host_driver:
+        description: The NVIDIA driver is installed on the host (no driver pod expected)
+        type: boolean
+        default: true
+      rdma:
+        description: Also check RDMA devices and NIC counters
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: [self-hosted, linux, gpu]
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run validate-gpu.sh
+        env:
+          NS: ${{ inputs.namespace }}
+          HOST_DRIVER: ${{ inputs.host_driver }}
+          RDMA: ${{ inputs.rdma }}
+        run: |
+          args=(--namespace "$NS" --report "$RUNNER_TEMP/gpu-validation-report.json")
+          [[ "$HOST_DRIVER" == "true" ]] && args+=(--host-driver)
+          [[ "$RDMA" == "true" ]] && args+=(--rdma)
+          ./scripts/validate-gpu.sh "${args[@]}"
+      - name: Upload the report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gpu-validation-report
+          path: ${{ runner.temp }}/gpu-validation-report.json
+          if-no-files-found: warn

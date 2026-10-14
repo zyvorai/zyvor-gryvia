@@ -266,7 +266,22 @@ func (r *GryviaAIJobReconciler) reconcileAIJob(ctx context.Context, job *gryviav
 			// from ever producing a Workload, hiding demand and blocking preemption.
 			job.Status.NodesAllocated = nil
 			job.Status.PlacementExplanation = nil
+			job.Status.PreferredNodes = nil
 			job.Status.GpusAllocated = 0
+			if gpusPerPod > 0 && scheduler.FabricEnabled(job, r.FabricAware) {
+				// Rank by fabric health only; Kueue still decides admission, the result is soft affinity.
+				p, ferr := scheduler.FabricPreference(ctx, r.Client, job, scheduler.FabricOptions{
+					MaxPenalty: r.FabricMaxPenalty,
+					OnError: func(e error) {
+						log.Info("fabric-aware scheduling: node signals unavailable, ranking unchanged", "reason", e.Error())
+					},
+				})
+				if ferr == nil {
+					job.Status.PlacementExplanation = p.Explanation
+					job.Status.PreferredNodes = p.Nodes
+					r.recordFabricPlacement(job, p)
+				}
+			}
 			r.bindDataset(ctx, job, dsBind, dsLocal, dsNamespace, nil)
 			r.updateCondition(job, ConditionScheduled, metav1.ConditionTrue, "QueueManaged", "Placement delegated to Kueue and kube-scheduler")
 			if err := r.Status().Update(ctx, job); err != nil {
@@ -754,7 +769,11 @@ func (r *GryviaAIJobReconciler) buildPlacementAffinity(job *gryviav1.GryviaAIJob
 	if job.Annotations[scheduler.AnnotationFabricAware] == "false" {
 		return job.Spec.Affinity
 	}
-	terms := scheduler.PreferredNodeTerms(job.Status.NodesAllocated, job.Status.PlacementExplanation)
+	selected := job.Status.NodesAllocated
+	if len(selected) == 0 {
+		selected = job.Status.PreferredNodes // Kueue-managed job: advice only
+	}
+	terms := scheduler.PreferredNodeTerms(selected, job.Status.PlacementExplanation)
 	if len(terms) == 0 {
 		return job.Spec.Affinity
 	}
@@ -954,7 +973,11 @@ func (r *GryviaAIJobReconciler) buildResources(job *gryviav1.GryviaAIJob, gpusPe
 		if resources.Limits == nil {
 			resources.Limits = corev1.ResourceList{}
 		}
-		resources.Limits["nvidia.com/gpu"] = *resource.NewQuantity(int64(gpusPerPod), resource.DecimalSI)
+		name := corev1.ResourceName("nvidia.com/gpu")
+		if job.Spec.MigProfile != "" {
+			name = scheduler.MigResourceName(job.Spec.MigProfile)
+		}
+		resources.Limits[name] = *resource.NewQuantity(int64(gpusPerPod), resource.DecimalSI)
 	}
 
 	return resources

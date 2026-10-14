@@ -97,7 +97,8 @@ unverified for the GPU path and is the first thing to check if a job stays Queue
 message.
 
 **Borrowing.** All tenant ClusterQueues share the cohort `gryvia`, so idle quota of one tenant can be borrowed by
-another (no `borrowingLimit`/`lendingLimit`), and is reclaimed by preemption when its owner needs it. Consequence: a tenant
+another, and is reclaimed by preemption when its owner needs it. Without per-tenant settings there is no
+`borrowingLimit`/`lendingLimit` (see "Fairness settings" below). Consequence: a tenant
 can temporarily run more than its `concurrentGPUs`. A tenant with the "unlimited" default quota can borrow nothing
 useful but also never blocks.
 
@@ -213,7 +214,7 @@ and never holds part of the quota. Limits:
 - Elastic jobs (`distributed.elastic.minNodes < nodes`) are the exception: Kueue may admit them with fewer pods, down to `minNodes` (partial admission; see [elastic-training.md](elastic-training.md#under-kueue)). The size is fixed at admission; a running Job is not resized.
 - Multi-cluster (MultiKueue): Gryvia only binds the tenant ClusterQueues to an administrator-created MultiKueue admission check (`platformCompletion.kueueAdmissionCheck`). `.github/workflows/e2e-multikueue.yml` (two kind clusters, CPU pods) passes in CI (run 36875403171): a GryviaAIJob submitted on the manager is admitted by Kueue "on worker1", its pod runs on the worker cluster (none on the manager) and Succeeded comes back to the manager. The same workflow now runs a second worker and a GryviaFederation with automatic failover: a worker is stopped, fenced by lease timeout, its Workload evicted and redispatched, and the trainer resumes from an S3 replica (see [federation failover](federation-failover.md)). Not tested: GPUs, cost aggregation.
 - CPU and memory are not accounted (see above); only the quota resource is.
-- Kueue's DRF/fair-sharing modes, `admissionFairSharing` and hierarchical cohorts are not configured.
+- `admissionFairSharing` and hierarchical cohorts are not configured; fair-share weights, borrowing/lending limits and flat cohorts are per-tenant opt-ins (see "Fairness settings per tenant").
 - The earlier unused in-tree gang scheduler and queue packages were removed. The separate opt-in [native queue scheduler](native-scheduler.md) is mutually exclusive with this integration (`--native-queue-scheduler` and `--kueue-integration` cannot both be set).
 
 ## Troubleshooting
@@ -259,3 +260,67 @@ kubectl -n gryvia-system logs deploy/kueue-controller-manager
 ## Strict admission and recovery
 
 See [Reliable admission and cooperative recovery](admission-recovery.md) for opt-in fail-closed tenant queues, queue-managed GPU demand, worker spreading and checkpoint hooks.
+
+## Why is my job waiting: `status.queueExplanation`
+
+While a Kueue-managed `GryviaAIJob` is queued, the ai-operator fills `status.queueExplanation` from the
+Workload and the job's ClusterQueue (it needs read access to `clusterqueues`, granted by the chart with
+`aiOperator.kueueIntegration`):
+
+| Field | Meaning |
+|---|---|
+| `category` | `WaitingForWorkload`, `QuotaExhausted`, `AdmissionChecksPending`, `Evicted` or `Pending` |
+| `message` | Kueue's own message, unmodified |
+| `clusterQueue`, `cohort` | the queue the job waits in and its cohort |
+| `nominal`, `inUse`, `borrowed` | that queue's quota, use and borrowed amount (first resource group, busiest flavor) |
+| `borrowers` | up to 8 cohort members currently above their own quota, largest first |
+
+It is cleared when Kueue admits the job. Lookup errors only reduce the detail; they never block the job.
+
+```bash
+kubectl get gryviaaijob my-job -o jsonpath='{.status.queueExplanation}'
+```
+
+## Fairness settings per tenant
+
+`GryviaTenant.spec.quotas` carries four optional fields the quota operator copies into the tenant's ClusterQueue:
+
+| Field | Effect |
+|---|---|
+| `fairShareWeight` (>= 1, default 1) | `spec.fairSharing.weight`. Only emitted with `--kueue-fair-sharing` / `platformCompletion.kueueFairSharing`, and Kueue's manager configuration must contain a `fairSharing` block (in the pinned chart it enables the mode) |
+| `borrowingLimit` | per-resource `borrowingLimit`: at most this many units above the tenant's quota. `0` keeps the tenant inside its quota |
+| `lendingLimit` | per-resource `lendingLimit`: at most this many of the tenant's own units other tenants may borrow |
+| `cohort` | the cohort of the ClusterQueue instead of `gryvia`, so borrowing happens only among tenants sharing the name |
+
+Limits apply to the quota resources only (GPUs by default), never to the unlimited cpu/memory group. Cohorts are flat:
+hierarchical cohorts (a `Cohort` object with a parent) are not generated. The kind workflow scenario `fairshare`
+(`scripts/e2e-kueue.sh fairshare`) checks that a tenant with `borrowingLimit: 0` stays queued while a neighbour is idle
+and that an unrestricted neighbour borrows the idle quota.
+
+## Idle-GPU reclaim (opt-in)
+
+`aiOperator.idleReclaim.enabled` (flag `--idle-reclaim`) watches running jobs whose `status.metrics.gpuUtilization`
+stays below `thresholdPercent` (default 10) for `window` (default 30m): it sets the `IdleGPU` condition and emits one
+`IdleGPU` event. `suspend: true` also sets `spec.suspend`, which releases the job's GPUs and Kueue quota. A job annotated
+`gryvia.io/idle-reclaim: "false"` is exempt; a job with no GryviaTrainingProfiler is never judged idle. The idle start is
+kept in the annotation `gryvia.io/idle-since`, so it survives an operator restart.
+
+The input is the value the training profiler writes into `status.metrics.gpuUtilization`; check what your profiler
+reports before enabling `suspend`. The controller is unit-tested and starts in the kind cluster, but has not been
+driven by a real running GPU job.
+
+## Fabric ranking for queue-managed jobs
+
+With `--fabric-aware-scheduling` a Kueue-managed job is ranked by fabric health too: `scheduler.FabricPreference` scores
+the nodes that could ever run the job **without** the free-GPU check (Kueue owns admission, and a job that does not fit
+today must still produce a Workload) and writes the best ones to `status.preferredNodes`. They become soft preferred node
+affinity on the Job's pods, only when a fabric penalty changed the ranking. `nodesAllocated` stays empty and
+`gryvia.io/pin-placement` never pins to `preferredNodes`.
+
+## MIG slices (`spec.migProfile`)
+
+`spec.migProfile: 1g.10gb` makes each of the `gpus` per pod one `nvidia.com/mig-1g.10gb` device instead of a whole GPU,
+and the node filter requires nodes that advertise that resource. For Kueue admission the resource must be a quota
+resource, for example `quotaOperator.kueueQuotaResources: "nvidia.com/gpu,nvidia.com/mig-1g.10gb"` (the same number is
+applied to each). Free slices are not tracked by the operator; the kube-scheduler enforces what is free. The partitioning
+itself is NVIDIA's (see `GryviaGPUSharingPolicy`). Unit-tested only; no MIG-capable GPU has been available.

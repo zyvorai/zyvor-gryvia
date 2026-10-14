@@ -138,6 +138,36 @@ func findOptimalNodes(ctx context.Context, k8sClient client.Client, job *gryviav
 	return Placement{Nodes: selectedNodes, Explanation: explanation}, nil
 }
 
+// FabricPreference ranks the nodes that could ever run the job by score and fabric health,
+// IGNORING how many GPUs are free right now, and returns the best ones. It is for jobs whose
+// admission Kueue decides: the free-capacity check of FindOptimalNodes must not run for them, or a
+// job that does not fit today would never produce a Workload and preemption would never see its
+// demand. The result is only ever used as soft node affinity.
+func FabricPreference(ctx context.Context, k8sClient client.Client, job *gryviav1.GryviaAIJob, opt FabricOptions) (Placement, error) {
+	nodes := &corev1.NodeList{}
+	if err := k8sClient.List(ctx, nodes); err != nil {
+		return Placement{}, fmt.Errorf("failed to list nodes: %w", err)
+	}
+	eligible := filterNodes(nodes.Items, job, nil, GPUsPerPlacedNode(job))
+	if len(eligible) == 0 {
+		return Placement{}, fmt.Errorf("no nodes meet the job requirements (gpuType=%q, network=%q)", job.Spec.GpuType, job.Spec.Network)
+	}
+	scored, explanation := rankFabric(ctx, k8sClient, scoreNodes(eligible, job, nil), opt)
+
+	want := 1
+	if job.Spec.Distributed != nil && job.Spec.Distributed.Enabled && job.Spec.Distributed.Nodes > 0 {
+		want = int(job.Spec.Distributed.Nodes)
+	}
+	if want > len(scored) {
+		want = len(scored)
+	}
+	picked := make([]string, want)
+	for i := 0; i < want; i++ {
+		picked[i] = scored[i].NodeName
+	}
+	return Placement{Nodes: picked, Explanation: explanation}, nil
+}
+
 // rankFabric loads the node signals (fail open) and ranks with them.
 func rankFabric(ctx context.Context, k8sClient client.Client, scored []NodeScore, opt FabricOptions) ([]NodeScore, []gryviav1.PlacementExplanation) {
 	now := time.Now
@@ -217,6 +247,16 @@ func filterNodes(nodes []corev1.Node, job *gryviav1.GryviaAIJob, gpuUsage map[st
 			continue
 		}
 
+		if job.Spec.MigProfile != "" {
+			// MIG slices are their own extended resource. Only the node's advertised count is checked
+			// here (free slices are not tracked); the kube-scheduler enforces what is actually free.
+			if q, ok := node.Status.Allocatable[MigResourceName(job.Spec.MigProfile)]; !ok || q.Value() < int64(gpusNeeded) {
+				continue
+			}
+			eligible = append(eligible, node)
+			continue
+		}
+
 		// Check GPU availability: node must have enough free GPUs
 		availableGPUs := getAvailableGPUs(node, gpuUsage)
 		if availableGPUs < int64(gpusNeeded) {
@@ -227,6 +267,11 @@ func filterNodes(nodes []corev1.Node, job *gryviav1.GryviaAIJob, gpuUsage map[st
 	}
 
 	return eligible
+}
+
+// MigResourceName is the extended resource of a MIG profile ("1g.10gb" -> nvidia.com/mig-1g.10gb).
+func MigResourceName(profile string) corev1.ResourceName {
+	return corev1.ResourceName("nvidia.com/mig-" + profile)
 }
 
 // AnnotationPlacementStrategy selects the node-scoring strategy for one job: "pack" (best-fit,

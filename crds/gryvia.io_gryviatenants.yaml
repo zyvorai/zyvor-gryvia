@@ -186,8 +186,33 @@ spec:
               quotas:
                 description: Quotas defines resource quotas
                 properties:
+                  borrowingLimit:
+                    description: |-
+                      BorrowingLimit caps how many GPUs the tenant may borrow from the cohort above its quota.
+                      Unset means no cap.
+                    minimum: 0
+                    type: integer
+                  cohort:
+                    description: |-
+                      Cohort places the tenant's queue in a named cohort instead of the default "gryvia", so
+                      borrowing happens only among tenants sharing the name (for example one cohort per org).
+                    pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                    type: string
                   concurrentGPUs:
                     description: ConcurrentGPUs is the max concurrent GPUs
+                    type: integer
+                  fairShareWeight:
+                    description: |-
+                      FairShareWeight is the tenant's weight in Kueue fair sharing (default 1). A tenant with
+                      weight 3 is entitled to three times the contended capacity of a tenant with weight 1.
+                      Applied only when the quota operator runs with --kueue-fair-sharing.
+                    minimum: 1
+                    type: integer
+                  lendingLimit:
+                    description: |-
+                      LendingLimit caps how many of the tenant's own GPUs other tenants may borrow. Unset means
+                      all idle quota is lendable.
+                    minimum: 0
                     type: integer
                   concurrentJobs:
                     description: ConcurrentJobs is the max concurrent jobs

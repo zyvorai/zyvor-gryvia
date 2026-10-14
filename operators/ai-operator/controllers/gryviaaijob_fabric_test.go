@@ -163,3 +163,23 @@ func TestAIJob_BuildAffinity_KeepsUserAffinity(t *testing.T) {
 		t.Error("opt-out must return the user affinity untouched")
 	}
 }
+
+func TestPlacementAffinityUsesPreferredNodesForKueueJobs(t *testing.T) {
+	r := &GryviaAIJobReconciler{}
+	job := &gryviav1.GryviaAIJob{Status: gryviav1.GryviaAIJobStatus{
+		PreferredNodes:       []string{"n2"},
+		PlacementExplanation: []gryviav1.PlacementExplanation{{Node: "n1", FabricPenalty: 20}},
+	}}
+	aff := r.buildPlacementAffinity(job)
+	if aff == nil || aff.NodeAffinity == nil || len(aff.NodeAffinity.PreferredDuringSchedulingIgnoredDuringExecution) != 1 {
+		t.Fatalf("want one soft term toward n2, got %+v", aff)
+	}
+	if aff.NodeAffinity.RequiredDuringSchedulingIgnoredDuringExecution != nil {
+		t.Fatal("preferredNodes must never become required affinity")
+	}
+
+	job.Annotations = map[string]string{"gryvia.io/pin-placement": "true"}
+	if aff := r.buildPlacementAffinity(job); aff != nil && aff.NodeAffinity != nil && aff.NodeAffinity.RequiredDuringSchedulingIgnoredDuringExecution != nil {
+		t.Fatal("pin-placement must not pin to advisory preferredNodes")
+	}
+}

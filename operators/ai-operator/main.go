@@ -6,6 +6,7 @@ import (
 	"github.com/zyvorai/gryvia/operators/ai-operator/pkg/servingproxy"
 	"os"
 	"strings"
+	"time"
 
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -68,6 +69,9 @@ func main() {
 	var kueueStrictAdmission bool
 	var kueueDefaultQueue string
 	var admissionGate bool
+	var idleReclaim, idleReclaimSuspend bool
+	var idleReclaimThreshold float64
+	var idleReclaimWindow time.Duration
 	var checkpointGuard bool
 	var preflightEnforce bool
 	var admissionDefaultHours float64
@@ -110,6 +114,14 @@ func main() {
 		"With --kueue-integration: LocalQueue used by jobs in tenant-* namespaces that name no queue (only if that LocalQueue exists).")
 	flag.BoolVar(&checkpointGuard, "checkpoint-guard", false,
 		"Inject a matching GryviaCheckpointGuard's checkpoint environment into new batch jobs, create their status ConfigMap and Role, and replace pods stuck on lost nodes for AutoRestore guards.")
+	flag.BoolVar(&idleReclaim, "idle-reclaim", false,
+		"Flag running jobs whose GPU utilization (status.metrics.gpuUtilization, written by a GryviaTrainingProfiler) stays below --idle-reclaim-threshold for --idle-reclaim-window: sets the IdleGPU condition and emits an event. A job annotated gryvia.io/idle-reclaim=false is exempt. Off by default.")
+	flag.BoolVar(&idleReclaimSuspend, "idle-reclaim-suspend", false,
+		"With --idle-reclaim: also set spec.suspend on a flagged job so its GPUs and Kueue quota are released. Off by default (report only).")
+	flag.Float64Var(&idleReclaimThreshold, "idle-reclaim-threshold", 10,
+		"With --idle-reclaim: utilization percentage below which a job counts as idle.")
+	flag.DurationVar(&idleReclaimWindow, "idle-reclaim-window", 30*time.Minute,
+		"With --idle-reclaim: how long a job must stay below the threshold before it is flagged.")
 	flag.BoolVar(&admissionGate, "admission-gate", false,
 		"Before creating a job's workload, check the quotas and hard budgets covering its namespace (spend from usage records plus a forecast for the job) and reject it instead of creating it. Fails open on lookup errors. Off by default.")
 	flag.BoolVar(&preflightEnforce, "preflight-enforce", false,
@@ -228,6 +240,20 @@ func main() {
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "GryviaTrainingProfiler")
 		os.Exit(1)
+	}
+
+	if idleReclaim {
+		if err = (&controllers.GryviaIdleReclaimReconciler{
+			Client:    mgr.GetClient(),
+			Scheme:    mgr.GetScheme(),
+			Recorder:  mgr.GetEventRecorderFor("gryvia-idle-reclaim"),
+			Threshold: idleReclaimThreshold,
+			Window:    idleReclaimWindow,
+			Suspend:   idleReclaimSuspend,
+		}).SetupWithManager(mgr); err != nil {
+			setupLog.Error(err, "unable to create controller", "controller", "IdleReclaim")
+			os.Exit(1)
+		}
 	}
 
 	if err = (&controllers.GryviaModelLineageReconciler{

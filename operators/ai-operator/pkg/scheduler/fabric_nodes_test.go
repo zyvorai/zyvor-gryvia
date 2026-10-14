@@ -8,6 +8,7 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -255,5 +256,42 @@ func TestPinToNodesCreatesTermAndIgnoresEmpty(t *testing.T) {
 	}
 	if PinToNodes(nil, nil) != nil {
 		t.Error("empty nodes must leave affinity nil")
+	}
+}
+
+func TestFabricPreferenceIgnoresFreeCapacity(t *testing.T) {
+	s := runtime.NewScheme()
+	_ = corev1.AddToScheme(s)
+	_ = gryviav1.AddToScheme(s)
+	// All GPUs of every node are in use: FindOptimalNodes finds nothing, FabricPreference still ranks.
+	busy := func(name string) *corev1.Pod {
+		return &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{Name: "p-" + name, Namespace: "d"},
+			Spec: corev1.PodSpec{NodeName: name, Containers: []corev1.Container{{Name: "c", Resources: corev1.ResourceRequirements{
+				Requests: corev1.ResourceList{"nvidia.com/gpu": resource.MustParse("8")}}}}},
+			Status: corev1.PodStatus{Phase: corev1.PodRunning},
+		}
+	}
+	c := fake.NewClientBuilder().WithScheme(s).
+		WithObjects(fabNode("n1", 8), fabNode("n2", 8), busy("n1"), busy("n2")).Build()
+	job := &gryviav1.GryviaAIJob{Spec: gryviav1.GryviaAIJobSpec{GPUs: 4}}
+
+	if _, err := FindOptimalNodes(context.Background(), c, job); err == nil {
+		t.Fatal("precondition: the capacity-aware path should find no node")
+	}
+	p, err := FabricPreference(context.Background(), c, job, FabricOptions{
+		Now: func() time.Time { return t0 },
+		Signals: func(context.Context) ([]NodeSignal, error) {
+			return []NodeSignal{sig("n1", 1, time.Minute, "nccl p99 80ms")}, nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(p.Nodes) != 1 || p.Nodes[0] != "n2" {
+		t.Fatalf("want the healthy node n2 preferred, got %v", p.Nodes)
+	}
+	if len(PreferredNodeTerms(p.Nodes, p.Explanation)) == 0 {
+		t.Fatal("a penalised node should yield soft affinity terms")
 	}
 }

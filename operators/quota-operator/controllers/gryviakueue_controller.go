@@ -137,23 +137,37 @@ func managedLabels(tenant string) map[string]interface{} {
 type quotaSource struct {
 	Nominal string // quantity
 	Source  string // tenant | quota | unlimited
+
+	// Optional per-tenant fairness settings, from GryviaTenant spec.quotas.
+	Weight         int    // fair-sharing weight; 0 means the default 1
+	BorrowingLimit *int   // GPUs borrowable above nominal; nil means no cap
+	LendingLimit   *int   // own GPUs lendable to the cohort; nil means all
+	Cohort         string // cohort name; empty means KueueCohort
 }
 
 // tenantQuota picks the nominal quota: spec.quotas.concurrentGPUs of the tenant, else maxGPUs of a
 // GryviaQuota listing the tenant namespace, else unlimited.
 func tenantQuota(tenant *gryviav1.GryviaTenant, quotas []gryviav1.GryviaQuota) quotaSource {
+	q := nominalQuota(tenant, quotas)
+	if tq := tenant.Spec.Quotas; tq != nil {
+		q.Weight, q.BorrowingLimit, q.LendingLimit, q.Cohort = tq.FairShareWeight, tq.BorrowingLimit, tq.LendingLimit, tq.Cohort
+	}
+	return q
+}
+
+func nominalQuota(tenant *gryviav1.GryviaTenant, quotas []gryviav1.GryviaQuota) quotaSource {
 	if tenant.Spec.Quotas != nil && tenant.Spec.Quotas.ConcurrentGPUs > 0 {
-		return quotaSource{fmt.Sprintf("%d", tenant.Spec.Quotas.ConcurrentGPUs), "tenant"}
+		return quotaSource{Nominal: fmt.Sprintf("%d", tenant.Spec.Quotas.ConcurrentGPUs), Source: "tenant"}
 	}
 	ns := tenantNamespaceName(tenant.Name)
 	for _, q := range quotas {
 		for _, n := range q.Spec.Namespaces {
 			if n == ns && q.Spec.GPUQuota.MaxGPUs > 0 {
-				return quotaSource{fmt.Sprintf("%d", q.Spec.GPUQuota.MaxGPUs), "quota"}
+				return quotaSource{Nominal: fmt.Sprintf("%d", q.Spec.GPUQuota.MaxGPUs), Source: "quota"}
 			}
 		}
 	}
-	return quotaSource{kueueUnlimitedQuota, "unlimited"}
+	return quotaSource{Nominal: kueueUnlimitedQuota, Source: "unlimited"}
 }
 
 func tenantNamespaceName(tenant string) string { return tenantNamespacePrefix + tenant }
@@ -228,7 +242,17 @@ func BuildClusterQueue(tenant string, q quotaSource, quotaResources, gpuTypeName
 	flavorQuota := func(flavor string, res []string, nominal func(string) string) map[string]interface{} {
 		rs := []interface{}{}
 		for _, name := range res {
-			rs = append(rs, map[string]interface{}{"name": name, "nominalQuota": nominal(name)})
+			r := map[string]interface{}{"name": name, "nominalQuota": nominal(name)}
+			// Limits only apply to the GPU-quota resources, never the unlimited cpu/memory group.
+			if containsString(quotaResources, name) {
+				if q.BorrowingLimit != nil {
+					r["borrowingLimit"] = fmt.Sprintf("%d", *q.BorrowingLimit)
+				}
+				if q.LendingLimit != nil {
+					r["lendingLimit"] = fmt.Sprintf("%d", *q.LendingLimit)
+				}
+			}
+			rs = append(rs, r)
 		}
 		return map[string]interface{}{"name": flavor, "resources": rs}
 	}
@@ -267,8 +291,12 @@ func BuildClusterQueue(tenant string, q quotaSource, quotaResources, gpuTypeName
 		})
 	}
 
+	cohort := KueueCohort
+	if q.Cohort != "" {
+		cohort = q.Cohort
+	}
 	obj := newObject("ClusterQueue", ClusterQueueName(tenant), "", managedLabels(tenant), map[string]interface{}{
-		"cohort": KueueCohort,
+		"cohort": cohort,
 		"namespaceSelector": map[string]interface{}{
 			"matchLabels": map[string]interface{}{"kubernetes.io/metadata.name": tenantNamespaceName(tenant)},
 		},
@@ -315,9 +343,14 @@ func (r *GryviaKueueReconciler) desired(tenant *gryviav1.GryviaTenant, quotas []
 			_ = unstructured.SetNestedStringMap(f.Object, labels, "spec", "nodeLabels")
 		}
 	}
-	cq := BuildClusterQueue(tenant.Name, tenantQuota(tenant, quotas), r.quotaResources(), typeNames)
+	nominal := tenantQuota(tenant, quotas)
+	cq := BuildClusterQueue(tenant.Name, nominal, r.quotaResources(), typeNames)
 	if r.FairSharing {
-		_ = unstructured.SetNestedField(cq.Object, "1", "spec", "fairSharing", "weight")
+		weight := 1
+		if nominal.Weight > 0 {
+			weight = nominal.Weight
+		}
+		_ = unstructured.SetNestedField(cq.Object, fmt.Sprintf("%d", weight), "spec", "fairSharing", "weight")
 	}
 	if r.AdmissionCheck != "" {
 		_ = unstructured.SetNestedSlice(cq.Object, []interface{}{map[string]interface{}{"name": r.AdmissionCheck}}, "spec", "admissionChecksStrategy", "admissionChecks")
