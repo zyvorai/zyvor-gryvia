@@ -1,0 +1,456 @@
+/* Marketing sections: apple.com-style bands, big display type, bento tiles.
+   Colors come from Infima/custom.css variables so light and dark both work;
+   the "dark" bands are always black with light text, like apple.com product pages. */
+.band {
+  padding: var(--zv-section-space) 0;
+  background: var(--ifm-background-color);
+  color: var(--ifm-font-color-base);
+}
+.bandAlt {
+  padding: var(--zv-section-space) 0;
+  background: #f5f5f7;
+  color: #1d1d1f;
+}
+[data-theme='dark'] .bandAlt {
+  background: #101012;
+  color: #f5f5f7;
+}
+.bandDark {
+  padding: var(--zv-section-space) 0;
+  background: #000;
+  color: #f5f5f7;
+}
+.wrap {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 0 1.5rem;
+}
+.eyebrow {
+  font-size: 0.95rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: #0071e3;
+  margin: 0 0 0.75rem;
+}
+.bandDark .eyebrow {
+  color: #2997ff;
+}
+.display {
+  font-size: clamp(2.25rem, 5.2vw, 4.25rem);
+  line-height: 1.05;
+  font-weight: 650;
+  letter-spacing: -0.03em;
+  margin: 0 0 1.25rem;
+}
+.lede {
+  font-size: clamp(1.1rem, 1.7vw, 1.4rem);
+  line-height: 1.45;
+  max-width: 44rem;
+  color: var(--ifm-font-color-secondary);
+  margin: 0;
+}
+.bandDark .lede {
+  color: #a1a1a6;
+}
+.center {
+  text-align: center;
+}
+.center .lede {
+  margin-left: auto;
+  margin-right: auto;
+}
+.gradient {
+  background: linear-gradient(90deg, #2997ff 0%, #5e5ce6 50%, #bf5af2 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.chip {
+  display: inline-block;
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 0.3rem 0.8rem;
+  border-radius: 999px;
+  border: 1px solid rgba(245, 245, 247, 0.28);
+  color: #f5f5f7;
+  margin-bottom: 1.5rem;
+}
+.ctaRow {
+  display: flex;
+  gap: 1rem;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin-top: 2rem;
+}
+.pill {
+  display: inline-block;
+  padding: 0.8rem 1.6rem;
+  border-radius: 999px;
+  font-weight: 600;
+  font-size: 1.05rem;
+  text-decoration: none !important;
+  transition: transform 0.2s ease, background 0.2s ease;
+}
+.pill:hover {
+  transform: scale(1.03);
+}
+.pillPrimary {
+  background: #0071e3;
+  color: #fff !important;
+}
+.pillPrimary:hover {
+  background: #0077ed;
+}
+.pillGhost {
+  border: 1px solid rgba(245, 245, 247, 0.4);
+  color: #f5f5f7 !important;
+}
+.linkArrow {
+  font-weight: 600;
+  text-decoration: none;
+}
+.linkArrow::after {
+  content: ' \203A';
+}
+
+/* hero */
+.hero {
+  position: relative;
+  overflow: hidden;
+  background: #000;
+  color: #f5f5f7;
+  padding: clamp(4rem, 9vw, 8rem) 0 0;
+  text-align: center;
+}
+.heroTitle {
+  font-size: clamp(2.9rem, 7.2vw, 6rem);
+  line-height: 1;
+  font-weight: 700;
+  letter-spacing: -0.04em;
+  margin: 0 0 1.25rem;
+}
+.heroSub {
+  font-size: clamp(1.1rem, 1.9vw, 1.5rem);
+  color: #a1a1a6;
+  max-width: 40rem;
+  margin: 0 auto;
+  line-height: 1.4;
+}
+.heroArt {
+  width: min(1100px, 100%);
+  margin: 3rem auto 0;
+  display: block;
+}
+
+/* how it works: sticky scroll story */
+.story {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
+  gap: 3rem;
+  align-items: start;
+}
+.steps {
+  display: flex;
+  flex-direction: column;
+}
+.step {
+  min-height: 62vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  opacity: 0.35;
+  transition: opacity 0.4s ease;
+}
+.stepActive {
+  opacity: 1;
+}
+.stepNum {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #2997ff;
+  margin-bottom: 0.5rem;
+}
+.stepTitle {
+  font-size: clamp(1.7rem, 3vw, 2.5rem);
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  margin: 0 0 0.75rem;
+}
+.stepText {
+  font-size: 1.15rem;
+  line-height: 1.5;
+  color: #a1a1a6;
+  margin: 0;
+}
+.stage {
+  position: sticky;
+  top: 6rem;
+  height: min(70vh, 560px);
+  border-radius: 28px;
+  background: radial-gradient(120% 120% at 50% 0%, #15151a 0%, #0a0a0c 70%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+}
+.stage svg {
+  width: 92%;
+  height: auto;
+}
+
+/* bento grid */
+.bento {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 1rem;
+  margin-top: 3.5rem;
+}
+.tileCell {
+  grid-column: span 2;
+  display: flex;
+}
+.tileCellWide {
+  grid-column: span 3;
+}
+.tile {
+  flex: 1;
+  border-radius: 28px;
+  padding: 1.75rem;
+  background: var(--ifm-background-surface-color);
+  color: var(--ifm-font-color-base);
+  border: 1px solid var(--ifm-color-emphasis-300);
+  text-decoration: none !important;
+  display: flex;
+  flex-direction: column;
+  min-height: 300px;
+  transition: transform 0.25s ease, box-shadow 0.25s ease;
+}
+.tile:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.14);
+}
+.tileTitle {
+  font-size: 1.5rem;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  margin: 0 0 0.5rem;
+}
+.tileText {
+  color: var(--ifm-font-color-secondary);
+  margin: 0;
+  line-height: 1.45;
+}
+.tileArt {
+  margin-top: auto;
+  padding-top: 1.25rem;
+}
+.tileArt svg {
+  width: 100%;
+  height: auto;
+  max-height: 120px;
+}
+.badge {
+  display: inline-block;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  background: rgba(0, 113, 227, 0.12);
+  color: #0071e3;
+  margin-bottom: 0.75rem;
+  align-self: flex-start;
+}
+[data-theme='dark'] .badge {
+  background: rgba(41, 151, 255, 0.18);
+  color: #2997ff;
+}
+
+/* queue diagram */
+.queueCard {
+  margin-top: 3rem;
+  border-radius: 28px;
+  background: #0a0a0c;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  padding: clamp(1.25rem, 3vw, 2.5rem);
+  color: #f5f5f7;
+}
+.queueCaption {
+  min-height: 3.2rem;
+  font-size: 1.1rem;
+  color: #d2d2d7;
+  margin: 1.25rem 0 0;
+}
+.queueDots {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+.queueDot {
+  width: 28px;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.18);
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+.queueDotOn {
+  background: #2997ff;
+}
+.fineprint {
+  font-size: 0.9rem;
+  color: #86868b;
+  margin-top: 1rem;
+}
+
+/* install */
+.tabs {
+  display: inline-flex;
+  gap: 0.25rem;
+  padding: 0.25rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  margin-bottom: 1.25rem;
+  flex-wrap: wrap;
+}
+.tab {
+  border: 0;
+  background: transparent;
+  color: #d2d2d7;
+  font-weight: 600;
+  padding: 0.5rem 1.1rem;
+  border-radius: 999px;
+  cursor: pointer;
+  font-size: 0.95rem;
+}
+.tabOn {
+  background: #f5f5f7;
+  color: #1d1d1f;
+}
+.term {
+  text-align: left;
+  border-radius: 20px;
+  background: #0a0a0c;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+  color: #f5f5f7;
+}
+.termBar {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.7rem 1rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+.termDot {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+}
+.termCopy {
+  margin-left: auto;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: transparent;
+  color: #d2d2d7;
+  border-radius: 999px;
+  padding: 0.2rem 0.8rem;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+.termBody {
+  margin: 0;
+  padding: 1.25rem 1.25rem 1.4rem;
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 0.95rem;
+  line-height: 1.7;
+  overflow-x: auto;
+  white-space: pre;
+  background: transparent;
+  color: #f5f5f7;
+}
+.termNote {
+  margin: 1rem 0 0;
+  color: #a1a1a6;
+  font-size: 0.95rem;
+}
+.installGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+  margin-top: 2.5rem;
+}
+.installStep {
+  border-radius: 24px;
+  padding: 1.5rem;
+  background: var(--ifm-background-surface-color);
+  border: 1px solid var(--ifm-color-emphasis-300);
+}
+.installStep h3 {
+  margin: 0 0 0.4rem;
+  letter-spacing: -0.01em;
+}
+
+/* architecture page */
+.archGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+  margin-top: 2.5rem;
+}
+.archCard {
+  border-radius: 24px;
+  padding: 1.5rem;
+  border: 1px solid var(--ifm-color-emphasis-300);
+  background: var(--ifm-background-surface-color);
+  color: var(--ifm-font-color-base);
+  text-decoration: none !important;
+  transition: transform 0.2s ease;
+}
+.archCard:hover {
+  transform: translateY(-3px);
+}
+.archCard h3 {
+  margin: 0 0 0.35rem;
+}
+.archCard p {
+  margin: 0;
+  color: var(--ifm-font-color-secondary);
+}
+
+@media (max-width: 996px) {
+  .story {
+    grid-template-columns: 1fr;
+  }
+  .stage {
+    position: relative;
+    top: 0;
+    order: -1;
+    height: 320px;
+  }
+  .step {
+    min-height: auto;
+    padding: 1.5rem 0;
+    opacity: 1;
+  }
+  .bento,
+  .installGrid,
+  .archGrid {
+    grid-template-columns: 1fr;
+  }
+  .tileCell,
+  .tileCellWide {
+    grid-column: auto;
+  }
+  .tile {
+    min-height: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tile,
+  .pill,
+  .archCard,
+  .step {
+    transition: none;
+  }
+}
