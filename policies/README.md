@@ -9,7 +9,7 @@ Advanced scheduling policies for optimizing GPU resource allocation in Gryvia.
 > policy switching. What is implemented today, in `operators/ai-operator/pkg/scheduler`: the `GryviaAIJob`
 > controller picks nodes with a fixed heuristic (ready nodes with enough free GPUs, `nodeSelector`,
 > then a score favouring matching `gryvia.io/gpu` label, RDMA and NVLink/NVSwitch labels, free GPUs and
-> GPU memory). There is no in-tree gang scheduler or DRF fair-share queue (unused code for these was removed). Quota limits (max GPUs, running jobs, allowed GPU
+> GPU memory). Gang admission and queues come from Kueue or the opt-in native queue gate ([docs/native-scheduler.md](../docs/native-scheduler.md)); nothing else here enforces DRF. Quota limits (max GPUs, running jobs, allowed GPU
 > types, hard budget) are enforced by the quota operator by rejecting pending jobs. Backfilling, bin
 > packing, locality, topology-aware, SLA and preemption policies, borrowing and the percentages and
 > savings quoted below are design targets, not measured. `GryviaPriority` maps to a

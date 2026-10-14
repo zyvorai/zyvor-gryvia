@@ -83,7 +83,7 @@ running containers. It is early: see [What works today](#what-works-today) befor
 Jobs are checked and scored against GPU type, RDMA/SR-IOV labels, NVLink/NVSwitch interconnect and free GPUs, then run
 as an Indexed batch Job (training, fine-tuning, evaluation: they complete) or a StatefulSet (inference), pinned by node
 selector. Gang admission, quota borrowing and priority preemption come from the opt-in Kueue integration (off by default;
-kind e2e passes in CI with real Kueue and CPU pods, nothing on GPUs); the operator has no in-tree gang, DRF or preemption scheduler.<br>
+kind e2e passes in CI with real Kueue and CPU pods, nothing on GPUs); the operator also has an opt-in native queue gate (`--native-queue-scheduler`: queue guarantees, borrowing, gang admission and priority preemption; unit-tested, alpha, mutually exclusive with Kueue, [native scheduler](docs/native-scheduler.md)).<br>
 [Scheduling guide](website/docs/guides/SCHEDULING.md)
 
 </td>
@@ -145,7 +145,7 @@ Gryvia runs on Kubernetes and uses NVIDIA's GPU Operator for drivers; this is wh
 | Capability | Vanilla K8s + GPU Operator | Gryvia today |
 |---|---|---|
 | Job spec | Pods, Jobs and StatefulSets you write | One `GryviaAIJob` (type, gpus, gpuType, distributed); the operator creates an Indexed Job (or a StatefulSet for inference), the headless Service and the PVC |
-| Job placement | Default scheduler (first-fit) | The operator filters and scores nodes (GPU type, RDMA/SR-IOV, NVLink, free GPUs, memory) and records the choice in the job status; pods are pinned by node selector and placed by the default scheduler. Gang admission needs the opt-in Kueue integration (kind e2e with CPU pods passes in CI; not run on GPUs); the operator's own gang scheduler is library code. A single job is already placed all-or-nothing; the opt-in `--placement-holds` keeps jobs placed at the same moment from counting the same free GPUs (advisory: pods are not pinned to the chosen nodes) |
+| Job placement | Default scheduler (first-fit) | The operator filters and scores nodes (GPU type, RDMA/SR-IOV, NVLink, free GPUs, memory) and records the choice in the job status; pods are pinned by node selector and placed by the default scheduler. Gang admission needs the opt-in Kueue integration (kind e2e with CPU pods passes in CI; not run on GPUs); the opt-in native queue gate (`--native-queue-scheduler`) admits gangs itself without Kueue, unit-tested only. A single job is already placed all-or-nothing; the opt-in `--placement-holds` keeps jobs placed at the same moment from counting the same free GPUs (advisory: pods are not pinned to the chosen nodes) |
 | RDMA/NVLink setup | Manual | Network operator (optional) creates device plugins and Multus attachments; unverified on hardware |
 | Storage for training | Standard CSI | Storage operator (optional) for VAST, Weka, DDN, Lustre and CephFS backends; unverified on real storage |
 | GPU failure handling | Manual intervention | Node readiness and per-GPU health on `GryviaGpuNode` (DCGM); no automated remediation |
@@ -212,7 +212,7 @@ ready, have the wrong `gryvia.io/gpu` type, lack the requested RDMA/SR-IOV label
 memory, plus CPU/memory) and takes the top `distributed.nodes`. It records that choice in `status.nodesAllocated` (and
 keeps the job Pending, retrying every 30 s, when no node qualifies); the workload's pods (Job or StatefulSet) are constrained by node
 selector (`gryvia.io/gpu`, `gryvia.io/rdma`, `spec.nodeSelector`) and placed by the default Kubernetes scheduler. The
-There is no in-tree gang scheduler, DRF queue or preemption, and elastic jobs resize live on request (`distributed.elastic.desiredNodes`, the gateway or the dashboard; kind e2e grow and shrink, no automatic sizing from free capacity; see docs/elastic-training.md) (Kueue, when its integration is on, does gang admission, borrowing and priority preemption instead; unverified on a cluster), and the standalone NVLink/NUMA
+The only in-tree gang, queue and preemption logic is the opt-in native queue gate (`--native-queue-scheduler`, alpha, unit-tested, not run on a cluster in CI or on GPUs; see [docs/native-scheduler.md](docs/native-scheduler.md)), and elastic jobs resize live on request (`distributed.elastic.desiredNodes`, the gateway or the dashboard; kind e2e grow and shrink, no automatic sizing from free capacity; see docs/elastic-training.md) (Kueue, when its integration is on, does gang admission, borrowing and priority preemption instead; unverified on a cluster), and the standalone NVLink/NUMA
 topology optimizer in `scheduler/` is not called by the running operator. Opt-in fabric-aware ranking (`--fabric-aware-scheduling`, chart `aiOperator.fabricAwareScheduling`, or the per-job annotation `gryvia.io/fabric-aware`) subtracts up to 25 points from nodes whose fresh `GryviaNodeFabric` signal reports a sick fabric; it is off by default, unit-tested, and never run on a real fabric. Detail:
 [Scheduling guide](website/docs/guides/SCHEDULING.md).
 
@@ -342,6 +342,7 @@ Storage and network throughput depend on the hardware, filesystem and fabric you
 | GPU nodes (NVIDIA GPU Operator, k3s bootstrap) | [guides/GPU_NODES.md](website/docs/guides/GPU_NODES.md) · [docs/gpu-validation.md](docs/gpu-validation.md) |
 | NVIDIA one-click (RDMA, GDS, MIG, Network and NIM operators) | [guides/NVIDIA_ONE_CLICK.md](website/docs/guides/NVIDIA_ONE_CLICK.md) |
 | Admission and recovery (strict Kueue admission, checkpoint hooks) | [docs/admission-recovery.md](docs/admission-recovery.md) |
+| Native queue scheduler (opt-in queues, gang admission, priority preemption, fractional GPU) | [docs/native-scheduler.md](docs/native-scheduler.md) |
 | Job submission preflight (dry-run admission preview, opt-in enforce on create) | [docs/job-submission-preflight.md](docs/job-submission-preflight.md) |
 | Inference serving (GPU/RPS autoscaling, Gateway canaries, SLO gating) | [docs/inference-serving.md](docs/inference-serving.md) |
 | Operations (upgrade, uninstall, backup) | [guides/OPERATIONS.md](website/docs/guides/OPERATIONS.md) |
