@@ -1,1 +1,0 @@
-{"tenant":"default","runtime":"llama","model":"Local llama server","memoryGiB":6,"priority":80,"mode":"exclusive","timeoutSeconds":86400,"args":["-m","/absolute/path/to/model.gguf","--host","127.0.0.1","--port","8080","-ngl","99","--ctx-size","4096"]}
