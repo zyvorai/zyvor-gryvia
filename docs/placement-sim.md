@@ -17,6 +17,8 @@ Whole-GPU jobs, nodes as bins of GPUs, arrival-order queue with optional backfil
 
 On the Janus cluster configs without those features (`priority_fifo`, `single_gpu`, `rl_small`, `preemption_priority`) the numbers match Janus exactly. On `small_h100` the makespan is 7800 s here against 8294.67 s in Janus, the difference being exactly Janus' 494.67 s topology inflation. Configs that use preemption, MIG, gang timeouts or topology differ, as expected.
 
+To replay a live Gryvia cluster in Janus under other scheduler policies, see [Replaying a Gryvia cluster in Janus](janus-export.md).
+
 This checks placement quality only. It says nothing about NCCL, RDMA, eBPF or training performance, which still need hardware.
 
 ## Finding
