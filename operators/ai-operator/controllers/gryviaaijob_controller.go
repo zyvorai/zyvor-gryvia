@@ -385,6 +385,11 @@ func (r *GryviaAIJobReconciler) reconcileAIJob(ctx context.Context, job *gryviav
 			return ctrl.Result{RequeueAfter: 10 * time.Second}, err
 		}
 	}
+	if r.KAIScheduler {
+		if err := r.syncKAIWaiting(ctx, job); err != nil {
+			log.Error(err, "Failed to read KAI scheduling state of pods")
+		}
+	}
 
 	// Set CompletionTime when job transitions to terminal state
 	if (job.Status.Phase == PhaseSucceeded || job.Status.Phase == PhaseFailed) && job.Status.CompletionTime == nil {

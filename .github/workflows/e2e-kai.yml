@@ -11,6 +11,7 @@ on:
     branches: [ main ]
     paths:
       - 'operators/ai-operator/**'
+      - 'operators/quota-operator/**'
       - 'helm/**'
       - 'crds/**'
       - 'scripts/e2e-kai.sh'
@@ -45,3 +46,5 @@ jobs:
         run: ./scripts/e2e-kai.sh fraction
       - name: A gang larger than the queue never starts partially
         run: ./scripts/e2e-kai.sh gang
+      - name: A tenant gets its own KAI queue
+        run: ./scripts/e2e-kai.sh tenant

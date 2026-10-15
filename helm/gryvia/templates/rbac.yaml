@@ -552,6 +552,21 @@ rules:
       - watch
       - patch
   {{- end }}
+  {{- if (dig "quotaOperator" "kaiIntegration" false .Values.AsMap) }}
+  # quotaOperator.kaiIntegration: per-tenant KAI Scheduler queues
+  - apiGroups:
+      - scheduling.run.ai
+    resources:
+      - queues
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+      - update
+      - patch
+      - delete
+  {{- end }}
   {{- if .Values.quotaOperator.kueueIntegration }}
   # quotaOperator.kueueIntegration: per-tenant ClusterQueue, LocalQueue and ResourceFlavors
   - apiGroups:

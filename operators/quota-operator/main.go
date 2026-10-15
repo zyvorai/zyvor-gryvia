@@ -40,7 +40,7 @@ func main() {
 	var metricsAddr string
 	var enableLeaderElection bool
 	var probeAddr string
-	var kueueIntegration, kueueGPUTypeFlavors bool
+	var kueueIntegration, kueueGPUTypeFlavors, kaiIntegration bool
 	var kueueQuotaResources, kueueTopology, kueueAdmissionCheck string
 	var kueueFairSharing, kueueGenerateTopology bool
 	var tenantRBAC, enableReservations bool
@@ -67,6 +67,8 @@ func main() {
 		"With --kueue-integration: comma-separated resources the tenant's nominal quota (concurrentGPUs, else the GryviaQuota maxGPUs) is applied to. The kind e2e sets cpu.")
 	flag.BoolVar(&kueueGPUTypeFlavors, "kueue-gpu-type-flavors", false,
 		"With --kueue-integration: one ResourceFlavor per enabled GryviaGpuSku gpuType (node label gryvia.io/gpu=<type>) in every ClusterQueue. Each flavor gets the full nominal quota; see docs/kueue-integration.md.")
+	flag.BoolVar(&kaiIntegration, "kai-integration", false,
+		"Create a KAI Scheduler Queue gryvia-<tenant> (under the parent queue gryvia, GPU quota from concurrentGPUs or the GryviaQuota maxGPUs) for every GryviaTenant and label the tenant namespace gryvia.io/kai-queue. Needs KAI Scheduler installed. Off by default; cannot be combined with --kueue-integration.")
 	flag.BoolVar(&slurmIntegration, "slurm-integration", false,
 		"Create a Slinky NodeSet (and so the Slurm partition gryvia-<tenant>) for every GryviaTenant and record finished Slurm jobs as GryviaUsageRecords. Needs SchedMD's slurm-operator and a Controller CR. Off by default.")
 	flag.StringVar(&slurmNamespace, "slurm-namespace", "", "With --slurm-integration: namespace of the Slurm Controller CR, the NodeSets and the token Secret.")
@@ -156,6 +158,20 @@ func main() {
 			Scheme: mgr.GetScheme(),
 		}).SetupWithManager(mgr); err != nil {
 			setupLog.Error(err, "unable to create controller", "controller", "GryviaLedger")
+			os.Exit(1)
+		}
+	}
+
+	if kaiIntegration && kueueIntegration {
+		setupLog.Error(nil, "--kai-integration and --kueue-integration are mutually exclusive")
+		os.Exit(1)
+	}
+	if kaiIntegration {
+		if err = (&controllers.GryviaKAIReconciler{
+			Client: mgr.GetClient(),
+			Scheme: mgr.GetScheme(),
+		}).SetupWithManager(mgr); err != nil {
+			setupLog.Error(err, "unable to create controller", "controller", "GryviaKAI")
 			os.Exit(1)
 		}
 	}

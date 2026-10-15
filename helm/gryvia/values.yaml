@@ -253,6 +253,12 @@ quotaOperator:
   kueueQuotaResources: nvidia.com/gpu
   # One ResourceFlavor per enabled GryviaGpuSku gpuType in each ClusterQueue (see the doc for the caveat).
   kueueGpuTypeFlavors: false
+  # KAI Scheduler queue per GryviaTenant (--kai-integration, off by default): Queue gryvia-<tenant> under the parent
+  # queue gryvia, GPU quota from spec.quotas.concurrentGPUs (limit quota + borrowingLimit, else unlimited), and the
+  # tenant namespace labelled gryvia.io/kai-queue so jobs there use it. Turn it on together with
+  # aiOperator.kaiScheduler; not with kueueIntegration. Adds scheduling.run.ai queues to the operators ClusterRole.
+  # See docs/kai-scheduler.md.
+  kaiIntegration: false
   # Slurm partition per GryviaTenant (--slurm-integration, off by default): a Slinky NodeSet gryvia-<tenant> (and so
   # the partition gryvia-<tenant>) next to the Slurm Controller CR, and finished jobs of those partitions read from
   # slurmrestd into GryviaUsageRecords (kind slurm). Needs Slinky's slurm-operator and a Slurm cluster: slurmOperator

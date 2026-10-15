@@ -15,9 +15,14 @@ package controllers
 // scripts/e2e-kai.sh with a simulated GPU (fake-gpu-operator); never on GPU hardware.
 
 import (
+	"context"
+	"fmt"
 	"strconv"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	gryviav1 "github.com/zyvorai/gryvia/operators/ai-operator/api/v1"
 	"github.com/zyvorai/gryvia/operators/ai-operator/pkg/scheduler"
@@ -35,12 +40,80 @@ const (
 	AnnotationKAIGPUMemory   = "gpu-memory"
 	// DefaultKAIQueue is the leaf queue a fresh KAI install creates.
 	DefaultKAIQueue = "default-queue"
+	// LabelKAIQueueNamespace on a namespace names the KAI queue of its jobs that name none.
+	LabelKAIQueueNamespace = "gryvia.io/kai-queue"
+	// ReasonUnschedulable is the Ready condition reason while KAI reports a pod of the job as unschedulable.
+	ReasonUnschedulable = "Unschedulable"
+
+	kaiMessageMax = 400
 )
 
-// kaiQueue is the KAI queue of a job.
+// syncKAIWaiting copies why KAI holds a waiting job's pods (their PodScheduled=False condition) into the job's
+// message and Ready condition, so `gryvia status` and the dashboard show it without access to KAI's PodGroups.
+func (r *GryviaAIJobReconciler) syncKAIWaiting(ctx context.Context, job *gryviav1.GryviaAIJob) error {
+	if job.Status.Phase != PhaseScheduling {
+		return nil
+	}
+	pods := &corev1.PodList{}
+	if err := r.List(ctx, pods, client.InNamespace(job.Namespace), client.MatchingLabels{"gryvia.io/job": job.Name}); err != nil {
+		return err
+	}
+	waiting, why := 0, ""
+	for i := range pods.Items {
+		p := &pods.Items[i]
+		if p.Spec.SchedulerName != KAISchedulerName || p.Spec.NodeName != "" || p.DeletionTimestamp != nil {
+			continue
+		}
+		for _, c := range p.Status.Conditions {
+			if c.Type == corev1.PodScheduled && c.Status == corev1.ConditionFalse && c.Reason == corev1.PodReasonUnschedulable {
+				waiting++
+				if why == "" {
+					why = kaiReason(c.Message)
+				}
+			}
+		}
+	}
+	if waiting == 0 {
+		return nil
+	}
+	msg := fmt.Sprintf("KAI Scheduler (queue %s) cannot place %d pod(s)", r.kaiQueue(job), waiting)
+	if why != "" {
+		msg += ": " + why
+	}
+	job.Status.Message = msg
+	r.updateCondition(job, ConditionReady, metav1.ConditionFalse, ReasonUnschedulable, msg)
+	return nil
+}
+
+// kaiReason shortens KAI's PodScheduled message: it drops the "Scheduling conditions were not met for pod ..." header
+// and joins the remaining lines.
+func kaiReason(m string) string {
+	var parts []string
+	for _, line := range strings.Split(m, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "Scheduling conditions were not met") {
+			continue
+		}
+		parts = append(parts, line)
+	}
+	s := strings.Join(parts, "; ")
+	if len(s) > kaiMessageMax {
+		s = s[:kaiMessageMax] + "..."
+	}
+	return s
+}
+
+// kaiQueue is the KAI queue of a job: its own, else its namespace's (label gryvia.io/kai-queue, set on tenant
+// namespaces by the quota-operator's --kai-integration), else the default queue.
 func (r *GryviaAIJobReconciler) kaiQueue(job *gryviav1.GryviaAIJob) string {
 	if q := queueFromSpec(job); q != "" {
 		return q
+	}
+	ns := &corev1.Namespace{}
+	if r.Client != nil && r.Get(context.TODO(), client.ObjectKey{Name: job.Namespace}, ns) == nil {
+		if q := ns.Labels[LabelKAIQueueNamespace]; q != "" {
+			return q
+		}
 	}
 	if r.KAIDefaultQueue != "" {
 		return r.KAIDefaultQueue
