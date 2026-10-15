@@ -17,7 +17,7 @@ sources:
   - https://github.com/zyvorai/netra
 dependencies:
   - name: gryvia
-    version: 1.0.0
+    version: 0.1.0
     repository: file://../gryvia
   # Zyntra publishes its chart to GHCR on release (zyntra .github/workflows/image.yml).
   - name: zyntra
