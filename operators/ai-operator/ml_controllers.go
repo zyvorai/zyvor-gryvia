@@ -1,7 +1,11 @@
 package main
 
 import (
+	"bytes"
 	"flag"
+	"fmt"
+	"net/url"
+	"os"
 	"time"
 
 	gryviav1 "github.com/zyvorai/gryvia/operators/ai-operator/api/v1"
@@ -17,6 +21,9 @@ type mlOptions struct {
 
 	workspaceJupyterImage string
 	workspaceCodeImage    string
+	workspacePublicURL    string
+	workspaceProxyKeyFile string
+	platformNamespace     string
 
 	inferenceImageVLLM       string
 	inferenceImageTriton     string
@@ -48,6 +55,30 @@ type mlOptions struct {
 	llmKeyNamespace string
 }
 
+// workspaceProxy reads the proxy key; nil when the proxy is not configured.
+func (o *mlOptions) workspaceProxy() (*controllers.WorkspaceProxy, error) {
+	if o.workspacePublicURL == "" && o.workspaceProxyKeyFile == "" {
+		return nil, nil
+	}
+	if o.workspacePublicURL == "" || o.workspaceProxyKeyFile == "" {
+		return nil, fmt.Errorf("--workspace-public-url and --workspace-proxy-key-file must be set together")
+	}
+	if u, err := url.Parse(o.workspacePublicURL); err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
+		return nil, fmt.Errorf("--workspace-public-url %q is not an http(s) URL", o.workspacePublicURL)
+	}
+	key, err := os.ReadFile(o.workspaceProxyKeyFile)
+	if err != nil {
+		return nil, fmt.Errorf("read --workspace-proxy-key-file: %w", err)
+	}
+	key = bytes.TrimSpace(key)
+	if len(key) < 32 {
+		return nil, fmt.Errorf("--workspace-proxy-key-file must hold at least 32 bytes")
+	}
+	return &controllers.WorkspaceProxy{
+		PublicURL: o.workspacePublicURL, TokenKey: key, PlatformNamespace: o.platformNamespace,
+	}, nil
+}
+
 func (o *mlOptions) bind(fs *flag.FlagSet) {
 	fs.BoolVar(&o.enabled, "enable-ml-controllers", true,
 		"Run the GryviaWorkspace, GryviaInferenceService, GryviaModelRegistry, GryviaWorkflow and GryviaAutoTuner controllers.")
@@ -55,6 +86,12 @@ func (o *mlOptions) bind(fs *flag.FlagSet) {
 		"Image of jupyter workspaces whose spec.image is empty.")
 	fs.StringVar(&o.workspaceCodeImage, "workspace-code-image", controllers.DefaultVSCodeImage,
 		"Image of vscode workspaces whose spec.image is empty.")
+	fs.StringVar(&o.workspacePublicURL, "workspace-public-url", "",
+		"Dashboard origin (e.g. https://gryvia.example.com). With --workspace-proxy-key-file, workspaces are opened through the api-gateway at <url>/ws/<namespace>/<name>/.")
+	fs.StringVar(&o.workspaceProxyKeyFile, "workspace-proxy-key-file", "",
+		"File holding the key shared with the api-gateway (GRYVIA_WORKSPACE_PROXY_KEY) that derives Jupyter workspace tokens.")
+	fs.StringVar(&o.platformNamespace, "platform-namespace", "",
+		"Namespace of the api-gateway and ai-operator; workspace NetworkPolicies admit only their pods. Empty: no NetworkPolicy.")
 	fs.StringVar(&o.inferenceImageVLLM, "inference-image-vllm", controllers.DefaultInferenceImages[gryviav1.BackendVLLM],
 		"Image of vllm inference services whose spec.image is empty.")
 	fs.StringVar(&o.inferenceImageTriton, "inference-image-triton", controllers.DefaultInferenceImages[gryviav1.BackendTriton],

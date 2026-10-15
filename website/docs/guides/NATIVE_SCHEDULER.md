@@ -57,7 +57,7 @@ spec:
 | `spec.distributed.nodes`, `gpusPerNode` | Gang size; all members must fit or the job waits |
 | `gryvia.io/gpu-share` | `0.25`, `0.5`, `2`, ... accounted in milli-GPU |
 | `gryvia.io/gpu-isolation` | `auto`, `full`, `mig`, `mps`, `dra` (set it explicitly for MIG or DRA) |
-| `gryvia.io/gpu-memory`, `gryvia.io/mig-profile` | Memory request and explicit MIG profile |
+| `gryvia.io/gpu-memory`, `gryvia.io/mig-profile` | Memory request (picks a MIG profile, or sets the MPS device-memory limit) and explicit MIG profile |
 
 ## 4. Read the result
 
@@ -78,7 +78,7 @@ kubectl describe gryviaaijob train-a
 - Capacity is the sum of node allocatable `nvidia.com/gpu`. A node with no GPU resource contributes zero, so on a GPU-less cluster every GPU job queues unless capacity is advertised.
 - Waiting jobs are ordered by priority, weighted share and FIFO before admission; blocked quota/gang candidates are skipped. Existing admitted reservations are retained.
 - Preemption is deferred while a `GryviaCheckpointGuard` is active; the gate does not checkpoint victims itself.
-- Isolation is the runtime's job: MPS shares compute but does not enforce memory, DRA only emits intent annotations.
+- Isolation is the runtime's job: with MPS the pod gets `CUDA_MPS_ACTIVE_THREAD_PERCENTAGE` and, when `gpu-memory` is set, `CUDA_MPS_PINNED_DEVICE_MEM_LIMIT`; both only take effect when an MPS control daemon serves the GPU (not verified on GPUs). DRA only emits intent annotations.
 - Per-job `gryvia.io/live-telemetry: "true"` enables bounded ranking from validated node telemetry no more than 60 seconds old; missing/invalid observations have no effect. An external collector must supply labels and the observation timestamp.
 
 GPU jobs now wait on invalid/missing policy, unknown queues or unreadable capacity/accounting. CPU-only jobs bypass GPU admission. See `docs/native-scheduler.md` in the repository for observation fields and recovery behavior.

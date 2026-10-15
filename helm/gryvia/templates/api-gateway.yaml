@@ -187,6 +187,13 @@ spec:
           value: {{ . | quote }}
         {{- end }}
         {{- end }}
+        {{- if (dig "workspaceProxy" "enabled" false .Values.AsMap) }}
+        - name: GRYVIA_WORKSPACE_PROXY_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ (dig "workspaceProxy" "existingSecret" "" .Values.AsMap) | default "gryvia-workspace-proxy" | quote }}
+              key: key
+        {{- end }}
         {{- if (dig "apiGateway" "approvals" "productionPromotion" nil .Values.AsMap) }}
         - name: GRYVIA_REQUIRE_PROD_APPROVAL
           value: "1"

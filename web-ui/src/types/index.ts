@@ -6,6 +6,7 @@ export interface GryviaAIJob {
     namespace?: string
     creationTimestamp?: string
     labels?: Record<string, string>
+    annotations?: Record<string, string>
   }
   spec: {
     /** training | inference | fine-tuning | evaluation */

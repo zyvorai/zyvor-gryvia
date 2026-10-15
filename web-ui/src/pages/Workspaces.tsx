@@ -267,6 +267,29 @@ export default function Workspaces() {
   )
 }
 
+/** status.url is a gateway path (/ws/<namespace>/<name>/) when the workspace proxy is on. */
+function isGatewayPath(url: string): boolean {
+  try {
+    return new URL(url, window.location.href).pathname.startsWith('/ws/')
+  } catch {
+    return false
+  }
+}
+
+/** The tab is opened before the request so popup blockers treat it as part of the click. */
+async function openThroughGateway(name: string) {
+  const tab = window.open('', '_blank')
+  if (tab) tab.opener = null
+  try {
+    const { url } = await api.openWorkspace(name)
+    if (tab) tab.location.href = url
+    else window.location.href = url
+  } catch (err) {
+    tab?.close()
+    notify.error(`Could not open ${name}`, err)
+  }
+}
+
 // --- Sub-components ---
 
 function WorkspaceCard({ workspace, now, onPause, onResume, onDelete, pausing, resuming }: {
@@ -286,6 +309,7 @@ function WorkspaceCard({ workspace, now, onPause, onResume, onDelete, pausing, r
   const wsType = workspace.spec?.type || 'jupyter'
   const url = workspace.status?.url
   const canOpen = (phase === 'Running' || phase === 'Idle') && !!url
+  const proxied = !!url && isGatewayPath(url)
   const gpuCount = workspace.spec?.gpuCount
   const gpuText = gpuCount === undefined || gpuCount === null ? '—' : gpuCount === 0 ? 'No GPU' : `${workspace.spec?.gpuType ?? 'GPU'} ×${gpuCount}`
 
@@ -321,7 +345,13 @@ function WorkspaceCard({ workspace, now, onPause, onResume, onDelete, pausing, r
       </div>
 
       <div className="toolbar">
-        {canOpen && (
+        {canOpen && proxied && (
+          <button type="button" className="btn-secondary" onClick={() => openThroughGateway(name)}>
+            Open <span aria-hidden="true">↗</span>
+            <SrOnly> {name} in a new tab</SrOnly>
+          </button>
+        )}
+        {canOpen && !proxied && (
           <>
             <a href={url} target="_blank" rel="noopener noreferrer" className="buttonlike btn-secondary">
               Open <span aria-hidden="true">↗</span>

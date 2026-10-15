@@ -97,6 +97,10 @@ export type JobFormValues = {
   framework: string
   gpuType: string
   gpuCount: number
+  /** '' for whole GPUs, else a fraction of one GPU ('0.25', '0.5', '0.75'). */
+  gpuShare: string
+  /** Optional GPU memory limit in MiB for a shared GPU. */
+  gpuMemoryMiB: string
   memory: string
   cpu: number
   image: string
@@ -117,6 +121,8 @@ export const EMPTY_FORM: JobFormValues = {
   framework: 'pytorch',
   gpuType: 'H100',
   gpuCount: 1,
+  gpuShare: '',
+  gpuMemoryMiB: '',
   memory: '32Gi',
   cpu: 8,
   image: 'nvcr.io/nvidia/pytorch:24.01-py3',
@@ -192,6 +198,7 @@ export function jobToForm(job: GryviaAIJob): { values: JobFormValues; skippedEnv
       framework,
       gpuType: spec?.gpuType || EMPTY_FORM.gpuType,
       gpuCount: spec?.gpus && spec.gpus > 0 ? spec.gpus : 1,
+      ...shareFromAnnotations(job.metadata?.annotations),
       memory: spec?.resources?.requests?.memory ?? EMPTY_FORM.memory,
       cpu: Number.parseInt(String(spec?.resources?.requests?.cpu ?? ''), 10) || EMPTY_FORM.cpu,
       image: spec?.image || EMPTY_FORM.image,
@@ -205,6 +212,38 @@ export function jobToForm(job: GryviaAIJob): { values: JobFormValues; skippedEnv
       env: literals.map((e, i) => ({ id: i + 1, name: e.name, value: e.value ?? '', secret: isSensitiveEnv(e.name) })),
     },
   }
+}
+
+export const GPU_SHARE_ANNOTATION = 'gryvia.io/gpu-share'
+export const GPU_MEMORY_ANNOTATION = 'gryvia.io/gpu-memory'
+export const GPU_SHARES: [string, string][] = [
+  ['', 'Whole GPUs'],
+  ['0.25', '1/4 of a GPU'],
+  ['0.5', '1/2 of a GPU'],
+  ['0.75', '3/4 of a GPU'],
+]
+
+/** Annotations that request part of one GPU (the native queue scheduler enforces them), or none. */
+export function gpuShareAnnotations(values: Pick<JobFormValues, 'gpuShare' | 'gpuMemoryMiB'>): Record<string, string> {
+  if (!values.gpuShare) return {}
+  const out: Record<string, string> = { [GPU_SHARE_ANNOTATION]: values.gpuShare }
+  if (values.gpuMemoryMiB.trim() !== '') out[GPU_MEMORY_ANNOTATION] = values.gpuMemoryMiB.trim()
+  return out
+}
+
+/** Inline error for the shared-GPU fields, or undefined. */
+export function gpuShareError(values: Pick<JobFormValues, 'gpuShare' | 'gpuMemoryMiB' | 'distributedEnabled'>): string | undefined {
+  if (!values.gpuShare) return undefined
+  if (values.distributedEnabled) return 'A shared GPU is for single-pod jobs; turn off distributed training or use whole GPUs.'
+  const mem = values.gpuMemoryMiB.trim()
+  if (mem !== '' && !/^[1-9][0-9]{0,6}$/.test(mem)) return 'GPU memory is a whole number of MiB, for example 20480.'
+  return undefined
+}
+
+function shareFromAnnotations(ann: Record<string, string> | undefined): Pick<JobFormValues, 'gpuShare' | 'gpuMemoryMiB'> {
+  const share = ann?.[GPU_SHARE_ANNOTATION]
+  if (!share || !GPU_SHARES.some(([v]) => v === share)) return { gpuShare: '', gpuMemoryMiB: '' }
+  return { gpuShare: share, gpuMemoryMiB: ann?.[GPU_MEMORY_ANNOTATION] ?? '' }
 }
 
 /** True when the form differs from what it started as (ignoring env row ids). */

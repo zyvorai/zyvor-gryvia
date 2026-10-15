@@ -536,6 +536,10 @@ deps = Deps(
     netra_console_url=os.environ.get("GRYVIA_NETRA_CONSOLE_URL", "").strip().rstrip("/")
     or None,
     sovereign_ca_file=os.environ.get("GRYVIA_SOVEREIGN_CA_FILE", "").strip() or None,
+    workspace_proxy_key=os.environ.get("GRYVIA_WORKSPACE_PROXY_KEY", "")
+    .strip()
+    .encode()
+    or None,
     require_prod_approval=os.environ.get("GRYVIA_REQUIRE_PROD_APPROVAL", "") == "1",
     intelligence_actions=os.environ.get("GRYVIA_INTELLIGENCE_ACTIONS", "") == "1",
     submission_admission=os.environ.get("GRYVIA_SUBMISSION_ADMISSION_ENFORCE", "")

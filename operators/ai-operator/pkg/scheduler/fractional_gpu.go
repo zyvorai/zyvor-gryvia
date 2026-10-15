@@ -128,7 +128,13 @@ func PlanGPURuntime(req GPUShareRequest, nodeLabels map[string]string) (RuntimeP
 		p.ResourceName, p.ResourceQty = "nvidia.com/gpu", 1
 		p.Env["CUDA_MPS_ACTIVE_THREAD_PERCENTAGE"] = strconv.FormatInt(percent, 10)
 		p.Annotations["gryvia.io/mps-active-thread-percentage"] = strconv.FormatInt(percent, 10)
-		p.Reason = "shared GPU through NVIDIA MPS; memory enforcement requires runtime support"
+		p.Reason = "shared GPU through NVIDIA MPS; compute limited by active thread percentage"
+		if req.MemoryMiB > 0 {
+			// The container sees its single allocated GPU as device 0.
+			p.Env["CUDA_MPS_PINNED_DEVICE_MEM_LIMIT"] = "0=" + strconv.FormatInt(req.MemoryMiB, 10) + "M"
+			p.Annotations["gryvia.io/mps-pinned-device-mem-limit-mib"] = strconv.FormatInt(req.MemoryMiB, 10)
+			p.Reason = "shared GPU through NVIDIA MPS; compute and device memory limited per client"
+		}
 	case GPUIsolationDRA:
 		p.Annotations["gryvia.io/dra-milli-gpu"] = strconv.FormatInt(req.MilliGPU, 10)
 		if req.MemoryMiB > 0 {

@@ -899,6 +899,12 @@ export const api = {
     await apiClient.post(`/workspaces/${encodeURIComponent(name)}/resume`)
   },
 
+  /** A short-lived link that signs the browser in to a workspace served through the gateway (/ws/...). */
+  openWorkspace: async (name: string): Promise<{ url: string; expiresIn: number }> => {
+    const { data } = await apiClient.post(`/workspaces/${encodeURIComponent(name)}/open`)
+    return data
+  },
+
   deleteWorkspace: async (name: string): Promise<void> => {
     await apiClient.delete(`/workspaces/${encodeURIComponent(name)}`)
   },
