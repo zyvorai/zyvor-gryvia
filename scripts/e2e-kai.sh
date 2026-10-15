@@ -4,9 +4,11 @@
 #
 #   scripts/e2e-kai.sh install   # fake GPU operator (1 GPU), KAI Scheduler with GPU sharing, a capped queue,
 #                                # Gryvia's ai-operator with --kai-scheduler
-#   scripts/e2e-kai.sh place     # a CPU job is placed by KAI in its queue and Succeeds
+#   scripts/e2e-kai.sh place     # a CPU job is placed by KAI in its queue and Succeeds; a job too big for any node
+#                                # shows KAI's reason in its status message
 #   scripts/e2e-kai.sh fraction  # three half-GPU jobs: two run at once on the one GPU, the third waits for a half
 #   scripts/e2e-kai.sh gang      # a 3-pod job bigger than the queue's CPU limit starts no pod; raising the limit starts all
+#   scripts/e2e-kai.sh tenant    # a GryviaTenant gets KAI queue gryvia-<tenant>; its jobs that name no queue run there
 #   scripts/e2e-kai.sh all
 #
 # kind has no GPUs. fake-gpu-operator (the one KAI's own e2e uses) advertises nvidia.com/gpu and ships the
@@ -148,12 +150,57 @@ YAML
   helm upgrade gryvia ./helm/gryvia --namespace gryvia-system --set namespace.create=false \
     --set nvidiaDevicePlugin.enabled=false --set dcgmExporter.enabled=false --set monitoring.enabled=false \
     --set global.imageTag=dev --set global.imagePullPolicy=Never \
-    --set aiOperator.kaiScheduler=true --wait --timeout 300s
-  kubectl -n gryvia-system rollout restart deploy/gryvia-ai-operator
+    --set aiOperator.kaiScheduler=true --set quotaOperator.kaiIntegration=true --wait --timeout 300s
+  kubectl -n gryvia-system rollout restart deploy/gryvia-ai-operator deploy/gryvia-quota-operator
   kubectl -n gryvia-system rollout status deploy/gryvia-ai-operator --timeout=180s
+  kubectl -n gryvia-system rollout status deploy/gryvia-quota-operator --timeout=180s
   kubectl -n gryvia-system get deploy gryvia-ai-operator -o jsonpath='{.spec.template.spec.containers[0].args}' |
     grep -q -- '--kai-scheduler=true' || fail "ai-operator runs without --kai-scheduler"
   echo "ok: ai-operator runs with --kai-scheduler"
+  kubectl -n gryvia-system get deploy gryvia-quota-operator -o jsonpath='{.spec.template.spec.containers[0].args}' |
+    grep -q -- '--kai-integration=true' || fail "quota-operator runs without --kai-integration"
+  echo "ok: quota-operator runs with --kai-integration"
+}
+
+TENANT=kai-team
+TNS=tenant-${TENANT}
+QUEUE_T=gryvia-${TENANT}
+queue_gpu_is() { # <queue> <quota> <limit>
+  [[ "$(kubectl get queue "$1" -o jsonpath='{.spec.resources.gpu.quota}/{.spec.resources.gpu.limit}/{.spec.parentQueue}' 2>/dev/null)" == "$2/$3/gryvia" ]]
+}
+ns_queue_is() { [[ "$(kubectl get namespace "$1" -o jsonpath='{.metadata.labels.gryvia\.io/kai-queue}' 2>/dev/null)" == "$2" ]]; }
+message_has() { kubectl -n "$1" get gryviaaijob "$2" -o jsonpath='{.status.message}' 2>/dev/null | grep -q "$3"; }
+
+tenant() {
+  kubectl apply -f - <<YAML
+apiVersion: ${API}
+kind: GryviaTenant
+metadata: {name: ${TENANT}}
+spec:
+  displayName: KAI e2e team
+  quotas: {concurrentGPUs: 1, borrowingLimit: 0}
+YAML
+  wait_for 120 "tenant queue ${QUEUE_T} has GPU quota 1, limit 1, parent gryvia" queue_gpu_is "$QUEUE_T" 1 1
+  wait_for 120 "namespace ${TNS} points at ${QUEUE_T}" ns_queue_is "$TNS" "$QUEUE_T"
+  kubectl apply -f - <<YAML
+apiVersion: ${API}
+kind: GryviaAIJob
+metadata: {name: kai-tenant-job, namespace: ${TNS}}
+spec:
+  type: training
+  image: busybox:1.36
+  command: ["sh", "-c", "sleep 5"]
+  gpus: 0
+  resources:
+    requests: {cpu: 100m, memory: 32Mi}
+    limits: {memory: 64Mi}
+YAML
+  wait_for 120 "kai-tenant-job has a pod" bash -c "[[ \$(kubectl -n $TNS get pods -l gryvia.io/job=kai-tenant-job -o name | wc -l) -ge 1 ]]"
+  local q
+  q="$(kubectl -n "$TNS" get pods -l gryvia.io/job=kai-tenant-job -o jsonpath='{.items[0].metadata.labels.kai\.scheduler/queue}')"
+  [[ "$q" == "$QUEUE_T" ]] || fail "job in ${TNS} went to queue '$q', want $QUEUE_T"
+  echo "ok: a job naming no queue runs in its tenant's queue $QUEUE_T"
+  wait_for 180 "kai-tenant-job Succeeded" bash -c "[[ \$(kubectl -n $TNS get gryviaaijob kai-tenant-job -o jsonpath='{.status.phase}') == Succeeded ]]"
 }
 
 place() {
@@ -165,6 +212,22 @@ place() {
   echo "ok: pod uses kai-scheduler in queue $QUEUE"
   wait_for 180 "kai-one Succeeded" is_phase kai-one Succeeded
   kubectl -n "$NS" get gryviaaijob kai-one -o jsonpath='{.status.conditions[?(@.type=="Scheduled")].message}'; echo
+  kubectl apply -f - <<YAML
+apiVersion: ${API}
+kind: GryviaAIJob
+metadata: {name: kai-toobig, namespace: ${NS}}
+spec:
+  type: training
+  image: busybox:1.36
+  command: ["sleep", "5"]
+  gpus: 4
+  queueName: ${QUEUE}
+  resources:
+    requests: {cpu: 100m, memory: 32Mi}
+YAML
+  wait_for 120 "a job too big for any node shows KAI's reason" message_has "$NS" kai-toobig "KAI Scheduler (queue ${QUEUE}) cannot place"
+  kubectl -n "$NS" get gryviaaijob kai-toobig -o jsonpath='{.status.message}'; echo
+  kubectl -n "$NS" delete gryviaaijob kai-toobig --wait=false
 }
 
 HALVES="gryvia.io/job in (kai-half-a,kai-half-b,kai-half-c)"
@@ -227,6 +290,7 @@ case "${1:-all}" in
   place) place ;;
   fraction) fraction ;;
   gang) gang ;;
-  all) install; place; fraction; gang ;;
-  *) echo "usage: $0 install|place|fraction|gang|all" >&2; exit 2 ;;
+  tenant) tenant ;;
+  all) install; place; fraction; gang; tenant ;;
+  *) echo "usage: $0 install|place|fraction|gang|tenant|all" >&2; exit 2 ;;
 esac

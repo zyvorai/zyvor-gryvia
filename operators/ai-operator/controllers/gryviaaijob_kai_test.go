@@ -6,6 +6,8 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	gryviav1 "github.com/zyvorai/gryvia/operators/ai-operator/api/v1"
 )
@@ -56,6 +58,25 @@ func TestKAI_DefaultQueueAndSingletonJob(t *testing.T) {
 	bj, _ = r.buildJob(cpuJob("two"))
 	if got := bj.Spec.Template.Labels[LabelKAIQueue]; got != "team-a" {
 		t.Errorf("queue = %q, want team-a", got)
+	}
+}
+
+func TestKAI_TenantNamespaceQueue(t *testing.T) {
+	tenantNS := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: ns, Labels: map[string]string{LabelKAIQueueNamespace: "gryvia-acme"}}}
+	r, _ := newAIJobReconciler(tenantNS)
+	r.KAIScheduler = true
+	bj, err := r.buildJob(cpuJob("tenant-job"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := bj.Spec.Template.Labels[LabelKAIQueue]; got != "gryvia-acme" {
+		t.Errorf("queue = %q, want the namespace's gryvia-acme", got)
+	}
+	own := cpuJob("own-queue")
+	own.Spec.QueueName = "research"
+	bj, _ = r.buildJob(own)
+	if got := bj.Spec.Template.Labels[LabelKAIQueue]; got != "research" {
+		t.Errorf("queue = %q, want the job's own research", got)
 	}
 }
 
@@ -148,5 +169,64 @@ func TestKAI_ReconcileDelegatesPlacement(t *testing.T) {
 	}
 	if exists(t, c, &appsv1.StatefulSet{}, "deleg") {
 		t.Error("unexpected StatefulSet")
+	}
+}
+
+func kaiPod(name, job string, cond *corev1.PodCondition) *corev1.Pod {
+	p := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ns, Labels: map[string]string{"gryvia.io/job": job}},
+		Spec:       corev1.PodSpec{SchedulerName: KAISchedulerName},
+	}
+	if cond != nil {
+		p.Status.Conditions = []corev1.PodCondition{*cond}
+	}
+	return p
+}
+
+func TestKAI_WaitingJobShowsKAIReason(t *testing.T) {
+	job := newTestAIJob("big", ns)
+	job.Spec.GPUs = 4
+	unsched := &corev1.PodCondition{Type: corev1.PodScheduled, Status: corev1.ConditionFalse, Reason: corev1.PodReasonUnschedulable,
+		Message: "Scheduling conditions were not met for pod ns/big-0-abc:\nMaxNodePoolResources: The pod requires GPU: 4. Max GPU resources available in a single node in the default node-pool is topped at 2.\n"}
+	r, c := newAIJobReconciler(job, kaiPod("big-0-abc", "big", unsched))
+	r.KAIScheduler = true
+	reconcileN(t, r, "big", 4)
+
+	got := getAIJob(t, c, "big")
+	if got.Status.Phase != PhaseScheduling {
+		t.Fatalf("phase = %s", got.Status.Phase)
+	}
+	want := "KAI Scheduler (queue default-queue) cannot place 1 pod(s): MaxNodePoolResources: The pod requires GPU: 4. " +
+		"Max GPU resources available in a single node in the default node-pool is topped at 2."
+	if got.Status.Message != want {
+		t.Errorf("message = %q\nwant      %q", got.Status.Message, want)
+	}
+	var ready *metav1.Condition
+	for i := range got.Status.Conditions {
+		if got.Status.Conditions[i].Type == ConditionReady {
+			ready = &got.Status.Conditions[i]
+		}
+	}
+	if ready == nil || ready.Reason != ReasonUnschedulable || ready.Message != want {
+		t.Errorf("Ready condition = %+v", ready)
+	}
+}
+
+func TestKAI_PendingPodWithoutKAIVerdictLeavesMessage(t *testing.T) {
+	job := newTestAIJob("fresh", ns)
+	r, c := newAIJobReconciler(job, kaiPod("fresh-0-abc", "fresh", nil))
+	r.KAIScheduler = true
+	reconcileN(t, r, "fresh", 4)
+	if got := getAIJob(t, c, "fresh"); got.Status.Message != "" {
+		t.Errorf("message = %q, want empty while KAI has not ruled", got.Status.Message)
+	}
+}
+
+func TestKAIReasonIsTrimmed(t *testing.T) {
+	if got := kaiReason("Scheduling conditions were not met for pod a/b:\n" + strings.Repeat("x", 500)); len(got) != kaiMessageMax+3 {
+		t.Errorf("len = %d", len(got))
+	}
+	if got := kaiReason("a\n\n b \n"); got != "a; b" {
+		t.Errorf("got %q", got)
 	}
 }

@@ -73,6 +73,20 @@ The chart's `kueue.managerConfig.controllerManagerConfigYaml` replaces Kueue's d
 
 If you install Kueue yourself, put the same settings in its Configuration.
 
+### Upgrading an existing release
+
+`helm upgrade` without values resets every opt-in to its default, including `kueue.enabled` and the integration flags,
+and `--reuse-values` does not pick up defaults of keys added since the release was installed (an operator can get an
+empty flag value). Use `--reset-then-reuse-values` (as `OPERATIONS.md` documents) and pass the opt-ins again:
+
+```bash
+helm upgrade gryvia ./helm/gryvia -n gryvia-system --reset-then-reuse-values -f my-opt-ins.yaml
+```
+
+`scripts/deploy-remote.sh` runs a plain `helm upgrade --install` with its own values, so re-apply your opt-ins after it.
+On a small shared node the rolling update also needs a free pod slot per Deployment: a node at its `max-pods` limit
+leaves the new operator pods `Pending` ("Too many pods") and the upgrade times out.
+
 ## Per-tenant objects (quota operator)
 
 For every `GryviaTenant` `t` (only with `--kueue-integration`), a controller named `gryviakueue` (a second controller on the tenant kind; the tenant controller itself is untouched) maintains:

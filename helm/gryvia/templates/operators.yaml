@@ -4,6 +4,9 @@
 {{- if and (dig "aiOperator" "kaiScheduler" false .Values.AsMap) (or .Values.aiOperator.kueueIntegration .Values.aiOperator.nativeQueueScheduler) }}
 {{- fail "aiOperator.kaiScheduler cannot be combined with aiOperator.kueueIntegration or aiOperator.nativeQueueScheduler" }}
 {{- end }}
+{{- if and (dig "quotaOperator" "kaiIntegration" false .Values.AsMap) .Values.quotaOperator.kueueIntegration }}
+{{- fail "quotaOperator.kaiIntegration and quotaOperator.kueueIntegration are mutually exclusive" }}
+{{- end }}
 {{- if and .Values.aiOperator.kueueStrictAdmission (not .Values.aiOperator.kueueIntegration) }}
 {{- fail "aiOperator.kueueStrictAdmission requires aiOperator.kueueIntegration" }}
 {{- end }}
@@ -168,6 +171,9 @@ spec:
             {{- if and (eq $name "ai-operator") (dig "aiOperator" "kaiScheduler" false $.Values.AsMap) }}
             - --kai-scheduler=true
             - --kai-default-queue={{ dig "aiOperator" "kaiDefaultQueue" "default-queue" $.Values.AsMap }}
+            {{- end }}
+            {{- if and (eq $name "quota-operator") (dig "quotaOperator" "kaiIntegration" false $.Values.AsMap) }}
+            - --kai-integration=true
             {{- end }}
             {{- if and (eq $name "quota-operator") $.Values.quotaOperator.kueueIntegration }}
             - --kueue-integration=true
