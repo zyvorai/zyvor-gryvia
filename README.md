@@ -59,8 +59,7 @@ From the Unreleased section of the [changelog](CHANGELOG.md); each entry there s
 
 GPU-type-, interconnect- and quota-aware job admission to reduce idle and fragmented GPUs; hardware access without a
 virtualization layer; per-tenant cost visibility; Kubernetes-native operators and CRDs built for platform teams; open
-source under Apache 2.0. Evaluating Run:ai too? See [Gryvia and Run:ai](website/docs/guides/COMPARE_RUNAI.md) for an
-honest side-by-side, and [Coming from Run:ai?](#coming-from-runai) for the command mapping.
+source under Apache 2.0.
 
 ![Capabilities at a glance: Admit, Tenants, Nodes, Models](docs/ux/readme-capabilities.jpg)
 
@@ -261,28 +260,20 @@ gryvia status                      # platform report; `gryvia status <job-name>`
 The example requests storage from a StorageClass named `vast-fast`; edit or remove that line unless you have one. The
 dashboard's admin view shows jobs from the gateway's namespace (`gryvia-system` with the chart), hence `-n`.
 
-### Coming from Run:ai?
+### Submit without YAML
 
-Most daily commands have a direct counterpart. The CLI writes Gryvia's custom resources, so everything it does is
-also plain YAML you can `kubectl apply` or keep in Git. A full feature comparison, including what Gryvia does not do
-yet, is in [Gryvia and Run:ai](website/docs/guides/COMPARE_RUNAI.md).
+The CLI writes Gryvia's custom resources, so everything it does is also plain YAML you can `kubectl apply` or keep in
+Git. Add `--dry-run` to `gryvia submit` to print the YAML it would create.
 
-| Run:ai | Gryvia |
+| Task | Command |
 |---|---|
-| `runai submit -i pytorch/pytorch -g 1 -- python train.py` | `gryvia submit --image pytorch/pytorch --gpu 1 -- python train.py` |
-| `runai submit ... -g 0.5` (fractional GPU) | `gryvia submit ... --gpu 0.5 [--gpu-memory 20480] [--isolation mps]` (needs `aiOperator.nativeQueueScheduler` or `aiOperator.kaiScheduler`) |
-| `runai submit ... --gpu-memory 20G` | `--gpu 0.25 --gpu-memory 20480` (MiB; picks a MIG profile, or becomes the MPS client memory limit) |
-| `runai submit ... --mig-profile 1g.10gb` | `gryvia submit ... --gpu 1 --mig 1g.10gb` |
-| `runai submit-dist pytorch --workers 3 -g 8` | `gryvia submit ... --gpu 8 --nodes 4` |
-| `runai submit ... -p team-a` | `-n team-a --queue team-a` |
-| `runai list jobs` / `runai describe job x` | `gryvia list jobs` / `gryvia status x` |
-| `runai logs x -f` | `gryvia logs x -f` |
-| `runai delete job x` | `gryvia cancel x` |
-| `runai workspace submit nb --image jupyter/... -g 1` | `gryvia workspace new nb --type jupyter --gpus 1` |
-| (browser) Connect to the workspace | `gryvia workspace open nb` or the dashboard's Workspaces page (needs `workspaceProxy`) |
-| Projects and departments | Tenants, quotas and queues (`gryvia tenant`, `gryvia quota`, `gryvia queue`) |
-
-Add `--dry-run` to `gryvia submit` to print the YAML it would create.
+| Train on one GPU | `gryvia submit --image pytorch/pytorch --gpu 1 -- python train.py` |
+| Fractional GPU | `gryvia submit ... --gpu 0.5 [--gpu-memory 20480] [--isolation mps]` (needs `aiOperator.nativeQueueScheduler` or `aiOperator.kaiScheduler`) |
+| MIG slice | `gryvia submit ... --gpu 1 --mig 1g.10gb` |
+| Multi-node | `gryvia submit ... --gpu 8 --nodes 4` |
+| Team and queue | `-n team-a --queue team-a` |
+| Follow a job | `gryvia list jobs`, `gryvia status x`, `gryvia logs x -f`, `gryvia cancel x` |
+| Notebook | `gryvia workspace new nb --type jupyter --gpus 1`, then `gryvia workspace open nb` or the dashboard's Workspaces page (needs `workspaceProxy`) |
 
 ## GPU servers: drivers, CUDA and the device plugin
 

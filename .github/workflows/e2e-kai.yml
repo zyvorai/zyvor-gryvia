@@ -1,6 +1,6 @@
 name: Kind e2e (KAI Scheduler)
 
-# Runs the KAI Scheduler integration (docs/kai-scheduler.md) on a kind cluster without GPUs: Run:ai's
+# Runs the KAI Scheduler integration (docs/kai-scheduler.md) on a kind cluster without GPUs:
 # fake-gpu-operator for one simulated GPU, KAI Scheduler from its own chart with GPU sharing, Gryvia's ai-operator
 # with --kai-scheduler, a job placed by KAI in its queue, two half-GPU jobs sharing the GPU, and all-or-nothing gang
 # placement of a multi-pod job against a queue's CPU limit. Images are built from the checkout like e2e-kueue.yml.
