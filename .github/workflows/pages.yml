@@ -20,6 +20,8 @@ jobs:
     if: github.repository == 'zyvorai/zyvor-gryvia'
     runs-on: [self-hosted, macOS, ARM64, gryvia-pages]
     steps:
+    # upload-pages-artifact needs GNU tar (gtar) on macOS: brew install gnu-tar.
+    - run: echo /opt/homebrew/bin >> "$GITHUB_PATH"
     - uses: actions/checkout@v4
     - uses: actions/setup-node@v7
       with: {node-version: '22', cache: npm, cache-dependency-path: website/package-lock.json}
