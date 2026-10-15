@@ -5,12 +5,14 @@ resume; the controller is described in [ML controllers](ml-controllers.md#gryvia
 workspace from the browser through the api-gateway (the **workspace proxy**), the CLI, and idle detection.
 
 **Status:** unit-tested (operator: Go tests with a fake client and a stand-in HTTP server; gateway: pytest with a mock
-transport and a mock WebSocket upstream; CLI: Rust unit tests), and run once end to end on a kind cluster
-(`GRYVIA_LOCAL_IMAGES=1 ./scripts/kind-demo.sh`, CPU workspace with `quay.io/jupyter/minimal-notebook`) through the
-dashboard's nginx and the gateway: launch link and cookie, JupyterLab and its API, a kernel running code over the
-WebSocket, refusal without a cookie or with a tampered token, `status.lastActivity` following Jupyter's own activity,
-and the NetworkPolicy blocking a pod in another namespace (kind's kindnet enforces it). code-server and GPU workspaces
-have not been run.
+transport and a mock WebSocket upstream; CLI: Rust unit tests), and run end to end on a kind cluster
+(`GRYVIA_LOCAL_IMAGES=1 ./scripts/kind-demo.sh`, CPU workspaces with `quay.io/jupyter/minimal-notebook` and the
+default `codercom/code-server` image) through the dashboard's nginx and the gateway with `scripts/e2e-workspaces.py`:
+launch link and cookie, refusal without a cookie or with a tampered token (HTTP and WebSocket), JupyterLab's page,
+scripts and API, a kernel running code over the WebSocket, the code-server workbench page and its scripts, its
+`/healthz`, and the editor's WebSocket upgrade. Also checked once by hand: `status.lastActivity` following Jupyter's
+own activity and being set from code-server's `/healthz`, and the NetworkPolicy blocking a pod in another namespace (kind's kindnet enforces
+it). Editing files in code-server from a real browser and GPU workspaces have not been run.
 
 ## Turn it on
 
@@ -28,7 +30,14 @@ your own (at least 32 bytes). The ai-operator reads it with `--workspace-proxy-k
 
 The kind demo turns it on when it builds images from the checkout:
 `GRYVIA_LOCAL_IMAGES=1 ./scripts/kind-demo.sh` creates the CPU workspace `demo-notebook`
-([examples/demo/workspace.yaml](../examples/demo/workspace.yaml)).
+([examples/demo/workspace.yaml](../examples/demo/workspace.yaml)). For VS Code, apply
+[examples/demo/workspace-vscode.yaml](../examples/demo/workspace-vscode.yaml). To check both through the proxy:
+
+```bash
+pip install httpx websockets
+GRYVIA_API_KEY=<key> scripts/e2e-workspaces.py --url https://localhost:8443 --insecure \
+  --jupyter demo-notebook --vscode demo-vscode
+```
 
 ## How a browser gets in
 
