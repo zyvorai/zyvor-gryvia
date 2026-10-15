@@ -56,7 +56,7 @@ jobs:
         with:
           repository: zyvorai/netra
           path: netra
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version-file: zyntra/go.mod
           cache-dependency-path: zyntra/go.sum
