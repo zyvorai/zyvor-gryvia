@@ -1,11 +1,14 @@
 # Requires GitHub Pages with Source = "GitHub Actions" (repo Settings > Pages),
 # enabled once via: gh api repos/zyvorai/gryvia/pages -X POST -f build_type=workflow
 # Publishes the docs site at / and the Helm chart repo at /charts.
+#
+# Runs on the self-hosted Mac mini runner "gryvia-mini" (label gryvia-pages), not the shared hosted pool. If that
+# runner is offline the run waits in the queue. Never add a pull_request trigger: fork code must not run on it.
 name: Deploy Docs Site
 on:
   push:
     branches: [main]
-    paths: ['website/**', 'docs/ux/**', 'helm/**', '.github/workflows/pages.yml']
+    paths: ['website/**', 'docs/ux/**', 'helm/**', 'README.md', '.github/workflows/pages.yml']
   workflow_dispatch: {}
 concurrency:
   group: pages
@@ -14,7 +17,8 @@ permissions:
   contents: read
 jobs:
   build:
-    runs-on: ubuntu-latest
+    if: github.repository == 'zyvorai/zyvor-gryvia'
+    runs-on: [self-hosted, macOS, ARM64, gryvia-pages]
     steps:
     - uses: actions/checkout@v4
     - uses: actions/setup-node@v7
@@ -25,8 +29,8 @@ jobs:
     - name: Package Helm charts into the site
       run: |
         mkdir -p website/build/charts
-        helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
-        helm repo add nvidia https://helm.ngc.nvidia.com/nvidia
+        helm repo add prometheus-community https://prometheus-community.github.io/helm-charts --force-update
+        helm repo add nvidia https://helm.ngc.nvidia.com/nvidia --force-update
         for chart in helm/*/; do
           # Its Zyntra and Netra dependencies come from sibling checkouts (scripts/sovereign-aios-deps.sh).
           [ "$chart" = helm/sovereign-aios/ ] && continue
@@ -39,7 +43,7 @@ jobs:
       with: {path: website/build}
   deploy:
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, macOS, ARM64, gryvia-pages]
     environment: {name: github-pages, url: "${{ steps.deployment.outputs.page_url }}"}
     permissions: {pages: write, id-token: write}
     steps:

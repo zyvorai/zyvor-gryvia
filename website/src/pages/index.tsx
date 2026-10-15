@@ -9,19 +9,40 @@ import InstallCard from '@site/src/components/Marketing/InstallCard';
 import Reveal from '@site/src/components/Reveal';
 import s from '@site/src/components/Marketing/Marketing.module.css';
 
+const REPO_DOCS = 'https://github.com/zyvorai/zyvor-gryvia/blob/main/docs';
+
+const NEW = [
+  {
+    title: 'KAI Scheduler backend',
+    text: 'One Helm value hands placement to KAI: hierarchical queues, gangs, GPU fractions, a queue per tenant, and KAI’s reason on every waiting job.',
+    to: `${REPO_DOCS}/kai-scheduler.md`,
+  },
+  {
+    title: 'Jupyter and VS Code in the browser',
+    text: 'Open a workspace from the dashboard or the CLI through a signed, per-workspace session. Idle workspaces pause and keep their volume.',
+    to: `${REPO_DOCS}/workspaces.md`,
+  },
+  {
+    title: 'Submit without YAML',
+    text: 'gryvia submit --image pytorch/pytorch --gpu 0.5 -- python train.py. Add --dry-run to see the resource it writes.',
+    to: '/docs/guides/CLI_GUIDE',
+  },
+];
+
 export default function Home(): ReactNode {
   return (
     <Layout
-      title="Gryvia: open GPU orchestration for Kubernetes"
-      description="Open GPU orchestration for Kubernetes: GPU-aware placement, queues, quotas, network intelligence and ML workflows as operators and CRDs.">
+      title="Gryvia: the best GPU platform in the world"
+      description="The best GPU platform in the world: GPU-aware placement, KAI Scheduler and Kueue queues, fractional GPUs, browser workspaces, tenants and metering on Kubernetes.">
       <header className={s.hero}>
         <div className={s.wrap}>
-          <span className={s.chip}>Alpha · gryvia.io/v1alpha1</span>
+          <span className={s.chip}>New · KAI Scheduler backend</span>
           <h1 className={s.heroTitle}>
-            GPUs, <span className={s.gradient}>orchestrated.</span>
+            The best GPU platform <span className={s.gradient}>in the world.</span>
           </h1>
           <p className={s.heroSub}>
-            Place, queue and observe GPU workloads with operators and custom resources you already know how to run on Kubernetes.
+            GPU is the new CPU. Gryvia is its scheduler: place, queue, share and meter every GPU in your Kubernetes
+            cluster, and give every team notebooks, IDEs and jobs on top.
           </p>
           <div className={s.ctaRow}>
             <Link className={`${s.pill} ${s.pillPrimary}`} to="/install">Install</Link>
@@ -32,6 +53,28 @@ export default function Home(): ReactNode {
       </header>
 
       <main>
+        <section className={s.band}>
+          <div className={s.wrap}>
+            <Reveal>
+              <p className={s.eyebrow}>New</p>
+              <h2 className={s.display}>
+                Your scheduler. Your notebooks. <span className={s.gradient}>No YAML.</span>
+              </h2>
+            </Reveal>
+            <div className={s.bento}>
+              {NEW.map((t) => (
+                <div key={t.title} className={s.tileCell}>
+                  <Link to={t.to} className={s.tile}>
+                    <span className={s.badge}>New</span>
+                    <h3 className={s.tileTitle}>{t.title}</h3>
+                    <p className={s.tileText}>{t.text}</p>
+                  </Link>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
         <section className={s.bandDark}>
           <div className={s.wrap}>
             <p className={s.eyebrow}>How it works</p>
@@ -123,12 +166,15 @@ export default function Home(): ReactNode {
         <section className={s.band}>
           <div className={`${s.wrap} ${s.center}`}>
             <Reveal>
-              <h2 className={s.display}>Early, and honest about it.</h2>
+              <p className={s.eyebrow}>Where it stands</p>
+              <h2 className={s.display}>Every claim, with its test.</h2>
               <p className={s.lede}>
-                Gryvia is alpha. The API may change before a stable release, most GPU behaviour is unit-tested or run on CPU-only
-                clusters, and performance figures are targets until published benchmarks back them.
+                Gryvia is alpha: the API may change before a stable release. GPU paths are tested on kind with simulated GPUs,
+                fake clients and CPU-only clusters, not yet on GPU hardware, and performance figures are targets until
+                published benchmarks back them. The README's “What works today” lists what was tested and where.
               </p>
               <div className={s.ctaRow}>
+                <Link className={s.linkArrow} to="https://github.com/zyvorai/zyvor-gryvia#what-works-today">What works today</Link>
                 <Link className={s.linkArrow} to="/docs/guides/ROADMAP">Read the roadmap</Link>
                 <Link className={s.linkArrow} to="https://github.com/zyvorai/zyvor-gryvia">View on GitHub</Link>
               </div>

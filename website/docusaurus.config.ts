@@ -4,7 +4,7 @@ import type * as Preset from '@docusaurus/preset-classic';
 
 const config: Config = {
   title: 'Gryvia',
-  tagline: 'Open GPU orchestration for Kubernetes.',
+  tagline: 'The best GPU platform in the world.',
   favicon: 'img/favicon.svg',
 
   future: {

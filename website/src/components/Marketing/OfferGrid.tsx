@@ -56,10 +56,10 @@ const term = (
 
 const TILES: Tile[] = [
   {title: 'GPU-aware placement', text: 'Filters and scores nodes on GPU type, RDMA, NVLink, free GPUs and memory, and says why.', to: '/docs/guides/SCHEDULING', art: bars, wide: true},
-  {title: 'Queues and gangs', text: 'Opt-in Kueue gang admission, or the alpha native gate with guarantees, borrowing and preemption.', to: '/docs/guides/NATIVE_SCHEDULER', badge: 'Alpha', art: stages, wide: true},
+  {title: 'Queues and gangs', text: 'KAI Scheduler, Kueue or the native gate: guarantees, borrowing, all-or-nothing gangs, preemption and a queue per tenant.', to: '/docs/guides/NATIVE_SCHEDULER', badge: 'KAI · Kueue · native', art: stages, wide: true},
   {title: 'Quotas and budgets', text: 'Per-team GPU quotas, hard budgets and metering, enforced by an operator.', to: '/docs/guides/GPU_AS_A_SERVICE', art: gauge},
-  {title: 'Fractional GPUs', text: 'Ask for 0.25 or 0.5 of a GPU; the runtime plan maps to whole GPU, MIG, MPS or DRA.', to: '/docs/guides/NATIVE_SCHEDULER', badge: 'Alpha', art: chips},
-  {title: 'Network intelligence', text: 'eBPF flow telemetry and GPU-communication visibility for Prometheus and Grafana.', to: '/docs/guides/NETWORK_INTELLIGENCE', badge: 'Experimental', art: flow},
+  {title: 'Fractional GPUs', text: 'Ask for 0.25 or 0.5 of a GPU: KAI GPU fractions, or a native plan for whole GPU, MIG, MPS or DRA.', to: '/docs/guides/NATIVE_SCHEDULER', art: chips},
+  {title: 'Network intelligence', text: 'eBPF flow telemetry and GPU-communication visibility for Prometheus and Grafana.', to: '/docs/guides/NETWORK_INTELLIGENCE', art: flow},
   {title: 'CLI, SDKs, dashboard', text: 'A Rust CLI, Go and Python SDKs and a web dashboard over one API.', to: '/docs/guides/CLI_GUIDE', art: term},
 ];
 
