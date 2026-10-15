@@ -2,8 +2,8 @@ apiVersion: v2
 name: gryvia
 description: Gryvia - open GPU orchestration for Kubernetes (operators, API gateway and dashboard)
 type: application
-version: 1.0.0
-appVersion: "1.0.0"
+version: 0.1.0
+appVersion: "0.1.0"
 kubeVersion: ">=1.30.0"
 keywords:
   - gpu
