@@ -27,6 +27,48 @@ fn examples(lines: &[&str]) -> clap::builder::StyledStr {
     out.into()
 }
 
+/// The one-line job flags of `gryvia submit --image ...`; None for other commands or without --image.
+fn inline_job(cmd: &Commands) -> Option<commands::submit::InlineJob> {
+    let Commands::Submit {
+        image: Some(image),
+        name,
+        job_type,
+        gpu,
+        gpu_memory,
+        isolation,
+        gpu_type,
+        mig,
+        nodes,
+        queue,
+        priority,
+        cpu,
+        memory,
+        env,
+        command,
+        ..
+    } = cmd
+    else {
+        return None;
+    };
+    Some(commands::submit::InlineJob {
+        image: image.clone(),
+        name: name.clone(),
+        job_type: job_type.clone(),
+        gpu: *gpu,
+        gpu_memory_mib: *gpu_memory,
+        isolation: isolation.clone(),
+        gpu_type: gpu_type.clone(),
+        mig: mig.clone(),
+        nodes: *nodes,
+        queue: queue.clone(),
+        priority: *priority,
+        cpu: cpu.clone(),
+        memory: memory.clone(),
+        env: env.clone(),
+        command: command.clone(),
+    })
+}
+
 /// Help colors: cyan headings, green commands and flags, yellow placeholders.
 const STYLES: Styles = Styles::styled()
     .header(AnsiColor::Cyan.on_default().effects(Effects::BOLD))
@@ -72,9 +114,12 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Submit an AI training or inference job, or import a Slurm batch script
+    /// Submit an AI training or inference job in one line, from a YAML file, or from a Slurm batch script
     #[command(after_help = examples(&[
-        "gryvia submit --file job.yaml",
+        "gryvia submit --image pytorch/pytorch:2.4.0-cuda12.1-cudnn9-runtime --gpu 1 -- python train.py",
+        "gryvia submit --image vllm/vllm-openai:v0.6.3 --gpu 0.5 --gpu-memory 20480 --type inference",
+        "gryvia submit --image my/trainer:1.0 --gpu 8 --nodes 4 --gpu-type H100 --queue research --wait --logs -- torchrun train.py",
+        "gryvia submit --image busybox:1.36 --dry-run -- echo hello",
         "gryvia submit --file job.yaml --wait --logs",
         "gryvia submit --sbatch train.sh --image pytorch/pytorch:2.4.0-cuda12.1-cudnn9-runtime --dry-run",
     ]))]
@@ -83,8 +128,8 @@ enum Commands {
         #[arg(
             short,
             long,
-            required_unless_present = "sbatch",
-            conflicts_with = "sbatch"
+            required_unless_present_any = ["sbatch", "image"],
+            conflicts_with_all = ["sbatch", "image"]
         )]
         file: Option<String>,
 
@@ -92,13 +137,81 @@ enum Commands {
         #[arg(long, value_name = "SCRIPT")]
         sbatch: Option<String>,
 
-        /// Container image for --sbatch (overrides #SBATCH --container-image)
-        #[arg(long, requires = "sbatch")]
+        /// Container image. Alone: a one-line job (no YAML). With --sbatch: overrides #SBATCH --container-image
+        #[arg(long)]
         image: Option<String>,
 
-        /// With --sbatch: print the GryviaAIJob YAML and warnings without submitting
-        #[arg(long, requires = "sbatch")]
+        /// Print the GryviaAIJob YAML without submitting (one-line or --sbatch)
+        #[arg(long, conflicts_with = "file")]
         dry_run: bool,
+
+        /// Job name (default: generated from the image name)
+        #[arg(long, requires = "image", conflicts_with = "sbatch")]
+        name: Option<String>,
+
+        /// Workload type: training, fine-tuning, evaluation or inference
+        #[arg(long = "type", default_value = "training", requires = "image", conflicts_with = "sbatch",
+              value_parser = ["training", "fine-tuning", "evaluation", "inference"])]
+        job_type: String,
+
+        /// GPUs per pod: a fraction of one GPU (0.25, 0.5) or a whole number (1, 8)
+        #[arg(long, value_name = "N", requires = "image", conflicts_with = "sbatch")]
+        gpu: Option<f64>,
+
+        /// GPU memory limit in MiB for a fractional --gpu (MPS memory limit, or picks the MIG profile)
+        #[arg(long, value_name = "MiB", requires = "gpu")]
+        gpu_memory: Option<u64>,
+
+        /// How a fractional --gpu is isolated
+        #[arg(long, requires = "gpu", value_parser = ["auto", "mps", "mig", "dra"])]
+        isolation: Option<String>,
+
+        /// GPU model, e.g. H100, A100
+        #[arg(long, requires = "image", conflicts_with = "sbatch")]
+        gpu_type: Option<String>,
+
+        /// MIG profile, e.g. 1g.10gb (requests MIG slices instead of whole GPUs)
+        #[arg(
+            long,
+            value_name = "PROFILE",
+            requires = "image",
+            conflicts_with = "sbatch"
+        )]
+        mig: Option<String>,
+
+        /// Number of nodes for a distributed job (each gets --gpu GPUs)
+        #[arg(long, requires = "image", conflicts_with = "sbatch")]
+        nodes: Option<u32>,
+
+        /// Queue (Kueue LocalQueue or native queue)
+        #[arg(long, requires = "image", conflicts_with = "sbatch")]
+        queue: Option<String>,
+
+        /// Priority; higher wins
+        #[arg(long, requires = "image", conflicts_with = "sbatch")]
+        priority: Option<i32>,
+
+        /// CPU request, e.g. 8
+        #[arg(long, requires = "image", conflicts_with = "sbatch")]
+        cpu: Option<String>,
+
+        /// Memory request, e.g. 64Gi
+        #[arg(long, requires = "image", conflicts_with = "sbatch")]
+        memory: Option<String>,
+
+        /// Environment variable KEY=VALUE (repeatable)
+        #[arg(
+            short = 'e',
+            long = "env",
+            value_name = "KEY=VALUE",
+            requires = "image",
+            conflicts_with = "sbatch"
+        )]
+        env: Vec<String>,
+
+        /// Command and arguments after `--`
+        #[arg(last = true, value_name = "COMMAND")]
+        command: Vec<String>,
 
         /// Wait for job to complete
         #[arg(short, long)]
@@ -445,6 +558,18 @@ enum Commands {
         action: AgentsCommands,
     },
 
+    /// Workspaces: Jupyter and VS Code environments with GPUs, opened in the browser
+    ///
+    /// A GryviaWorkspace (namespaced, -n) runs one notebook or code-server pod with optional GPUs and storage that
+    /// survives pause and resume. `open` goes through the api-gateway (GRYVIA_GATEWAY_URL) when the chart's
+    /// workspaceProxy is on.
+    #[command(visible_alias = "ws")]
+    #[command(after_help = examples(&["gryvia workspace new nb --type jupyter --gpus 1 --storage 50Gi --idle-timeout 60 --idle-pause", "gryvia workspace list", "gryvia workspace open nb", "gryvia workspace pause nb", "gryvia workspace delete nb --yes"]))]
+    Workspace {
+        #[command(subcommand)]
+        action: WorkspaceCommands,
+    },
+
     /// Interactive job creation wizard
     #[command(after_help = examples(&["gryvia create job"]))]
     Create {
@@ -610,6 +735,68 @@ enum ModelsCommands {
         /// Skip the confirmation prompt
         #[arg(short, long)]
         yes: bool,
+    },
+}
+
+#[derive(Subcommand)]
+enum WorkspaceCommands {
+    #[command(flatten)]
+    Crd(CrdCommands),
+
+    /// Create a workspace from flags (no YAML)
+    New {
+        /// Workspace name
+        name: String,
+
+        /// jupyter or vscode
+        #[arg(long = "type", default_value = "jupyter", value_parser = ["jupyter", "vscode"])]
+        ws_type: String,
+
+        /// Whole GPUs (0 for a CPU workspace)
+        #[arg(long, default_value_t = 0)]
+        gpus: u32,
+
+        /// GPU model, e.g. A100
+        #[arg(long)]
+        gpu_type: Option<String>,
+
+        /// Image (default: the operator's image for the type)
+        #[arg(long)]
+        image: Option<String>,
+
+        /// Persistent storage kept across pause and resume, e.g. 50Gi
+        #[arg(long)]
+        storage: Option<String>,
+
+        /// Minutes without activity before the workspace is marked Idle
+        #[arg(long, value_name = "MINUTES")]
+        idle_timeout: Option<u32>,
+
+        /// Pause (free the GPUs, keep storage) once Idle
+        #[arg(long, requires = "idle_timeout")]
+        idle_pause: bool,
+    },
+
+    /// Stop the workspace pod and free its GPUs; storage is kept
+    Pause {
+        /// Workspace name
+        name: String,
+    },
+
+    /// Start a paused workspace again on the same storage
+    Resume {
+        /// Workspace name
+        name: String,
+    },
+
+    /// Open the workspace in the browser through the api-gateway
+    Open {
+        /// Workspace name
+        name: String,
+
+        /// Print the one-time link instead of opening a browser
+        #[arg(long)]
+        print: bool,
     },
 }
 
@@ -1282,6 +1469,13 @@ async fn run() -> Result<()> {
             commands::agents::chat(cfg, name, message, output.as_str()).await?;
             return Ok(());
         }
+        Commands::Workspace {
+            action: WorkspaceCommands::Open { name, print },
+        } => {
+            let cfg = gateway::GatewayConfig::resolve(cli.gateway.as_deref(), cli.insecure);
+            commands::workspace::open(cfg, name, *print).await?;
+            return Ok(());
+        }
         _ => {}
     }
 
@@ -1357,6 +1551,21 @@ async fn run() -> Result<()> {
         commands::submit::print_sbatch(script, image.clone(), cli.namespace.clone())?;
         return Ok(());
     }
+    if let Commands::Submit {
+        sbatch: None,
+        image: Some(_),
+        dry_run: true,
+        ..
+    } = &cli.command
+    {
+        let job = inline_job(&cli.command).expect("submit with --image");
+        let ns = cli
+            .namespace
+            .clone()
+            .unwrap_or_else(|| "default".to_string());
+        commands::submit::print_inline(&job, &ns)?;
+        return Ok(());
+    }
 
     // Save namespace flag before passing ownership to client
     let namespace_flag = cli.namespace.clone();
@@ -1366,19 +1575,22 @@ async fn run() -> Result<()> {
 
     // Execute command
     match cli.command {
-        Commands::Submit {
-            file,
-            sbatch,
-            image,
+        ref submit @ Commands::Submit {
+            ref file,
+            ref sbatch,
+            ref image,
             wait,
             logs,
             ..
         } => match (file, sbatch) {
             (_, Some(script)) => {
-                commands::submit::execute_sbatch(&client, &script, image, wait, logs).await?
+                commands::submit::execute_sbatch(&client, script, image.clone(), wait, logs).await?
             }
-            (Some(file), None) => commands::submit::execute(&client, &file, wait, logs).await?,
-            (None, None) => unreachable!("clap requires --file or --sbatch"),
+            (Some(file), None) => commands::submit::execute(&client, file, wait, logs).await?,
+            (None, None) => {
+                let job = inline_job(submit).expect("clap requires --file, --sbatch or --image");
+                commands::submit::execute_inline(&client, &job, wait, logs).await?
+            }
         },
         Commands::List {
             resource,
@@ -1576,6 +1788,49 @@ async fn run() -> Result<()> {
                 .await?;
             }
             AgentsCommands::Chat { .. } => {
+                unreachable!("handled before the kube client is created")
+            }
+        },
+        Commands::Workspace { action } => match action {
+            WorkspaceCommands::Crd(action) => {
+                run_crd(
+                    &client,
+                    &commands::workspace::WORKSPACES,
+                    action,
+                    "follow it with: gryvia workspace list",
+                    "Its pod, Service and NetworkPolicy are deleted; the storage claim is deleted with it",
+                )
+                .await?;
+            }
+            WorkspaceCommands::New {
+                name,
+                ws_type,
+                gpus,
+                gpu_type,
+                image,
+                storage,
+                idle_timeout,
+                idle_pause,
+            } => {
+                let w = commands::workspace::NewWorkspace {
+                    name,
+                    ws_type,
+                    gpus,
+                    gpu_type,
+                    image,
+                    storage,
+                    idle_timeout_minutes: idle_timeout,
+                    idle_pause,
+                };
+                commands::workspace::new(&client, &w).await?;
+            }
+            WorkspaceCommands::Pause { name } => {
+                commands::workspace::set_paused(&client, &name, true).await?;
+            }
+            WorkspaceCommands::Resume { name } => {
+                commands::workspace::set_paused(&client, &name, false).await?;
+            }
+            WorkspaceCommands::Open { .. } => {
                 unreachable!("handled before the kube client is created")
             }
         },

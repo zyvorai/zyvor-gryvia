@@ -3,6 +3,7 @@ package controllers
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -140,8 +141,12 @@ func (r *GryviaAIJobReconciler) buildJob(job *gryviav1.GryviaAIJob) (*batchv1.Jo
 	}
 
 	size := initialJobSize(job, nodes)
+	var jobAnnotations map[string]string
+	if r.KAIScheduler && size > 1 {
+		jobAnnotations = map[string]string{AnnotationKAIBatchMinMember: strconv.Itoa(int(kaiMinMember(job, size)))}
+	}
 	return &batchv1.Job{
-		ObjectMeta: metav1.ObjectMeta{Name: job.Name, Namespace: job.Namespace, Labels: jobLabels},
+		ObjectMeta: metav1.ObjectMeta{Name: job.Name, Namespace: job.Namespace, Labels: jobLabels, Annotations: jobAnnotations},
 		Spec: batchv1.JobSpec{
 			Parallelism:           &size,
 			Completions:           &size,

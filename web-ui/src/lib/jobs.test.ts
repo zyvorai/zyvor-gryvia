@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { GryviaAIJob, GryviaGpuNode, GryviaQuota } from '@/types'
 import {
-  EMPTY_FORM, argvPreview, capacityHints, envSource, formIsDirty, gpuTypeOptions, isSensitiveEnv, jobConditions, jobSearchText,
+  EMPTY_FORM, argvPreview, capacityHints, envSource, formIsDirty, gpuShareAnnotations, gpuShareError, gpuTypeOptions, isSensitiveEnv, jobConditions, jobSearchText,
   jobStatusGroup, jobToForm, joinCommand, logText, nameTaken, podNodes, priorityError, retryLimitError, splitCommand, timeoutError,
 } from './jobs'
 
@@ -66,6 +66,30 @@ describe('jobToForm', () => {
   it('detects dirtiness', () => {
     expect(formIsDirty(EMPTY_FORM, EMPTY_FORM)).toBe(false)
     expect(formIsDirty({ ...EMPTY_FORM, name: 'a' }, EMPTY_FORM)).toBe(true)
+  })
+  it('clones a shared-GPU request and ignores unknown shares', () => {
+    const shared = jobToForm({
+      metadata: { name: 'x', annotations: { 'gryvia.io/gpu-share': '0.5', 'gryvia.io/gpu-memory': '20480' } }, spec: { gpus: 1 },
+    } as unknown as GryviaAIJob).values
+    expect(shared).toMatchObject({ gpuShare: '0.5', gpuMemoryMiB: '20480', gpuCount: 1 })
+    const odd = jobToForm({ metadata: { name: 'x', annotations: { 'gryvia.io/gpu-share': '0.33' } }, spec: {} } as unknown as GryviaAIJob).values
+    expect(odd).toMatchObject({ gpuShare: '', gpuMemoryMiB: '' })
+  })
+})
+
+describe('gpu share', () => {
+  it('builds annotations only for a fraction', () => {
+    expect(gpuShareAnnotations({ gpuShare: '', gpuMemoryMiB: '1024' })).toEqual({})
+    expect(gpuShareAnnotations({ gpuShare: '0.25', gpuMemoryMiB: '' })).toEqual({ 'gryvia.io/gpu-share': '0.25' })
+    expect(gpuShareAnnotations({ gpuShare: '0.5', gpuMemoryMiB: ' 20480 ' })).toEqual({
+      'gryvia.io/gpu-share': '0.5', 'gryvia.io/gpu-memory': '20480',
+    })
+  })
+  it('validates', () => {
+    expect(gpuShareError({ gpuShare: '', gpuMemoryMiB: 'x', distributedEnabled: true })).toBeUndefined()
+    expect(gpuShareError({ gpuShare: '0.5', gpuMemoryMiB: '', distributedEnabled: true })).toMatch(/single-pod/)
+    expect(gpuShareError({ gpuShare: '0.5', gpuMemoryMiB: '20G', distributedEnabled: false })).toMatch(/MiB/)
+    expect(gpuShareError({ gpuShare: '0.5', gpuMemoryMiB: '20480', distributedEnabled: false })).toBeUndefined()
   })
 })
 

@@ -88,6 +88,14 @@ aiOperator:
   kueueDefaultQueue: gryvia
   # Fail closed for tenant batch jobs when the default queue/controller is missing.
   kueueStrictAdmission: false
+  # KAI Scheduler (--kai-scheduler, off by default): every job's pods get schedulerName kai-scheduler and the label
+  # kai.scheduler/queue (spec.queueName, annotation gryvia.io/queue-name, else kaiDefaultQueue); multi-pod jobs are
+  # gang scheduled (kai.scheduler/batch-min-member) and gryvia.io/gpu-share below one GPU becomes KAI's gpu-fraction
+  # or gpu-memory annotation. Install KAI Scheduler v0.18 or later yourself
+  # (oci://ghcr.io/kai-scheduler/kai-scheduler/kai-scheduler).
+  # Mutually exclusive with kueueIntegration and nativeQueueScheduler. No extra RBAC. See docs/kai-scheduler.md.
+  kaiScheduler: false
+  kaiDefaultQueue: default-queue
   # Admission gate (--admission-gate): before creating a job's PVC/Service/workload, check the GryviaQuota limits
   # (allowed GPU types and SKUs, max GPUs per job, concurrent GPUs) and hard budgets (GryviaQuota budget.hardLimit,
   # GryviaBudget enforcement block) against the metered spend plus a cost forecast for the job, and reject it
@@ -428,6 +436,17 @@ ui:
     annotations: {}
     # Secret with the ingress certificate (leave empty for none).
     tlsSecretName: ""
+
+# Open GryviaWorkspaces (Jupyter, VS Code) in the browser at <publicURL>/ws/<namespace>/<name>/, through the dashboard
+# and the api-gateway, which checks a per-workspace session cookie. The ai-operator derives each Jupyter server's
+# token from a key it shares with the gateway (the Secret gryvia-workspace-proxy, generated once, key "key"; or
+# existingSecret) and limits workspace pod ingress to the gateway and the operator with a NetworkPolicy, which is
+# only enforced by CNIs that implement NetworkPolicy. See docs/workspaces.md.
+workspaceProxy:
+  enabled: false
+  # The origin users open, e.g. https://gryvia.example.com or https://localhost:8443 (kind demo).
+  publicURL: ""
+  existingSecret: ""
 
 # Sign-in. The dashboard and API use one shared bearer key (login: admin / <key>).
 # LAB DEFAULT: the key below is well known (Admin@321) and the dashboard shows a warning while it is

@@ -79,6 +79,31 @@ func TestFractionalMPS(t *testing.T) {
 	if p.Env["CUDA_MPS_ACTIVE_THREAD_PERCENTAGE"] != "25" {
 		t.Fatalf("%+v", p)
 	}
+	if _, ok := p.Env["CUDA_MPS_PINNED_DEVICE_MEM_LIMIT"]; ok {
+		t.Fatalf("memory limit set without a memory request: %+v", p)
+	}
+}
+
+func TestFractionalMPSMemoryLimit(t *testing.T) {
+	req, err := ParseGPUShare(map[string]string{
+		AnnotationGPUShare: "0.5", AnnotationGPUMemory: "20480", AnnotationGPUIsolation: "mps",
+	}, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := PlanGPURuntime(req, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Env["CUDA_MPS_ACTIVE_THREAD_PERCENTAGE"] != "50" {
+		t.Fatalf("%+v", p)
+	}
+	if got := p.Env["CUDA_MPS_PINNED_DEVICE_MEM_LIMIT"]; got != "0=20480M" {
+		t.Fatalf("mem limit=%q", got)
+	}
+	if p.Annotations["gryvia.io/mps-pinned-device-mem-limit-mib"] != "20480" {
+		t.Fatalf("%+v", p.Annotations)
+	}
 }
 
 func TestAutoMIG(t *testing.T) {

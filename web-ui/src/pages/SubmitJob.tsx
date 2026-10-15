@@ -2,8 +2,8 @@ import { useEffect, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  EMPTY_FORM, FRAMEWORK_LABEL, JOB_TYPES, NO_TEAM, TEAM_LABEL, argvPreview, capacityHints, formIsDirty, gpuTypeOptions, jobToForm,
-  nameTaken, priorityError, retryLimitError, splitCommand, timeoutError, type JobFormValues,
+  EMPTY_FORM, FRAMEWORK_LABEL, GPU_SHARES, JOB_TYPES, NO_TEAM, TEAM_LABEL, argvPreview, capacityHints, formIsDirty, gpuShareAnnotations,
+  gpuShareError, gpuTypeOptions, jobToForm, nameTaken, priorityError, retryLimitError, splitCommand, timeoutError, type JobFormValues,
 } from '@/lib/jobs'
 import { api } from '@/lib/api'
 import { errorMessage } from '@/lib/errors'
@@ -103,7 +103,9 @@ export default function SubmitJob() {
   const priorityProblem = priorityError(formData.priority)
   const timeoutProblem = timeoutError(formData.timeout)
   const retryProblem = retryLimitError(formData.retryLimit)
-  const totalGpus = formData.distributedEnabled ? formData.nodes * formData.gpusPerNode : formData.gpuCount
+  const shareProblem = gpuShareError(formData)
+  const shared = formData.gpuShare !== ''
+  const totalGpus = shared ? 1 : formData.distributedEnabled ? formData.nodes * formData.gpusPerNode : formData.gpuCount
   const stats = statsQ.data
   const hints = capacityHints(totalGpus, stats ? { totalGPUs: stats.totalGPUs, availableGPUs: stats.availableGPUs } : undefined, quota, formData.gpuType)
   const argv = argvPreview(formData.command)
@@ -130,10 +132,11 @@ export default function SubmitJob() {
       setError(`A job named ${formData.name} already exists. Pick another name.`)
       return
     }
-    if (priorityProblem || timeoutProblem || retryProblem) {
-      setError(priorityProblem ?? timeoutProblem ?? retryProblem ?? null)
+    if (priorityProblem || timeoutProblem || retryProblem || shareProblem) {
+      setError(priorityProblem ?? timeoutProblem ?? retryProblem ?? shareProblem ?? null)
       return
     }
+    const annotations = gpuShareAnnotations(formData)
     if (envProblems.some(Boolean)) {
       setError('Fix the environment variable errors below before submitting.')
       return
@@ -145,6 +148,7 @@ export default function SubmitJob() {
       metadata: {
         name: formData.name,
         labels: { [FRAMEWORK_LABEL]: formData.framework, ...(formData.team ? { [TEAM_LABEL]: formData.team } : {}) },
+        ...(Object.keys(annotations).length > 0 ? { annotations } : {}),
       },
       spec: {
         type: formData.type,
@@ -318,18 +322,58 @@ export default function SubmitJob() {
             </label>
 
             <label className="field">
-              <span>GPU count</span>
-              <input
-                type="number"
-                min="1"
-                max="512"
-                required
-                disabled={formData.distributedEnabled}
-                aria-describedby={formData.distributedEnabled ? 'gpu-total' : undefined}
-                value={formData.distributedEnabled ? formData.nodes * formData.gpusPerNode : formData.gpuCount}
-                onChange={(e) => setFormData({ ...formData, gpuCount: parseInt(e.target.value, 10) || 1 })}
-              />
+              <span>GPU share</span>
+              <select
+                value={formData.gpuShare}
+                aria-describedby="gpu-share-help"
+                onChange={(e) => setFormData({ ...formData, gpuShare: e.target.value })}
+              >
+                {GPU_SHARES.map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </select>
             </label>
+
+            {shared ? (
+              <label className="field">
+                <span>GPU memory limit (MiB, optional)</span>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  placeholder="20480"
+                  value={formData.gpuMemoryMiB}
+                  aria-invalid={shareProblem ? true : undefined}
+                  onChange={(e) => setFormData({ ...formData, gpuMemoryMiB: e.target.value })}
+                />
+              </label>
+            ) : (
+              <label className="field">
+                <span>GPU count</span>
+                <input
+                  type="number"
+                  min="1"
+                  max="512"
+                  required
+                  disabled={formData.distributedEnabled}
+                  aria-describedby={formData.distributedEnabled ? 'gpu-total' : undefined}
+                  value={formData.distributedEnabled ? formData.nodes * formData.gpusPerNode : formData.gpuCount}
+                  onChange={(e) => setFormData({ ...formData, gpuCount: parseInt(e.target.value, 10) || 1 })}
+                />
+              </label>
+            )}
+
+            <small id="gpu-share-help" className="faint span-all">
+              A shared GPU runs next to other jobs on one GPU (MPS, a MIG slice, or a KAI Scheduler fraction). It needs
+              the native queue scheduler or KAI Scheduler (aiOperator.nativeQueueScheduler or aiOperator.kaiScheduler);
+              otherwise the job gets a whole GPU.
+            </small>
+            {shareProblem && (
+              <small className="warning span-all" role="alert">
+                {shareProblem}
+              </small>
+            )}
 
             <div className="span-all stack" aria-live="polite">
               {stats && (

@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"github.com/zyvorai/gryvia/operators/ai-operator/pkg/servingproxy"
+	"net/http"
 	"os"
 	"strings"
 	"time"
@@ -68,6 +69,8 @@ func main() {
 	var kueueIntegration bool
 	var kueueStrictAdmission bool
 	var kueueDefaultQueue string
+	var kaiScheduler bool
+	var kaiDefaultQueue string
 	var admissionGate bool
 	var idleReclaim, idleReclaimSuspend bool
 	var idleReclaimThreshold float64
@@ -112,6 +115,10 @@ func main() {
 	flag.BoolVar(&kueueStrictAdmission, "kueue-strict-admission", false, "Require Kueue admission for tenant batch jobs even if the default LocalQueue is missing. Requires --kueue-integration.")
 	flag.StringVar(&kueueDefaultQueue, "kueue-default-queue", "gryvia",
 		"With --kueue-integration: LocalQueue used by jobs in tenant-* namespaces that name no queue (only if that LocalQueue exists).")
+	flag.BoolVar(&kaiScheduler, "kai-scheduler", false,
+		"Schedule GryviaAIJob pods with KAI Scheduler (schedulerName kai-scheduler, label kai.scheduler/queue, gang size, gpu-fraction for gryvia.io/gpu-share). Needs KAI Scheduler installed. Mutually exclusive with --kueue-integration and --native-queue-scheduler. Off by default.")
+	flag.StringVar(&kaiDefaultQueue, "kai-default-queue", controllers.DefaultKAIQueue,
+		"With --kai-scheduler: KAI leaf queue of jobs that name no queue.")
 	flag.BoolVar(&checkpointGuard, "checkpoint-guard", false,
 		"Inject a matching GryviaCheckpointGuard's checkpoint environment into new batch jobs, create their status ConfigMap and Role, and replace pods stuck on lost nodes for AutoRestore guards.")
 	flag.BoolVar(&idleReclaim, "idle-reclaim", false,
@@ -141,6 +148,10 @@ func main() {
 	flag.Parse()
 	if nativeQueueScheduler && kueueIntegration {
 		fmt.Fprintln(os.Stderr, "--native-queue-scheduler and --kueue-integration are mutually exclusive")
+		os.Exit(1)
+	}
+	if kaiScheduler && (kueueIntegration || nativeQueueScheduler) {
+		fmt.Fprintln(os.Stderr, "--kai-scheduler cannot be combined with --kueue-integration or --native-queue-scheduler")
 		os.Exit(1)
 	}
 	if kueueStrictAdmission && !kueueIntegration {
@@ -183,6 +194,8 @@ func main() {
 		KueueIntegration:     kueueIntegration,
 		KueueStrictAdmission: kueueStrictAdmission,
 		KueueDefaultQueue:    kueueDefaultQueue,
+		KAIScheduler:         kaiScheduler,
+		KAIDefaultQueue:      kaiDefaultQueue,
 		Recorder:             mgr.GetEventRecorderFor("gryviaaijob-controller"),
 
 		AdmissionGate:         admissionGate,
@@ -294,12 +307,19 @@ func main() {
 			setupLog.Error(nil, "--autoserve-default-gpu-count must not be negative")
 			os.Exit(1)
 		}
+		wsProxy, err := ml.workspaceProxy()
+		if err != nil {
+			setupLog.Error(err, "workspace proxy")
+			os.Exit(1)
+		}
 		if err = (&controllers.GryviaWorkspaceReconciler{
 			Client:       mgr.GetClient(),
 			Scheme:       mgr.GetScheme(),
 			Log:          ctrl.Log.WithName("controllers").WithName("GryviaWorkspace"),
 			JupyterImage: ml.workspaceJupyterImage,
 			CodeImage:    ml.workspaceCodeImage,
+			Proxy:        wsProxy,
+			HTTPClient:   &http.Client{Timeout: 5 * time.Second},
 		}).SetupWithManager(mgr); err != nil {
 			setupLog.Error(err, "unable to create controller", "controller", "GryviaWorkspace")
 			os.Exit(1)

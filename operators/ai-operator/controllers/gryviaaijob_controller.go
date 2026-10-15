@@ -74,6 +74,12 @@ type GryviaAIJobReconciler struct {
 	// admission and priority preemption from the gryvia-native-scheduler ConfigMap. Mutually exclusive
 	// with KueueIntegration. See gryviaaijob_native_schedule.go.
 	NativeQueueScheduler bool
+	// KAIScheduler (flag --kai-scheduler, default false) hands every job's pods to KAI Scheduler: scheduler name,
+	// queue label, gang size and fractional GPUs. Mutually exclusive with KueueIntegration and NativeQueueScheduler.
+	// See gryviaaijob_kai.go.
+	KAIScheduler bool
+	// KAIDefaultQueue is the KAI queue of jobs that name none (flag --kai-default-queue).
+	KAIDefaultQueue string
 	// KueueStrictAdmission keeps tenant jobs suspended even when their default queue is absent.
 	KueueStrictAdmission bool
 	// KueueDefaultQueue is the LocalQueue used in tenant-* namespaces (flag --kueue-default-queue).
@@ -248,7 +254,7 @@ func (r *GryviaAIJobReconciler) reconcileAIJob(ctx context.Context, job *gryviav
 		(job.Status.Phase == PhasePending || job.Status.Phase == PhaseScheduling) {
 		return ctrl.Result{}, r.failJob(ctx, job, "UnsupportedQueueWorkload", "strict Kueue admission requires workloadKind: job")
 	}
-	queueManaged := queue != "" && kind == gryviav1.WorkloadKindJob
+	queueManaged := (queue != "" && kind == gryviav1.WorkloadKindJob) || r.KAIScheduler
 	gpusPerPod := r.getGPUsPerPod(job)
 
 	// Phase 1: Scheduling - find suitable GPU nodes (advisory; kept in status.nodesAllocated).
@@ -283,7 +289,11 @@ func (r *GryviaAIJobReconciler) reconcileAIJob(ctx context.Context, job *gryviav
 				}
 			}
 			r.bindDataset(ctx, job, dsBind, dsLocal, dsNamespace, nil)
-			r.updateCondition(job, ConditionScheduled, metav1.ConditionTrue, "QueueManaged", "Placement delegated to Kueue and kube-scheduler")
+			msg := "Placement delegated to Kueue and kube-scheduler"
+			if r.KAIScheduler {
+				msg = "Placement delegated to KAI Scheduler (queue " + r.kaiQueue(job) + ")"
+			}
+			r.updateCondition(job, ConditionScheduled, metav1.ConditionTrue, "QueueManaged", msg)
 			if err := r.Status().Update(ctx, job); err != nil {
 				return ctrl.Result{}, err
 			}
@@ -720,13 +730,17 @@ func (r *GryviaAIJobReconciler) buildPodTemplate(job *gryviav1.GryviaAIJob, labe
 	if r.NativeQueueScheduler {
 		applyNativeGPUShare(job, annotations, &podSpec)
 	}
+	podLabels := labels
+	if r.KAIScheduler {
+		podLabels = r.applyKAI(job, labels, annotations, &podSpec)
+	}
 	applyRecoveryOptions(job, &podSpec)
 	datasetPodSpec(job, &podSpec)
 	r.applyReservation(job, &podSpec) // gryvia.io/reservation: toleration + nodeSelector (gryviaaijob_reservation.go)
 
 	return corev1.PodTemplateSpec{
 		ObjectMeta: metav1.ObjectMeta{
-			Labels:      labels,
+			Labels:      podLabels,
 			Annotations: annotations,
 		},
 		Spec: podSpec,

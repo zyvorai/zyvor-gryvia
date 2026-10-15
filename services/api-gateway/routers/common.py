@@ -74,6 +74,11 @@ class Deps:
     agent_transport: Optional[Any] = None
     # tests inject this: the transport of playground chats sent to the LLM gateway (httpx.MockTransport)
     llm_transport: Optional[Any] = None
+    workspace_proxy_key: Optional[bytes] = None                                # GRYVIA_WORKSPACE_PROXY_KEY
+    # tests inject these: the transport of proxied workspace HTTP requests (httpx.MockTransport) and
+    # (url, headers, subprotocols, origin) -> an upstream WebSocket connection
+    workspace_transport: Optional[Any] = None
+    workspace_ws_connect: Optional[Callable[..., Awaitable[Any]]] = None
 
 
 async def require_admin(request: Request) -> None:

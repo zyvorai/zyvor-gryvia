@@ -3,12 +3,14 @@ package controllers
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -28,7 +30,7 @@ const (
 	ConditionWorkspaceIdle  = "WorkspaceIdle"
 
 	// Default images, overridable per operator (flags) and per object (spec.image).
-	DefaultJupyterImage = "jupyter/gpu-notebook:latest"
+	DefaultJupyterImage = "quay.io/jupyter/pytorch-notebook:cuda12-latest"
 	DefaultVSCodeImage  = "codercom/code-server:latest"
 
 	defaultWorkspaceStorage = "50Gi"
@@ -51,6 +53,15 @@ type GryviaWorkspaceReconciler struct {
 
 	// Clock returns the current time (time.Now when nil); tests move it.
 	Clock func() time.Time
+
+	// Proxy, when set, serves workspaces through the api-gateway (see WorkspaceProxy).
+	Proxy *WorkspaceProxy
+	// HTTPClient polls workspace servers for activity (http.DefaultClient when nil).
+	HTTPClient *http.Client
+	// InternalURL overrides the in-cluster address used for activity polls; tests point it at a local server.
+	InternalURL func(*gryviav1.GryviaWorkspace) string
+	// ActivityProbe replaces the activity poll entirely; tests use it.
+	ActivityProbe func(context.Context, *gryviav1.GryviaWorkspace) (time.Time, bool)
 }
 
 //+kubebuilder:rbac:groups=gryvia.io,resources=gryviaworkspaces,verbs=get;list;watch;create;update;patch;delete
@@ -59,6 +70,7 @@ type GryviaWorkspaceReconciler struct {
 //+kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups="",resources=persistentvolumeclaims,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=networking.k8s.io,resources=networkpolicies,verbs=get;list;watch;create;update;patch;delete
 
 func workspaceChildName(ws *gryviav1.GryviaWorkspace) string { return childName(ws.Name, "workspace") }
 
@@ -135,6 +147,10 @@ func (r *GryviaWorkspaceReconciler) reconcileRunning(ctx context.Context, ws *gr
 			r.fail(ws, "Cannot create the workspace service", err)
 			return ctrl.Result{}, nil
 		}
+		return ctrl.Result{RequeueAfter: 15 * time.Second}, err
+	}
+
+	if err := r.ensureNetworkPolicy(ctx, ws, name); err != nil {
 		return ctrl.Result{RequeueAfter: 15 * time.Second}, err
 	}
 
@@ -278,6 +294,7 @@ func (r *GryviaWorkspaceReconciler) buildPod(ws *gryviav1.GryviaWorkspace, name 
 	for _, k := range keys {
 		container.Env = append(container.Env, corev1.EnvVar{Name: k, Value: ws.Spec.Env[k]})
 	}
+	r.applyProxy(ws, &container)
 
 	var volumes []corev1.Volume
 	if ws.Spec.Storage != "" {
@@ -318,7 +335,7 @@ func (r *GryviaWorkspaceReconciler) buildPod(ws *gryviav1.GryviaWorkspace, name 
 	}, nil
 }
 
-// ensureService creates the ClusterIP Service once and always records the in-cluster URL.
+// ensureService creates the ClusterIP Service once and records the URL (the gateway path when proxied).
 func (r *GryviaWorkspaceReconciler) ensureService(ctx context.Context, ws *gryviav1.GryviaWorkspace, name string) error {
 	port := workspacePort(ws)
 	svc := &corev1.Service{}
@@ -355,7 +372,7 @@ func (r *GryviaWorkspaceReconciler) ensureService(ctx context.Context, ws *gryvi
 		return configError{fmt.Errorf("service %q already exists and is not owned by this workspace", name)}
 	}
 	ws.Status.ServiceName = name
-	ws.Status.URL = fmt.Sprintf("http://%s.%s.svc.cluster.local:%d", name, ws.Namespace, port)
+	ws.Status.URL = r.browserURL(ws)
 	return nil
 }
 
@@ -416,14 +433,20 @@ func (r *GryviaWorkspaceReconciler) syncPodStatus(ctx context.Context, ws *gryvi
 	ws.Status.Message = ""
 	setCondition(&ws.Status.Conditions, ws.Generation, ConditionWorkspaceReady, metav1.ConditionTrue, "Running", "Workspace pod is running")
 
-	// Activity: the newest of the session start and the RFC3339 time in the gryvia.io/last-activity annotation
-	// (whatever fronts the workspace, or a user, can touch it). Nothing in the cluster observes Jupyter/VS Code
-	// traffic by itself.
+	// Activity: the newest of the session start, the RFC3339 time in the gryvia.io/last-activity annotation
+	// (a user or a script can touch it), and what the server reports (Jupyter last_activity, code-server
+	// lastHeartbeat). A server time in the future is capped at now.
 	last := ws.Status.StartTime.Time
 	if v, ok := ws.Annotations[annotationLastActivity]; ok {
 		if t, err := time.Parse(time.RFC3339, v); err == nil && t.After(last) {
 			last = t
 		}
+	}
+	if t, ok := r.observeActivity(ctx, ws); ok && t.After(last) {
+		if t.After(now) {
+			t = now
+		}
+		last = t
 	}
 	lt := metav1.NewTime(last)
 	ws.Status.LastActivity = &lt
@@ -541,5 +564,6 @@ func (r *GryviaWorkspaceReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Owns(&corev1.Pod{}).
 		Owns(&corev1.Service{}).
 		Owns(&corev1.PersistentVolumeClaim{}).
+		Owns(&networkingv1.NetworkPolicy{}).
 		Complete(r)
 }

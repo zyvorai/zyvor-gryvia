@@ -11,7 +11,16 @@ pub const GROUPS: &[(&str, &[&str])] = &[
     (
         "Workloads",
         &[
-            "submit", "create", "validate", "list", "get", "status", "logs", "cancel", "delete",
+            "submit",
+            "workspace",
+            "create",
+            "validate",
+            "list",
+            "get",
+            "status",
+            "logs",
+            "cancel",
+            "delete",
         ],
     ),
     (

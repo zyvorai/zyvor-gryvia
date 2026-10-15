@@ -1,6 +1,9 @@
 {{- if and .Values.aiOperator.nativeQueueScheduler .Values.aiOperator.kueueIntegration }}
 {{- fail "aiOperator.nativeQueueScheduler and aiOperator.kueueIntegration are mutually exclusive" }}
 {{- end }}
+{{- if and (dig "aiOperator" "kaiScheduler" false .Values.AsMap) (or .Values.aiOperator.kueueIntegration .Values.aiOperator.nativeQueueScheduler) }}
+{{- fail "aiOperator.kaiScheduler cannot be combined with aiOperator.kueueIntegration or aiOperator.nativeQueueScheduler" }}
+{{- end }}
 {{- if and .Values.aiOperator.kueueStrictAdmission (not .Values.aiOperator.kueueIntegration) }}
 {{- fail "aiOperator.kueueStrictAdmission requires aiOperator.kueueIntegration" }}
 {{- end }}
@@ -22,6 +25,7 @@
 {{- $webhookSecret = include "gryvia.usageWebhookSecretName" $ }}
 {{- end }}
 {{- $webhook := ne $webhookSecret "" }}
+{{- $wsProxy := and (eq $name "ai-operator") (dig "workspaceProxy" "enabled" false $.Values.AsMap) }}
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -161,6 +165,10 @@ spec:
             - --kueue-default-queue={{ $.Values.aiOperator.kueueDefaultQueue }}
             - --kueue-strict-admission={{ $.Values.aiOperator.kueueStrictAdmission }}
             {{- end }}
+            {{- if and (eq $name "ai-operator") (dig "aiOperator" "kaiScheduler" false $.Values.AsMap) }}
+            - --kai-scheduler=true
+            - --kai-default-queue={{ dig "aiOperator" "kaiDefaultQueue" "default-queue" $.Values.AsMap }}
+            {{- end }}
             {{- if and (eq $name "quota-operator") $.Values.quotaOperator.kueueIntegration }}
             - --kueue-integration=true
             - --kueue-quota-resources={{ $.Values.quotaOperator.kueueQuotaResources }}
@@ -229,6 +237,11 @@ spec:
             {{- if and (eq $name "ai-operator") $.Values.aiOperator.mergeFabricSignals }}
             - --merge-fabric-signals=true
             {{- end }}
+            {{- if $wsProxy }}
+            - {{ printf "--workspace-public-url=%s" (dig "workspaceProxy" "publicURL" "" $.Values.AsMap) | quote }}
+            - --workspace-proxy-key-file=/etc/gryvia/workspace-proxy/key
+            - {{ printf "--platform-namespace=%s" (include "gryvia.namespace" $) | quote }}
+            {{- end }}
             {{- if $webhook }}
             - --enable-webhooks=true
             - --webhook-cert-dir=/tmp/k8s-webhook-server/serving-certs
@@ -269,18 +282,36 @@ spec:
             {{- toYaml $op.resources | nindent 12 }}
           securityContext:
             {{- toYaml $.Values.securityContext | nindent 12 }}
-          {{- if $webhook }}
+          {{- if or $webhook $wsProxy }}
           volumeMounts:
+            {{- if $webhook }}
             - name: webhook-certs
               mountPath: /tmp/k8s-webhook-server/serving-certs
               readOnly: true
+            {{- end }}
+            {{- if $wsProxy }}
+            - name: workspace-proxy-key
+              mountPath: /etc/gryvia/workspace-proxy
+              readOnly: true
+            {{- end }}
           {{- end }}
-      {{- if $webhook }}
+      {{- if or $webhook $wsProxy }}
       volumes:
+        {{- if $webhook }}
         - name: webhook-certs
           secret:
             secretName: {{ $webhookSecret }}
             defaultMode: 0440
+        {{- end }}
+        {{- if $wsProxy }}
+        - name: workspace-proxy-key
+          secret:
+            secretName: {{ (dig "workspaceProxy" "existingSecret" "" $.Values.AsMap) | default "gryvia-workspace-proxy" }}
+            defaultMode: 0440
+            items:
+              - key: key
+                path: key
+        {{- end }}
       {{- end }}
       {{- with $op.nodeSelector }}
       nodeSelector:

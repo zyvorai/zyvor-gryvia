@@ -18,6 +18,7 @@ func newWSReconciler(c client.Client, clk *fakeClock) *GryviaWorkspaceReconciler
 	return &GryviaWorkspaceReconciler{
 		Client: c, Scheme: mlScheme(), Log: ctrl.Log.WithName("test"),
 		JupyterImage: "example/jupyter:test", CodeImage: "example/code:test", Clock: clk.Now,
+		ActivityProbe: func(context.Context, *gryviav1.GryviaWorkspace) (time.Time, bool) { return time.Time{}, false },
 	}
 }
 

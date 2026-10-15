@@ -90,7 +90,7 @@ spec:
 | `spec.priority` | spec | Higher wins; only strictly lower-priority preemptible jobs can be evicted |
 | `spec.distributed.nodes` / `gpusPerNode` | spec | Gang size and GPUs per member |
 | `gryvia.io/gpu-share` | annotation | Fraction or count, e.g. `0.25`, `0.5`, `2` |
-| `gryvia.io/gpu-memory` | annotation | GPU memory MiB (used to pick a MIG profile) |
+| `gryvia.io/gpu-memory` | annotation | GPU memory MiB (picks a MIG profile; with MPS, becomes the client's device-memory limit) |
 | `gryvia.io/gpu-isolation` | annotation | `auto` (default), `full`, `mig`, `mps`, `dra` |
 | `gryvia.io/mig-profile` | annotation | Explicit MIG profile, e.g. `1g.10gb` |
 
@@ -119,7 +119,7 @@ The scheduler accounts `0.25 GPU` as 250 milli-GPU, but isolation is delegated t
 |---|---|---|
 | `full` | `nvidia.com/gpu: N` | whole device |
 | `mig` | `nvidia.com/mig-<profile>: 1` | hardware partition, needs a MIG-enabled node |
-| `mps` | `nvidia.com/gpu: 1` + `CUDA_MPS_ACTIVE_THREAD_PERCENTAGE` | compute share; memory limits depend on the runtime |
+| `mps` | `nvidia.com/gpu: 1` + `CUDA_MPS_ACTIVE_THREAD_PERCENTAGE`, and `CUDA_MPS_PINNED_DEVICE_MEM_LIMIT=0=<MiB>M` when `gpu-memory` is set | compute share and, with `gpu-memory`, a per-client memory limit; both are honoured only when an MPS control daemon serves the GPU (not verified on GPUs) |
 | `dra` | `gryvia.io/dra-milli-gpu` annotations only | needs a DRA driver to create the claim |
 
 `auto` picks `full` for whole GPUs, otherwise MPS. The controller does not pass node labels at template

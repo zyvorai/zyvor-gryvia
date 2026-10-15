@@ -62,8 +62,9 @@ Listed roughly in the order they would make the platform more useful; no dates.
 3. **Prove the ML controllers** on real workloads (`e2e-ml.yml` already passes in CI with tiny CPU images; next real Jupyter, vLLM and Triton images on GPUs) and decide the kinds that have no controller: build them or remove them. For the model factory: one real watch on a GPU cluster, a fine-tune of a small model (for example a 0.5B instruct model) through to a vLLM canary, with the measured GPU memory compared with the sizing estimate. For the AI features: a real AWQ quantization served by vLLM, the LLM gateway in front of vLLM, a real embedding model behind a vector index, and an agent on a vLLM model with tool calling turned on.
 4. **Reliability of jobs**: validate cooperative checkpoint recovery with real distributed trainers and run the new elastic bounds (`distributed.elastic.minNodes`, unit-tested only) with a real `torchrun`.
 5. **Cost controls**: validate budget Events and actual-usage chargeback on a real cluster, then add external notification/report delivery.
-6. **Multi-cluster** and federation, if demand justifies it.
-7. **Release quality**: publish the collector image once the eBPF programs are attached and exercised on more kernels and on arm64 hosts (today arm64 is verifier-load only), add end-to-end tests that exercise GPUs, and broaden CI.
+6. **Use NVIDIA Run:ai's open components** (Apache 2.0 since October 2026) instead of rebuilding them: KAI Scheduler as a scheduling backend next to Kueue (the job backend exists, opt-in `aiOperator.kaiScheduler`, run on kind with a simulated GPU; queues created from tenants are still open), the GPU Fractioning Operator for driver-enforced GPU fractions (`gryvia.io/gpu-share`), and tenants mapped to KAI projects and departments. Gryvia's own work stays above the scheduler: GPU-as-a-service metering and billing and the LLM platform. See [Gryvia and Run:ai](COMPARE_RUNAI.md).
+7. **Multi-cluster** and federation, if demand justifies it.
+8. **Release quality**: publish the collector image once the eBPF programs are attached and exercised on more kernels and on arm64 hosts (today arm64 is verifier-load only), add end-to-end tests that exercise GPUs, and broaden CI.
 
 ## Verification cadence
 

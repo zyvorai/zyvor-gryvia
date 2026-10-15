@@ -37,14 +37,16 @@ Pod and a ClusterIP Service. Deleting the workspace garbage-collects all three, 
 | `storage`, `storageClassName` | The PVC (`ReadWriteOnce`, mounted at `/workspace`) |
 | `cpu*`/`mem*` | Requests and limits; an invalid quantity marks the workspace `Failed` with the reason |
 | `paused` | Deletes the Pod, keeps the PVC and the Service. Setting it back creates a new Pod that mounts the same PVC. A Pod that is still terminating is waited for |
-| `idleTimeoutMinutes` | Sets the phase `Idle` (the Pod keeps running) when there was no activity for that long. Activity is the newest of the session start and the RFC 3339 time in the annotation `gryvia.io/last-activity`; **nothing in the cluster watches Jupyter or VS Code traffic**, so without something that writes the annotation a workspace turns `Idle` that long after it started. Add the annotation `gryvia.io/idle-action: pause` to pause it instead |
+| `idleTimeoutMinutes` | Sets the phase `Idle` (the Pod keeps running) when there was no activity for that long. Activity is the newest of the session start, the RFC 3339 time in the annotation `gryvia.io/last-activity` and, with the [workspace proxy](workspaces.md) on, the server's own report (Jupyter `/api/status` `last_activity`, code-server `/healthz` `lastHeartbeat`). Without the proxy nothing watches Jupyter or VS Code traffic, so without something that writes the annotation a workspace turns `Idle` that long after it started. Add the annotation `gryvia.io/idle-action: pause` to pause it instead |
 | `maxLifetimeHours` | After that long in one session the workspace is paused (`spec.paused` is set, the message says why); resuming starts a new session |
 
 The Pod runs with `allowPrivilegeEscalation: false`, the runtime-default seccomp profile and no service-account
-token. The Service is cluster-internal only: there is no ingress, no TLS and no authentication in front of it, and
-Jupyter's own token is whatever the image generates. A Pod that ends (eviction, node loss) is deleted and recreated.
+token. The Service is cluster-internal only. Without the [workspace proxy](workspaces.md) there is no ingress, no TLS
+and no authentication in front of it, and Jupyter's own token is whatever the image generates; with it, browsers reach
+the workspace through the api-gateway and a NetworkPolicy admits only the gateway and the operator. A Pod that ends
+(eviction, node loss) is deleted and recreated.
 
-Status written: `phase` (`Pending`, `Running`, `Idle`, `Paused`, `Failed`), `message`, `url` (in-cluster),
+Status written: `phase` (`Pending`, `Running`, `Idle`, `Paused`, `Failed`), `message`, `url` (in-cluster, or the gateway URL with the proxy),
 `startTime`, `lastActivity`, `podName`, `pvcName`, `serviceName`, conditions `WorkspaceReady` and `WorkspaceIdle`.
 
 ## GryviaInferenceService
@@ -173,7 +175,7 @@ Pass them with the chart value `aiOperator.extraArgs` (a list of strings, empty 
 | Flag | Default | Meaning |
 | --- | --- | --- |
 | `--enable-ml-controllers` | `true` | Run the five controllers |
-| `--workspace-jupyter-image` | `jupyter/gpu-notebook:latest` | Image of jupyter workspaces without `spec.image` |
+| `--workspace-jupyter-image` | `quay.io/jupyter/pytorch-notebook:cuda12-latest` | Image of jupyter workspaces without `spec.image` |
 | `--workspace-code-image` | `codercom/code-server:latest` | Image of vscode workspaces without `spec.image` |
 | `--inference-image-vllm` | `vllm/vllm-openai:latest` | Per-backend image without `spec.image` |
 | `--inference-image-triton` | `nvcr.io/nvidia/tritonserver:24.01-py3` | |

@@ -4,8 +4,9 @@
 //! Authentication is the gateway's API key sent as a bearer token (`GRYVIA_API_KEY`), the same way the
 //! docs use `curl -H "Authorization: Bearer $GRYVIA_API_KEY"`. TLS is verified against the system roots or
 //! `GRYVIA_CA_FILE`; `--insecure` (or `GRYVIA_INSECURE=1`) turns verification off and says so on stderr.
-//! Requests are GET, plus the read-only POST of `gryvia rag query` (the LLM gateway's /v1/retrieve): the CLI never
-//! changes anything through the gateway.
+//! Requests are GET, plus the read-only POST of `gryvia rag query` (the LLM gateway's /v1/retrieve) and the POST of
+//! `gryvia workspace open`, which only issues a short-lived launch link: the CLI never changes cluster objects
+//! through the gateway.
 //!
 //! Verified against an in-process mock gateway (plain HTTP, and TLS with a test CA); not run against a real
 //! gateway deployment.
@@ -508,7 +509,8 @@ mod tests {
         ee_params
             .subject_alt_names
             .push(rcgen::SanType::IpAddress("127.0.0.1".parse().unwrap()));
-        let ee = ee_params.signed_by(&ee_key, &ca, &ca_key).unwrap();
+        let issuer = rcgen::Issuer::from_params(&ca_params, &ca_key);
+        let ee = ee_params.signed_by(&ee_key, &issuer).unwrap();
         static N: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
         let ca_path = std::env::temp_dir().join(format!(
             "gryvia-test-ca-{}-{}.pem",

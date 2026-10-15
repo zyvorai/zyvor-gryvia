@@ -39,3 +39,4 @@ pub mod trace;
 pub mod usage;
 pub mod validate;
 pub mod version;
+pub mod workspace;
