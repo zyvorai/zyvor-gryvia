@@ -76,13 +76,13 @@ Jobs:           1 running, 2 pending, 3 completed, 0 failed
 Namespace:      gryvia-system
 
 Image versions
-  gryvia-ai-operator           ghcr.io/zyvorai/gryvia-ai-operator:1.0.0
-  gryvia-api-gateway           ghcr.io/zyvorai/gryvia-api-gateway:1.0.0
-  gryvia-dcgm-exporter         ghcr.io/zyvorai/gryvia-dcgm-exporter:1.0.0
-  gryvia-gpu-operator          ghcr.io/zyvorai/gryvia-gpu-operator:1.0.0
-  gryvia-nvidia-device-plugin  ghcr.io/zyvorai/gryvia-nvidia-device-plugin:1.0.0
-  gryvia-quota-operator        ghcr.io/zyvorai/gryvia-quota-operator:1.0.0
-  gryvia-ui                    ghcr.io/zyvorai/gryvia-ui:1.0.0
+  gryvia-ai-operator           ghcr.io/zyvorai/gryvia-ai-operator:0.1.0
+  gryvia-api-gateway           ghcr.io/zyvorai/gryvia-api-gateway:0.1.0
+  gryvia-dcgm-exporter         ghcr.io/zyvorai/gryvia-dcgm-exporter:0.1.0
+  gryvia-gpu-operator          ghcr.io/zyvorai/gryvia-gpu-operator:0.1.0
+  gryvia-nvidia-device-plugin  ghcr.io/zyvorai/gryvia-nvidia-device-plugin:0.1.0
+  gryvia-quota-operator        ghcr.io/zyvorai/gryvia-quota-operator:0.1.0
+  gryvia-ui                    ghcr.io/zyvorai/gryvia-ui:0.1.0
 
 Nodes
   NODE    STATE  GPUS      DRIVER              GPU HEALTH  DCGM  PLUGIN  COLLECTOR  PODS
@@ -117,12 +117,12 @@ Jobs:           1 running, 2 pending, 3 completed, 0 failed
 Namespace:      gryvia-system
 
 Image versions
-  gryvia-ai-operator           ghcr.io/zyvorai/gryvia-ai-operator:1.0.0
-  gryvia-api-gateway           ghcr.io/zyvorai/gryvia-api-gateway:1.0.0
-  gryvia-dcgm-exporter         ghcr.io/zyvorai/gryvia-dcgm-exporter:1.0.0
-  gryvia-gpu-operator          ghcr.io/zyvorai/gryvia-gpu-operator:1.0.0
-  gryvia-nvidia-device-plugin  ghcr.io/zyvorai/gryvia-nvidia-device-plugin:1.0.0
-  gryvia-ui                    ghcr.io/zyvorai/gryvia-ui:1.0.0
+  gryvia-ai-operator           ghcr.io/zyvorai/gryvia-ai-operator:0.1.0
+  gryvia-api-gateway           ghcr.io/zyvorai/gryvia-api-gateway:0.1.0
+  gryvia-dcgm-exporter         ghcr.io/zyvorai/gryvia-dcgm-exporter:0.1.0
+  gryvia-gpu-operator          ghcr.io/zyvorai/gryvia-gpu-operator:0.1.0
+  gryvia-nvidia-device-plugin  ghcr.io/zyvorai/gryvia-nvidia-device-plugin:0.1.0
+  gryvia-ui                    ghcr.io/zyvorai/gryvia-ui:0.1.0
 
 Warnings
   ! could not list jobs: forbidden

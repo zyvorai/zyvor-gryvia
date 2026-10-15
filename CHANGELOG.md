@@ -5,10 +5,16 @@ and the project aims to follow [Semantic Versioning](https://semver.org/) once i
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-10-15
+
+First release: multi-arch images on `ghcr.io/zyvorai/gryvia-*:0.1.0` and the Helm chart at
+`oci://ghcr.io/zyvorai/charts/gryvia` (version 0.1.0).
+
 Entries are newest first within each section. Counts in an entry (for example "24 programs") are as of that entry; the
 current numbers are 49 CRDs (43 with a registered controller) and 47 eBPF programs.
 
 ### Added
+- `scripts/kind-demo.sh` and the chart in the Pages Helm repo pull the published `:main` images (`GRYVIA_IMAGE_TAG` overrides); chart versions are 0.1.0.
 - `scripts/e2e-workspaces.py`: opens running Jupyter and code-server workspaces through the dashboard's `/ws/` proxy as a browser would (launch link, cookie, refusals, pages and every script and stylesheet they reference, Jupyter kernel over WebSocket, code-server `/healthz` and editor WebSocket). Passed on kind against `demo-notebook` and the new `examples/demo/workspace-vscode.yaml`.
 - KAI Scheduler queues per tenant (opt-in chart `quotaOperator.kaiIntegration`, quota-operator `--kai-integration`; refused together with `kueueIntegration`): every `GryviaTenant` gets the KAI `Queue` `gryvia-<tenant>` under a parent `gryvia` (GPU quota from `concurrentGPUs` or a `GryviaQuota`'s `maxGPUs`, limit quota + `borrowingLimit`, `fairShareWeight` as over-quota weight), and its namespace the label `gryvia.io/kai-queue`, which the ai-operator uses for jobs that name no queue. Deleting the tenant deletes its queue. While KAI cannot place a job's pods, the job's status message and `Ready` condition (reason `Unschedulable`) carry KAI's reason. Go unit tests, and new steps in `scripts/e2e-kai.sh` passed on kind (an oversized job shows KAI's reason; a tenant with `concurrentGPUs: 1` gets a 1/1 queue and its job runs there).
 - `scripts/export-janus-bundle.py`: export Gryvia jobs, GPU nodes and quotas as a Janus bundle (`kubectl` or a manifest directory) so the same cluster can be replayed under other scheduler policies without GPUs; skips jobs Janus cannot simulate and flags jobs larger than the cluster. See docs/janus-export.md.
