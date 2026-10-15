@@ -2,7 +2,7 @@
 # Try Gryvia on a laptop, no GPUs needed: creates a kind cluster, installs Gryvia and loads demo data
 # (fictional GPU nodes, a quota and a job).
 #
-#   ./scripts/kind-demo.sh                 # published release images
+#   ./scripts/kind-demo.sh                 # published images built from main (GRYVIA_IMAGE_TAG=0.1.0 for a release)
 #   GRYVIA_LOCAL_IMAGES=1 ./scripts/kind-demo.sh   # build images from this checkout (needs docker)
 #   ./scripts/kind-demo.sh --delete        # remove the cluster
 #
@@ -34,7 +34,8 @@ else
 fi
 kubectl config use-context "kind-$CLUSTER" >/dev/null
 
-extra=()
+# The chart comes from this checkout; its appVersion is not a published image tag, so pull the images built from main.
+extra=(--set "global.imageTag=${GRYVIA_IMAGE_TAG:-main}")
 if [[ "${GRYVIA_LOCAL_IMAGES:-}" == "1" ]]; then
   command -v docker >/dev/null 2>&1 || { echo "docker is required for GRYVIA_LOCAL_IMAGES=1" >&2; exit 1; }
   TAG="dev"

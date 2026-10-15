@@ -38,7 +38,8 @@ jobs:
           [ "$chart" = helm/sovereign-aios/ ] && continue
           # Charts with dependencies (observability) need them fetched before packaging.
           if grep -q '^dependencies:' "$chart/Chart.yaml"; then helm dependency build "$chart"; fi
-          helm package "$chart" -d website/build/charts
+          # Charts here track main, so they pull the images images.yml pushes as :main (releases are on oci://ghcr.io).
+          helm package "$chart" --app-version main -d website/build/charts
         done
         helm repo index website/build/charts --url https://zyvorai.github.io/zyvor-gryvia/charts
     - uses: actions/upload-pages-artifact@v3
