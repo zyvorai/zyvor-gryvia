@@ -1,13 +1,13 @@
 # KAI Scheduler integration
 
-[KAI Scheduler](https://github.com/kai-scheduler/KAI-Scheduler) is the Kubernetes scheduler behind NVIDIA Run:ai,
-Apache 2.0 and a CNCF Sandbox project: hierarchical queues with quotas and limits, fair share, gang scheduling,
+[KAI Scheduler](https://github.com/kai-scheduler/KAI-Scheduler) is an open-source Kubernetes scheduler for AI
+workloads, Apache 2.0 and a CNCF Sandbox project: hierarchical queues with quotas and limits, fair share, gang scheduling,
 topology-aware placement, bin-packing and GPU sharing. With the integration on, Gryvia hands the pods of every
 `GryviaAIJob` to KAI and keeps its own job lifecycle, tenants, metering and billing on top.
 
 **Status:** opt-in, off by default. Unit-tested (`controllers/gryviaaijob_kai_test.go`). `scripts/e2e-kai.sh`
 (workflow `.github/workflows/e2e-kai.yml`) passed from a clean install on a single-node kind cluster (Kubernetes 1.37,
-KAI v0.18.5), with Run:ai's fake-gpu-operator advertising one simulated GPU:
+KAI v0.18.5), with [fake-gpu-operator](https://github.com/run-ai/fake-gpu-operator) advertising one simulated GPU:
 
 - a CPU job is placed by KAI in its queue and succeeds;
 - three half-GPU jobs: two run at the same time with the same GPU, the third waits until one finishes;

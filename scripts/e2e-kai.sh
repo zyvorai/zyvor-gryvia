@@ -9,7 +9,7 @@
 #   scripts/e2e-kai.sh gang      # a 3-pod job bigger than the queue's CPU limit starts no pod; raising the limit starts all
 #   scripts/e2e-kai.sh all
 #
-# kind has no GPUs. Run:ai's fake-gpu-operator (the one KAI's own e2e uses) advertises nvidia.com/gpu and ships the
+# kind has no GPUs. fake-gpu-operator (the one KAI's own e2e uses) advertises nvidia.com/gpu and ships the
 # ClusterPolicy CRD KAI's operator waits for; the GPU is not real, so this shows placement and sharing, not CUDA.
 set -euo pipefail
 

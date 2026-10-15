@@ -2,7 +2,7 @@ package controllers
 
 // KAI Scheduler integration for GryviaAIJob (opt-in: ai-operator flag --kai-scheduler).
 //
-// KAI Scheduler (github.com/kai-scheduler/KAI-Scheduler, Apache 2.0, the scheduler of NVIDIA Run:ai) places pods
+// KAI Scheduler (github.com/kai-scheduler/KAI-Scheduler, Apache 2.0) places pods
 // whose spec.schedulerName is kai-scheduler and that carry the label kai.scheduler/queue. Its pod grouper makes one
 // PodGroup per workload; for a batch Job the annotation kai.scheduler/batch-min-member sets how many pods must be
 // placed together. With the integration on, every pod of a job gets the scheduler name and the job's queue
