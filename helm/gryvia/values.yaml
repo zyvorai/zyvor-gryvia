@@ -588,6 +588,16 @@ kueue:
   enabled: false
   # Makes the controller Deployment `kueue-controller-manager` regardless of the Helm release name.
   fullnameOverride: kueue
+  # The chart's probes use timeoutSeconds: 1 and failureThreshold: 3, so a loaded node kills a healthy
+  # manager. A 5s timeout and 6 failures still detect a hung process within ~2 minutes.
+  controllerManager:
+    readinessProbe:
+      timeoutSeconds: 5
+      failureThreshold: 6
+    livenessProbe:
+      initialDelaySeconds: 30
+      timeoutSeconds: 5
+      failureThreshold: 6
   managerConfig:
     # Kueue's Configuration (config.kueue.x-k8s.io/v1beta2, the API of the pinned chart version). This REPLACES the
     # chart's default; it differs from it in two ways: waitForPodsReady is on, and only the batch/job integration is
@@ -605,9 +615,17 @@ kueue:
         bindAddress: :8443
       webhook:
         port: 9443
+      # Generous leader-election timing. client-go defaults (15s lease / 10s renew / 2s retry, each API call
+      # limited to a 5s timeout) make the manager abandon leadership and exit when the API server is merely
+      # slow, which on a single busy control-plane node became a restart loop (58 restarts in 29h) while its
+      # failurePolicy=Fail webhooks rejected every Job in the cluster. Must satisfy
+      # leaseDuration > renewDeadline > retryPeriod * 1.2.
       leaderElection:
         leaderElect: true
         resourceName: c1f6bfd2.kueue.x-k8s.io
+        leaseDuration: 60s
+        renewDeadline: 45s
+        retryPeriod: 10s
       controller:
         groupKindConcurrency:
           Job.batch: 5
