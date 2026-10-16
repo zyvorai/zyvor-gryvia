@@ -22,7 +22,7 @@ jobs:
     steps:
     # upload-pages-artifact needs GNU tar (gtar) on macOS: brew install gnu-tar.
     - run: echo /opt/homebrew/bin >> "$GITHUB_PATH"
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v7
     - uses: actions/setup-node@v7
       with: {node-version: '22', cache: npm, cache-dependency-path: website/package-lock.json}
     - run: npm --prefix website ci
