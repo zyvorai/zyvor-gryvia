@@ -181,7 +181,7 @@ spec:
         from: Same
   - name: https
     protocol: HTTPS
-    port: 443
+    port: 7443
     hostname: gryvia.example.com
     tls:
       mode: Terminate
