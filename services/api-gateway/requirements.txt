@@ -7,5 +7,5 @@ python-dateutil==2.9.0.post0
 slowapi==0.1.10
 python-jose[cryptography]==3.5.0
 httpx==0.28.1
-websockets==15.0.1
+websockets==17.2
 prometheus-client==0.26.0
