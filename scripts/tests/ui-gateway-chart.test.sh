@@ -34,6 +34,11 @@ echo "with a client-facing certificate"
 OUT="$(render "${GW[@]}" --set ui.gateway.tlsSecretName=gryvia-ui-tls)"
 has   "https listener" '- name: https$'
 has   "redirect route" 'type: RequestRedirect'
+has   "https listener is not on 443" 'port: 7443'
+grep -A1 'protocol: HTTPS' <<<"$OUT" | grep -q 'port: 7443' && ok "https listener port is 7443, not 443" || fail "https listener port is 7443, not 443"
+has   "redirect keeps the https port" 'port: 7443'
+OUT2="$(render "${GW[@]}" --set ui.gateway.tlsSecretName=gryvia-ui-tls --set ui.gateway.httpsPort=9444)"
+grep -q 'port: 9444' <<<"$OUT2" && ok "httpsPort is configurable" || fail "httpsPort is configurable"
 [[ "$(count '^kind: HTTPRoute$')" == 2 ]] && ok "two routes (redirect + app)" || fail "two routes (redirect + app)"
 
 echo "attach to an existing Gateway"

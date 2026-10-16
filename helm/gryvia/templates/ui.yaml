@@ -168,7 +168,7 @@ spec:
     {{- if $tls }}
     - name: https
       protocol: HTTPS
-      port: 443
+      port: {{ .Values.ui.gateway.httpsPort }}
       hostname: {{ .Values.ui.gateway.host | quote }}
       tls:
         mode: Terminate
@@ -201,6 +201,7 @@ spec:
         - type: RequestRedirect
           requestRedirect:
             scheme: https
+            port: {{ .Values.ui.gateway.httpsPort }}
             statusCode: 301
 {{- end }}
 ---

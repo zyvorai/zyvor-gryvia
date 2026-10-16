@@ -454,6 +454,7 @@ ui:
     gatewayName: ""              # existing Gateway when createGateway=false (default: gryvia)
     gatewayNamespace: ""         # default: the release namespace
     host: gryvia.example.com
+    httpsPort: 7443              # client-facing HTTPS listener port (not 443); the http listener stays on 80
     tlsSecretName: ""            # client-facing kubernetes.io/tls Secret; empty = plain HTTP :80 listener only
     backendTLS:
       caConfigMapName: ""        # required when gateway.enabled: ConfigMap holding ca.crt for gryvia-ui
