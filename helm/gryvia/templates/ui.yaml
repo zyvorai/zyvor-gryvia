@@ -141,6 +141,117 @@ spec:
                 port:
                   name: https
 {{- end }}
+{{- if .Values.ui.gateway.enabled }}
+{{- $ns := include "gryvia.namespace" . }}
+{{- $gw := default "gryvia" .Values.ui.gateway.gatewayName }}
+{{- $gwNs := default $ns .Values.ui.gateway.gatewayNamespace }}
+{{- $tls := and .Values.ui.gateway.createGateway .Values.ui.gateway.tlsSecretName }}
+{{- if .Values.ui.gateway.createGateway }}
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: {{ $gw }}
+  namespace: {{ $ns }}
+  labels:
+    {{- include "gryvia.labels" . | nindent 4 }}
+spec:
+  gatewayClassName: {{ .Values.ui.gateway.gatewayClassName | quote }}
+  listeners:
+    - name: http
+      protocol: HTTP
+      port: 80
+      hostname: {{ .Values.ui.gateway.host | quote }}
+      allowedRoutes:
+        namespaces:
+          from: Same
+    {{- if $tls }}
+    - name: https
+      protocol: HTTPS
+      port: 443
+      hostname: {{ .Values.ui.gateway.host | quote }}
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - kind: Secret
+            name: {{ .Values.ui.gateway.tlsSecretName | quote }}
+      allowedRoutes:
+        namespaces:
+          from: Same
+    {{- end }}
+{{- end }}
+{{- if $tls }}
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: gryvia-ui-redirect
+  namespace: {{ $ns }}
+  labels:
+    {{- include "gryvia.labels" . | nindent 4 }}
+spec:
+  parentRefs:
+    - name: {{ $gw }}
+      namespace: {{ $gwNs }}
+      sectionName: http
+  hostnames:
+    - {{ .Values.ui.gateway.host | quote }}
+  rules:
+    - filters:
+        - type: RequestRedirect
+          requestRedirect:
+            scheme: https
+            statusCode: 301
+{{- end }}
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: gryvia-ui
+  namespace: {{ $ns }}
+  labels:
+    {{- include "gryvia.labels" . | nindent 4 }}
+spec:
+  parentRefs:
+    - name: {{ $gw }}
+      namespace: {{ $gwNs }}
+      {{- if $tls }}
+      sectionName: https
+      {{- else if .Values.ui.gateway.createGateway }}
+      sectionName: http
+      {{- end }}
+  hostnames:
+    - {{ .Values.ui.gateway.host | quote }}
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: gryvia-ui
+          port: 443
+      timeouts:
+        request: {{ .Values.ui.gateway.requestTimeout | quote }}
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: BackendTLSPolicy
+metadata:
+  name: gryvia-ui
+  namespace: {{ $ns }}
+  labels:
+    {{- include "gryvia.labels" . | nindent 4 }}
+spec:
+  targetRefs:
+    - group: ""
+      kind: Service
+      name: gryvia-ui
+  validation:
+    caCertificateRefs:
+      - group: ""
+        kind: ConfigMap
+        name: {{ .Values.ui.gateway.backendTLS.caConfigMapName | quote }}
+    hostname: {{ default (printf "gryvia-ui.%s.svc" $ns) .Values.ui.gateway.backendTLS.hostname | quote }}
+{{- end }}
 {{- if and .Values.podDisruptionBudget.enabled (gt (int .Values.ui.replicas) 1) }}
 ---
 apiVersion: policy/v1

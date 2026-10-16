@@ -101,27 +101,26 @@ spec:
       name: http
 
 ---
-# VSCode Ingress (optional)
-apiVersion: networking.k8s.io/v1
-kind: Ingress
+# VSCode route (optional): replaces the former nginx Ingress. Envoy upgrades websockets without extra
+# annotations; the `gryvia` Gateway (namespace gryvia-system) must allow routes from this namespace.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
 metadata:
   name: vscode-gpu
   namespace: default
-  annotations:
-    nginx.ingress.kubernetes.io/proxy-body-size: "0"
-    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
-    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
-    nginx.ingress.kubernetes.io/websocket-services: vscode-gpu
 spec:
-  ingressClassName: nginx
+  parentRefs:
+  - name: gryvia
+    namespace: gryvia-system
+  hostnames:
+  - vscode.gryvia.local
   rules:
-    - host: vscode.gryvia.local
-      http:
-        paths:
-          - path: /
-            pathType: Prefix
-            backend:
-              service:
-                name: vscode-gpu
-                port:
-                  number: 8080
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /
+    backendRefs:
+    - name: vscode-gpu
+      port: 8080
+    timeouts:
+      request: "0s"

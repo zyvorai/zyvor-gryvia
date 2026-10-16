@@ -442,6 +442,23 @@ ui:
     annotations: {}
     # Secret with the ingress certificate (leave empty for none).
     tlsSecretName: ""
+  # Envoy (or any Gateway API implementation, e.g. Envoy Gateway) instead of an Ingress controller. Mutually
+  # exclusive with ui.ingress. The dashboard serves HTTPS on 443, so the proxy re-encrypts to it and a
+  # BackendTLSPolicy pins the CA: create the ConfigMap once from the certificate the chart minted, e.g.
+  #   kubectl -n gryvia-system get secret gryvia-tls -o jsonpath='{.data.tls\.crt}' | base64 -d |
+  #     kubectl -n gryvia-system create configmap gryvia-ui-ca --from-file=ca.crt=/dev/stdin
+  gateway:
+    enabled: false
+    createGateway: true          # false: only attach the routes to an existing Gateway (below)
+    gatewayClassName: eg
+    gatewayName: ""              # existing Gateway when createGateway=false (default: gryvia)
+    gatewayNamespace: ""         # default: the release namespace
+    host: gryvia.example.com
+    tlsSecretName: ""            # client-facing kubernetes.io/tls Secret; empty = plain HTTP :80 listener only
+    backendTLS:
+      caConfigMapName: ""        # required when gateway.enabled: ConfigMap holding ca.crt for gryvia-ui
+      hostname: ""               # validation hostname; default gryvia-ui.<namespace>.svc (a chart SAN)
+    requestTimeout: "0s"         # 0s: no route timeout (dashboard streams / websockets)
 
 # Open GryviaWorkspaces (Jupyter, VS Code) in the browser at <publicURL>/ws/<namespace>/<name>/, through the dashboard
 # and the api-gateway, which checks a per-workspace session cookie. The ai-operator derives each Jupyter server's
