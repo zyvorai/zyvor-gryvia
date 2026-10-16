@@ -44,15 +44,15 @@ jobs:
     name: Chart and agent against Zyntra
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           path: gryvia
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           repository: zyvorai/zyntra
           ref: ${{ env.ZYNTRA_REF }}
           path: zyntra
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           repository: zyvorai/netra
           path: netra
@@ -76,15 +76,15 @@ jobs:
     name: Hardening and air gap
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           path: gryvia
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           repository: zyvorai/zyntra
           ref: ${{ env.ZYNTRA_REF }}
           path: zyntra
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           repository: zyvorai/netra
           path: netra

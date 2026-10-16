@@ -27,7 +27,7 @@ jobs:
     runs-on: [self-hosted, linux, gpu]
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Run validate-gpu.sh
         env:
           NS: ${{ inputs.namespace }}
