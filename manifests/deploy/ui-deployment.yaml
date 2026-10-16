@@ -157,29 +157,109 @@ subjects:
   name: gryvia-ui
   namespace: gryvia-system
 ---
-apiVersion: networking.k8s.io/v1
-kind: Ingress
+# Envoy Gateway (Gateway API) front door; replaces the former nginx Ingress. Install the controller and the
+# `eg` GatewayClass first (see docs: Envoy Gateway). The dashboard serves HTTPS on 443, so Envoy re-encrypts
+# and the BackendTLSPolicy pins the CA from the ConfigMap `gryvia-ui-ca`, created once from the UI certificate:
+#   kubectl -n gryvia-system get secret gryvia-tls -o jsonpath='{.data.tls\.crt}' | base64 -d |
+#     kubectl -n gryvia-system create configmap gryvia-ui-ca --from-file=ca.crt=/dev/stdin
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: gryvia
+  namespace: gryvia-system
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+spec:
+  gatewayClassName: eg
+  listeners:
+  - name: http
+    protocol: HTTP
+    port: 80
+    hostname: gryvia.example.com
+    allowedRoutes:
+      namespaces:
+        from: Same
+  - name: https
+    protocol: HTTPS
+    port: 443
+    hostname: gryvia.example.com
+    tls:
+      mode: Terminate
+      certificateRefs:
+      - kind: Secret
+        name: gryvia-ui-tls
+    allowedRoutes:
+      namespaces:
+        from: Same
+  # Optional services (services/mlflow/deploy.yaml, examples/integrations/vscode-server.yaml).
+  - name: mlflow
+    protocol: HTTP
+    port: 80
+    hostname: mlflow.gryvia.local
+    allowedRoutes:
+      namespaces:
+        from: Same
+  - name: vscode
+    protocol: HTTP
+    port: 80
+    hostname: vscode.gryvia.local
+    allowedRoutes:
+      namespaces:
+        from: All
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: gryvia-ui-redirect
+  namespace: gryvia-system
+spec:
+  parentRefs:
+  - name: gryvia
+    sectionName: http
+  hostnames:
+  - gryvia.example.com
+  rules:
+  - filters:
+    - type: RequestRedirect
+      requestRedirect:
+        scheme: https
+        statusCode: 301
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
 metadata:
   name: gryvia-ui
   namespace: gryvia-system
-  annotations:
-    nginx.ingress.kubernetes.io/ssl-redirect: "true"
-    nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
-    cert-manager.io/cluster-issuer: "letsencrypt-prod"
 spec:
-  ingressClassName: nginx
-  tls:
-  - hosts:
-    - gryvia.example.com
-    secretName: gryvia-ui-tls
+  parentRefs:
+  - name: gryvia
+    sectionName: https
+  hostnames:
+  - gryvia.example.com
   rules:
-  - host: gryvia.example.com
-    http:
-      paths:
-      - path: /
-        pathType: Prefix
-        backend:
-          service:
-            name: gryvia-ui
-            port:
-              number: 443
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /
+    backendRefs:
+    - name: gryvia-ui
+      port: 443
+    timeouts:
+      request: "0s"
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: BackendTLSPolicy
+metadata:
+  name: gryvia-ui
+  namespace: gryvia-system
+spec:
+  targetRefs:
+  - group: ""
+    kind: Service
+    name: gryvia-ui
+  validation:
+    caCertificateRefs:
+    - group: ""
+      kind: ConfigMap
+      name: gryvia-ui-ca
+    hostname: gryvia-ui.gryvia-system.svc

@@ -8,3 +8,15 @@ missing. Fail instead of installing the GPU Operator, Network Operator, NIM Oper
 {{- fail (printf "%s.enabled is not set: the values come from an older chart (helm upgrade --reuse-values?) and Helm would enable the %s sub-chart. Upgrade with --reset-then-reuse-values (Helm 3.14 or later), or set %s.enabled explicitly." $key $key $key) }}
 {{- end }}
 {{- end }}
+{{- /* The dashboard can be exposed through an Ingress or a Gateway API route, not both. */ -}}
+{{- if and .Values.ui.ingress.enabled .Values.ui.gateway.enabled }}
+{{- fail "ui.ingress.enabled and ui.gateway.enabled are mutually exclusive" }}
+{{- end }}
+{{- if .Values.ui.gateway.enabled }}
+{{- if not .Values.ui.gateway.host }}
+{{- fail "ui.gateway.host is required when ui.gateway.enabled" }}
+{{- end }}
+{{- if not .Values.ui.gateway.backendTLS.caConfigMapName }}
+{{- fail "ui.gateway.backendTLS.caConfigMapName is required when ui.gateway.enabled: the dashboard serves HTTPS and the proxy must validate it (see values.yaml)" }}
+{{- end }}
+{{- end }}

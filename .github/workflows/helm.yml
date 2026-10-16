@@ -67,6 +67,7 @@ jobs:
         run: |
           helm dependency build helm/gryvia
           bash scripts/tests/kueue-chart.test.sh
+          bash scripts/tests/ui-gateway-chart.test.sh
 
       - name: Checkpoint guard chart switch (flag on the ai-operator, Role/RoleBinding create only when on)
         run: bash scripts/tests/checkpoint-guard-chart.test.sh
