@@ -49,6 +49,10 @@ OUT="$(render --set kueue.enabled=true --set aiOperator.kueueIntegration=true --
 has   "kueue controller rendered" 'name: kueue-controller-manager'
 has   "waitForPodsReady configured" 'waitForPodsReady:'
 has   "batch/job integration registered" '^ +- batch/job$'
+has   "leader election tolerates a slow API server" 'leaseDuration: 60s'
+has   "renew deadline below the lease" 'renewDeadline: 45s'
+has   "readiness probe timeout is not 1s" 'timeoutSeconds: 5'
+lacks "no 1s probe timeout left on the manager" 'timeoutSeconds: 1$'
 if command -v python3 >/dev/null && python3 -c 'import yaml' 2>/dev/null; then
   if python3 -c 'import sys,yaml; list(yaml.safe_load_all(sys.stdin))' <<<"$OUT" 2>/dev/null; then ok "valid YAML"; else fail "valid YAML"; fi
 fi
