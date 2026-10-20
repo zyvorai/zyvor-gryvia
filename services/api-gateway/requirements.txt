@@ -1,4 +1,4 @@
-fastapi==0.143.0
+fastapi==0.143.3
 uvicorn[standard]==0.54.0
 kubernetes==37.0.1
 prometheus-api-client==0.7.2
