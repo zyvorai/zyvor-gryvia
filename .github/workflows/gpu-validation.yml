@@ -40,7 +40,7 @@ jobs:
           ./scripts/validate-gpu.sh "${args[@]}"
       - name: Upload the report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: gpu-validation-report
           path: ${{ runner.temp }}/gpu-validation-report.json
