@@ -2,7 +2,7 @@
 
 Performance benchmarking tools for Gryvia platform.
 
-> **Status.** `benchmark.go` is a manual load generator, not a validated benchmark suite. It uses the default kubeconfig (`~/.kube/config`) and creates real `GryviaAIJob` objects (1 GPU of type H100 each, in a hard-coded namespace) in whatever cluster it points at, so it needs a cluster with GPUs and quota, and it should not be pointed at a production cluster. There are no published results: the JSON below and the "Performance Targets" are illustrative design targets, not measurements of this project. It is not run in CI.
+> **Status.** `benchmark.go` is a manual load generator, not a validated benchmark suite. It uses the standard kubeconfig loading rules (`$KUBECONFIG` or `~/.kube/config`) and creates real `GryviaAIJob` objects (1 GPU of type H100 each, in a hard-coded namespace) in whatever cluster it points at, so it needs a cluster with GPUs and quota, and it should not be pointed at a production cluster. There are no published results: the JSON below and the "Performance Targets" are illustrative design targets, not measurements of this project. It is not run in CI.
 
 ## Benchmarks
 

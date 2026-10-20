@@ -2,7 +2,7 @@
 
 End-to-end tests for Gryvia platform.
 
-> **Status.** These four Go tests (`tests/e2e/e2e_test.go`) run against whatever cluster your default kubeconfig points at (they read `~/.kube/config` directly, not `$KUBECONFIG`) and expect the CRDs and operators to be installed. They are **not run in CI**: no workflow under `.github/workflows` invokes `tests/e2e`. The CI job that exercises a real install is `kind-e2e.yml` (kind cluster with demo data, no GPUs, API and CLI checks), which is a separate thing. The GPU node test only logs and asserts on nodes that already exist. Nothing here has been run against real GPU, VAST or RDMA hardware.
+> **Status.** These four Go tests (`tests/e2e/e2e_test.go`) run against whatever cluster your default kubeconfig points at (`$KUBECONFIG` if set, otherwise `~/.kube/config`) and expect the CRDs and operators to be installed. They are **not run in CI**: no workflow under `.github/workflows` invokes `tests/e2e`. The CI job that exercises a real install is `kind-e2e.yml` (kind cluster with demo data, no GPUs, API and CLI checks), which is a separate thing. The GPU node test only logs and asserts on nodes that already exist. Nothing here has been run against real GPU, VAST or RDMA hardware.
 
 ## Prerequisites
 
@@ -75,7 +75,7 @@ These tests are not wired into GitHub Actions today, so they run only when you r
 ## Troubleshooting
 
 ### Tests fail to connect to cluster
-The tests load `~/.kube/config` (the default kubeconfig), so make that file point at the target cluster; setting `KUBECONFIG` alone has no effect.
+The tests use the standard kubeconfig loading rules: `$KUBECONFIG` if set, otherwise `~/.kube/config`. Make sure the current context points at the target cluster.
 
 ### Timeout errors
 Increase timeout:
