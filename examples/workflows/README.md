@@ -300,9 +300,12 @@ jobs:
       - uses: actions/checkout@v3
 
       - name: Submit Argo Workflow
+        env:
+          # Pass untrusted values through env, never interpolate them into the script.
+          MODEL_NAME: ${{ github.sha }}
         run: |
           argo submit -n default workflows/training-pipeline.yaml \
-            --parameter model-name=${{ github.event.head_commit.message }} \
+            --parameter model-name="$MODEL_NAME" \
             --wait
 ```
 

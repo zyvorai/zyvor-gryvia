@@ -39,7 +39,8 @@ type JobMetrics struct {
 var dynamicClient dynamic.Interface
 
 func main() {
-	config, err := clientcmd.BuildConfigFromFlags("", clientcmd.RecommendedHomeFile)
+	config, err := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
+		clientcmd.NewDefaultClientConfigLoadingRules(), &clientcmd.ConfigOverrides{}).ClientConfig()
 	if err != nil {
 		fmt.Printf("Error building kubeconfig: %v\n", err)
 		os.Exit(1)

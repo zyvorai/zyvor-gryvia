@@ -27,7 +27,8 @@ type testCluster struct {
 
 func setupTestCluster(t *testing.T) *testCluster {
 	t.Helper()
-	config, err := clientcmd.BuildConfigFromFlags("", clientcmd.RecommendedHomeFile)
+	config, err := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
+		clientcmd.NewDefaultClientConfigLoadingRules(), &clientcmd.ConfigOverrides{}).ClientConfig()
 	require.NoError(t, err, "Failed to build kubeconfig")
 
 	dc, err := dynamic.NewForConfig(config)
