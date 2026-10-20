@@ -4,19 +4,17 @@
 
 # Gryvia
 
-## The best GPU platform in the world.
+## Stop babysitting GPUs. Start shipping models.
 
 ### GPU is the new CPU. Gryvia is its scheduler.
 
-**Train, fine-tune and serve on shared GPU clusters with one Kubernetes-native platform:** GPU-aware placement,
-fractional GPUs and gangs, KAI Scheduler or Kueue queues, Jupyter and VS Code in the browser, tenants, quotas and
-per-team metering. Open source, Apache 2.0.
+**One Kubernetes-native platform to train, fine-tune and serve on shared GPU clusters.** Open source, Apache 2.0.
+
+**Place** every job on the right GPU · **Share** them by the half, the MIG slice or the gang · **Bill** every team by the GPU-hour
 
 [![Docs site](https://github.com/zyvorai/zyvor-gryvia/actions/workflows/pages.yml/badge.svg)](https://zyvorai.github.io/zyvor-gryvia/)
 [![License](https://img.shields.io/badge/License-Apache%202.0-0071e3?style=flat-square&labelColor=1d1d1f)](LICENSE)
 [![Kubernetes](https://img.shields.io/badge/Kubernetes-1.30+-0071e3?style=flat-square&labelColor=1d1d1f&logo=kubernetes&logoColor=white)](https://kubernetes.io/)
-[![KAI Scheduler](https://img.shields.io/badge/KAI_Scheduler-backend-0071e3?style=flat-square&labelColor=1d1d1f)](docs/kai-scheduler.md)
-[![Kueue](https://img.shields.io/badge/Kueue-integration-0071e3?style=flat-square&labelColor=1d1d1f)](docs/kueue-integration.md)
 [![Stars](https://img.shields.io/github/stars/zyvorai/zyvor-gryvia?style=flat-square&labelColor=1d1d1f&color=0071e3&logo=github)](https://github.com/zyvorai/zyvor-gryvia)
 
 [![Quickstart](https://img.shields.io/badge/Try_it_in_5_minutes_on_kind-76d13a?style=for-the-badge)](#quickstart)
@@ -26,6 +24,18 @@ per-team metering. Open source, Apache 2.0.
 [**Quickstart**](#quickstart) · [**Website**](https://zyvorai.github.io/zyvor-gryvia/) · [**Docs**](website/docs/intro.md) · [**Architecture**](#architecture) · [**What works today**](#what-works-today) · [**License**](#license)
 
 </div>
+
+---
+
+## See it in 30 seconds
+
+```bash
+./scripts/kind-demo.sh                                   # whole platform on kind, demo data, dashboard, no GPUs needed
+gryvia submit --image pytorch/pytorch --gpu 0.5 -- python train.py   # half a GPU, queued and placed for you
+gryvia status                                            # what is running, where, and what it costs
+```
+
+Full walk-through: [Quickstart](#quickstart).
 
 ---
 
@@ -216,8 +226,17 @@ pods are constrained by node selector and placed by the Kubernetes scheduler (or
 
 </details>
 
+### Gryvia vs plain Kubernetes + GPU Operator, in four rows
+
+| You want | Plain Kubernetes | Gryvia |
+|---|---|---|
+| To run a training job | Write Pods, Services and PVCs | One `GryviaAIJob`, or `gryvia submit` |
+| Half a GPU or a gang | Manual time-slicing, no gangs | `--gpu 0.5`, `--nodes 4` |
+| Fair queues per team | Build it yourself | KAI, Kueue or the native queue, one per tenant |
+| To know who used what | Not built in | GPU-hour metering, budgets, estimate invoices |
+
 <details>
-<summary><b>Gryvia vs Kubernetes + GPU Operator</b></summary>
+<summary><b>Gryvia vs Kubernetes + GPU Operator: the full table</b></summary>
 
 ![Gryvia vs Kubernetes + GPU Operator: one job spec, GPU-aware, metered per tenant](docs/ux/readme-vs.jpg)
 
@@ -308,41 +327,6 @@ telemetry and rolls back measured error-rate/p95 breaches. See [docs/inference-s
 
 ---
 
-## Documentation
-
-| Topic | Doc |
-|---|---|
-| Project website (overview, how it works, install) | [zyvorai.github.io/zyvor-gryvia](https://zyvorai.github.io/zyvor-gryvia/) |
-| Full documentation index | [website/docs/intro.md](website/docs/intro.md) |
-| Quick start | [website/docs/getting-started/quickstart.md](website/docs/getting-started/quickstart.md) |
-| Bare-metal / complete deployment | [DEPLOYMENT_GUIDE.md](website/docs/guides/DEPLOYMENT_GUIDE.md) · [COMPLETE_DEPLOYMENT_GUIDE.md](website/docs/guides/COMPLETE_DEPLOYMENT_GUIDE.md) |
-| Authentication and TLS | [guides/AUTH_AND_TLS.md](website/docs/guides/AUTH_AND_TLS.md) |
-| Cluster setup (admin) | [admin-guide/cluster-setup.md](website/docs/admin-guide/cluster-setup.md) |
-| Job management (user) | [user-guide/jobs.md](website/docs/user-guide/jobs.md) |
-| Scheduling internals | [guides/SCHEDULING.md](website/docs/guides/SCHEDULING.md) |
-| KAI Scheduler, Kueue, native queue scheduler | [docs/kai-scheduler.md](docs/kai-scheduler.md) · [docs/kueue-integration.md](docs/kueue-integration.md) · [docs/native-scheduler.md](docs/native-scheduler.md) |
-| Workspaces in the browser | [docs/workspaces.md](docs/workspaces.md) |
-| Storage & network operators | [guides/STORAGE_NETWORK_OPERATORS.md](website/docs/guides/STORAGE_NETWORK_OPERATORS.md) |
-| Network Intelligence (NetPredator) | [guides/NETWORK_INTELLIGENCE.md](website/docs/guides/NETWORK_INTELLIGENCE.md) |
-| CLI guide | [guides/CLI_GUIDE.md](website/docs/guides/CLI_GUIDE.md) |
-| API reference | [developer-guide/api-reference.md](website/docs/developer-guide/api-reference.md) |
-| ML workflows, integrations, playbooks | [guides/ML_WORKFLOWS.md](website/docs/guides/ML_WORKFLOWS.md) · [guides/INTEGRATIONS.md](website/docs/guides/INTEGRATIONS.md) · [guides/OPERATIONAL_PLAYBOOKS.md](website/docs/guides/OPERATIONAL_PLAYBOOKS.md) |
-| GPU as a Service (tenants, catalog, usage, invoices) | [guides/GPU_AS_A_SERVICE.md](website/docs/guides/GPU_AS_A_SERVICE.md) |
-| Gryvia as a GPU cloud's platform | [docs/gpu-cloud-platform.md](docs/gpu-cloud-platform.md) |
-| GPU nodes (NVIDIA GPU Operator, k3s bootstrap) | [guides/GPU_NODES.md](website/docs/guides/GPU_NODES.md) · [docs/gpu-validation.md](docs/gpu-validation.md) |
-| NVIDIA one-click (RDMA, GDS, MIG, Network and NIM operators) | [guides/NVIDIA_ONE_CLICK.md](website/docs/guides/NVIDIA_ONE_CLICK.md) |
-| Admission and recovery | [docs/admission-recovery.md](docs/admission-recovery.md) |
-| Job submission preflight | [docs/job-submission-preflight.md](docs/job-submission-preflight.md) |
-| Inference serving | [docs/inference-serving.md](docs/inference-serving.md) |
-| Operations (upgrade, uninstall, backup) | [guides/OPERATIONS.md](website/docs/guides/OPERATIONS.md) |
-| CRD reference (all kinds and their controllers) | [reference/crds.md](website/docs/reference/crds.md) |
-| eBPF programs, collector, Flight Recorder | [ebpf/README.md](ebpf/README.md) · [collector/README.md](collector/README.md) · [docs/flight-recorder.md](docs/flight-recorder.md) |
-| Helm charts | [helm/gryvia](helm/gryvia/README.md) · [helm/network-intelligence](helm/network-intelligence/README.md) |
-| Advanced features, FAQ, roadmap | [guides/ADVANCED_FEATURES.md](website/docs/guides/ADVANCED_FEATURES.md) · [guides/FAQ.md](website/docs/guides/FAQ.md) · [guides/ROADMAP.md](website/docs/guides/ROADMAP.md) |
-| Examples & tutorials | [examples/README.md](examples/README.md) |
-
----
-
 <a id="what-works-today"></a>
 
 ## What works today
@@ -387,6 +371,41 @@ The [CRD reference](website/docs/reference/crds.md) lists every kind with the op
 
 ---
 
+## Documentation
+
+| Topic | Doc |
+|---|---|
+| Project website (overview, how it works, install) | [zyvorai.github.io/zyvor-gryvia](https://zyvorai.github.io/zyvor-gryvia/) |
+| Full documentation index | [website/docs/intro.md](website/docs/intro.md) |
+| Quick start | [website/docs/getting-started/quickstart.md](website/docs/getting-started/quickstart.md) |
+| Bare-metal / complete deployment | [DEPLOYMENT_GUIDE.md](website/docs/guides/DEPLOYMENT_GUIDE.md) · [COMPLETE_DEPLOYMENT_GUIDE.md](website/docs/guides/COMPLETE_DEPLOYMENT_GUIDE.md) |
+| Authentication and TLS | [guides/AUTH_AND_TLS.md](website/docs/guides/AUTH_AND_TLS.md) |
+| Cluster setup (admin) | [admin-guide/cluster-setup.md](website/docs/admin-guide/cluster-setup.md) |
+| Job management (user) | [user-guide/jobs.md](website/docs/user-guide/jobs.md) |
+| Scheduling internals | [guides/SCHEDULING.md](website/docs/guides/SCHEDULING.md) |
+| KAI Scheduler, Kueue, native queue scheduler | [docs/kai-scheduler.md](docs/kai-scheduler.md) · [docs/kueue-integration.md](docs/kueue-integration.md) · [docs/native-scheduler.md](docs/native-scheduler.md) |
+| Workspaces in the browser | [docs/workspaces.md](docs/workspaces.md) |
+| Storage & network operators | [guides/STORAGE_NETWORK_OPERATORS.md](website/docs/guides/STORAGE_NETWORK_OPERATORS.md) |
+| Network Intelligence (NetPredator) | [guides/NETWORK_INTELLIGENCE.md](website/docs/guides/NETWORK_INTELLIGENCE.md) |
+| CLI guide | [guides/CLI_GUIDE.md](website/docs/guides/CLI_GUIDE.md) |
+| API reference | [developer-guide/api-reference.md](website/docs/developer-guide/api-reference.md) |
+| ML workflows, integrations, playbooks | [guides/ML_WORKFLOWS.md](website/docs/guides/ML_WORKFLOWS.md) · [guides/INTEGRATIONS.md](website/docs/guides/INTEGRATIONS.md) · [guides/OPERATIONAL_PLAYBOOKS.md](website/docs/guides/OPERATIONAL_PLAYBOOKS.md) |
+| GPU as a Service (tenants, catalog, usage, invoices) | [guides/GPU_AS_A_SERVICE.md](website/docs/guides/GPU_AS_A_SERVICE.md) |
+| Gryvia as a GPU cloud's platform | [docs/gpu-cloud-platform.md](docs/gpu-cloud-platform.md) |
+| GPU nodes (NVIDIA GPU Operator, k3s bootstrap) | [guides/GPU_NODES.md](website/docs/guides/GPU_NODES.md) · [docs/gpu-validation.md](docs/gpu-validation.md) |
+| NVIDIA one-click (RDMA, GDS, MIG, Network and NIM operators) | [guides/NVIDIA_ONE_CLICK.md](website/docs/guides/NVIDIA_ONE_CLICK.md) |
+| Admission and recovery | [docs/admission-recovery.md](docs/admission-recovery.md) |
+| Job submission preflight | [docs/job-submission-preflight.md](docs/job-submission-preflight.md) |
+| Inference serving | [docs/inference-serving.md](docs/inference-serving.md) |
+| Operations (upgrade, uninstall, backup) | [guides/OPERATIONS.md](website/docs/guides/OPERATIONS.md) |
+| CRD reference (all kinds and their controllers) | [reference/crds.md](website/docs/reference/crds.md) |
+| eBPF programs, collector, Flight Recorder | [ebpf/README.md](ebpf/README.md) · [collector/README.md](collector/README.md) · [docs/flight-recorder.md](docs/flight-recorder.md) |
+| Helm charts | [helm/gryvia](helm/gryvia/README.md) · [helm/network-intelligence](helm/network-intelligence/README.md) |
+| Advanced features, FAQ, roadmap | [guides/ADVANCED_FEATURES.md](website/docs/guides/ADVANCED_FEATURES.md) · [guides/FAQ.md](website/docs/guides/FAQ.md) · [guides/ROADMAP.md](website/docs/guides/ROADMAP.md) |
+| Examples & tutorials | [examples/README.md](examples/README.md) |
+
+---
+
 ## Part of the Zyvor stack
 
 | Product | Role next to Gryvia |
@@ -421,7 +440,7 @@ incident triage, a named technical contact and 24x7 critical intake. Plans and t
 
 <div align="center">
 
-### The best GPU platform in the world. Try it in five minutes.
+### Every GPU busy. Every team billed. Five minutes to try.
 
 [![Quickstart](https://img.shields.io/badge/Quickstart-76d13a?style=for-the-badge)](#quickstart)
 [![Book a demo](https://img.shields.io/badge/Book_a_demo-0071e3?style=for-the-badge)](https://zyvor.dev/schedule?utm_source=github&utm_medium=gryvia&utm_campaign=readme_footer)
