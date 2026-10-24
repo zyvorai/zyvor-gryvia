@@ -49,15 +49,15 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 80
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           path: gryvia
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           repository: zyvorai/zyntra
           ref: ${{ env.ZYNTRA_REF }}
           path: zyntra
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           repository: zyvorai/netra
           path: netra
