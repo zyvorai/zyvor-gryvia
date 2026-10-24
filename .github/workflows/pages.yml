@@ -42,7 +42,7 @@ jobs:
           helm package "$chart" --app-version main -d website/build/charts
         done
         helm repo index website/build/charts --url https://zyvorai.github.io/zyvor-gryvia/charts
-    - uses: actions/upload-pages-artifact@v3
+    - uses: actions/upload-pages-artifact@v5
       with: {path: website/build}
   deploy:
     needs: build
