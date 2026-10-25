@@ -2,7 +2,7 @@ fastapi==0.143.0
 uvicorn[standard]==0.54.0
 kubernetes==37.0.1
 prometheus-api-client==0.7.2
-pydantic==2.13.5
+pydantic==2.14.1
 python-dateutil==2.9.0.post0
 slowapi==0.1.10
 python-jose[cryptography]==3.5.0
