@@ -23,7 +23,7 @@ Teams that want to experiment with a GPU platform on Kubernetes and accept alpha
 
 ### How is Gryvia different from Kubeflow?
 
-They overlap little today. Kubeflow provides ML pipelines, notebooks and serving that run. Gryvia's DAG workflow, tuning, serving and notebook kinds are CRDs without controllers, so use Kubeflow (or another engine) for those. Gryvia's running parts are the job operator, tenancy and quota, metering, and GPU node and network tooling. They can be installed side by side; that combination has not been tested here.
+They overlap on ML surface but emphasize different layers. Kubeflow is a suite of ML projects (pipelines, notebooks, trainer, Katib, registry, KServe). Gryvia is a GPU-aware job, tenancy, metering and scheduling platform: `GryviaAIJob`, tenants/quotas, KAI/Kueue/native queues, workspaces, inference, model registry, workflows and AutoTuner controllers exist (unit-tested; kind e2e with tiny CPU images; not verified on GPUs). Use Kubeflow when you need its pipeline or KServe ecosystem; use Gryvia when you need GPU placement, fair queues and GPUaaS metering. They can be installed side by side; that combination has not been tested here. Broader comparisons: [competitors](COMPETITORS.md).
 
 ### Is Gryvia a GPU cloud?
 

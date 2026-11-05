@@ -92,6 +92,30 @@ gryvia workspace delete nb -n team-a --yes   # also deletes the volume and its d
 
 `get` and `create -f <file>` work as for the other kinds; `ws` is an alias of `workspace`.
 
+### SSH and sync (kubectl)
+
+Requires `kubectl` on your PATH and cluster access (same kubeconfig as the CLI):
+
+```bash
+gryvia workspace ssh nb                 # kubectl exec -it … -- bash -l
+gryvia workspace ssh nb -- nvidia-smi
+gryvia workspace sync nb --path ./src   # kubectl cp into /workspace/
+```
+
+Both commands patch `gryvia.io/last-activity` so idle pause timers reset. There is no SSH daemon in the
+pod by default; this is an exec wrapper (SkyPilot-style local UX without opening NetPol for port 22).
+
+## Job idle autostop
+
+`GryviaAIJob.spec.idleTimeout` (for example `30m`) cancels a **Running** job when
+`gryvia.io/last-activity` (or `status.startTime`) is older than that duration. Distinct from
+`spec.timeout` (batch Job `activeDeadlineSeconds`). Inference services already support
+`spec.scaleToZero` — see [inference serving](inference-serving.md#scale-to-zero).
+
+```bash
+gryvia submit --image my/debug:1 --gpu 1 --idle-timeout 30m --type inference -- sleep infinity
+```
+
 ## Default images
 
 Without `spec.image` the operator uses `quay.io/jupyter/pytorch-notebook:cuda12-latest` (Jupyter docker-stacks, CUDA
