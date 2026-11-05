@@ -6,7 +6,14 @@ Kubernetes pod list for its node. It never assigns an event to a job when the
 pod cannot be resolved. The pod cache expires after one minute without a
 successful API refresh.
 
-Install the `network-intelligence` chart with `ebpf.enabled=true`. Create a
+Install with the Flight overlays (or set the same flags by hand):
+
+```bash
+helm upgrade --install gryvia oci://ghcr.io/zyvorai/charts/gryvia -n gryvia-system -f helm/gryvia/values-flight.yaml …
+helm upgrade --install gryvia-net … -f helm/network-intelligence/values-flight.yaml …
+```
+
+Or enable `ebpf.enabled=true` on the network-intelligence chart. Create a
 random token of at least 32 characters and store it as a Secret named
 `gryvia-flight-token` with key `token` in both `gryvia-network` (collector)
 and `gryvia-system` (gateway). Set `ebpf.flightTokenSecret=gryvia-flight-token`

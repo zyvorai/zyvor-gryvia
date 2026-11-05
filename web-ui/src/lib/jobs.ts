@@ -111,6 +111,10 @@ export type JobFormValues = {
   priority: string
   timeout: string
   retryLimit: string
+  /** Optional: gryvia.io/model-params-billions for weight-memory preflight. */
+  modelParamsBillions: string
+  /** Optional: gryvia.io/extra-memory-gib for preflight. */
+  extraMemoryGib: string
   env: EnvRow[]
 }
 
@@ -133,6 +137,8 @@ export const EMPTY_FORM: JobFormValues = {
   priority: '',
   timeout: '',
   retryLimit: '',
+  modelParamsBillions: '',
+  extraMemoryGib: '',
   env: [],
 }
 
@@ -199,6 +205,8 @@ export function jobToForm(job: GryviaAIJob): { values: JobFormValues; skippedEnv
       gpuType: spec?.gpuType || EMPTY_FORM.gpuType,
       gpuCount: spec?.gpus && spec.gpus > 0 ? spec.gpus : 1,
       ...shareFromAnnotations(job.metadata?.annotations),
+      modelParamsBillions: job.metadata?.annotations?.['gryvia.io/model-params-billions'] ?? '',
+      extraMemoryGib: job.metadata?.annotations?.['gryvia.io/extra-memory-gib'] ?? '',
       memory: spec?.resources?.requests?.memory ?? EMPTY_FORM.memory,
       cpu: Number.parseInt(String(spec?.resources?.requests?.cpu ?? ''), 10) || EMPTY_FORM.cpu,
       image: spec?.image || EMPTY_FORM.image,

@@ -137,6 +137,8 @@ export default function SubmitJob() {
       return
     }
     const annotations = gpuShareAnnotations(formData)
+    if (formData.modelParamsBillions.trim()) annotations['gryvia.io/model-params-billions'] = formData.modelParamsBillions.trim()
+    if (formData.extraMemoryGib.trim()) annotations['gryvia.io/extra-memory-gib'] = formData.extraMemoryGib.trim()
     if (envProblems.some(Boolean)) {
       setError('Fix the environment variable errors below before submitting.')
       return
@@ -535,7 +537,30 @@ export default function SubmitJob() {
 
         <section className="card span3">
           <p className="eyebrow">ENVIRONMENT</p>
-          <h2 className="card-title">Environment variables</h2>
+          <h2 className="card-title">
+            <label className="span1">
+              Model params (B)
+              <input
+                type="text"
+                inputMode="decimal"
+                placeholder="e.g. 70"
+                value={formData.modelParamsBillions}
+                onChange={(e) => setFormData({ ...formData, modelParamsBillions: e.target.value })}
+              />
+              <span className="faint">Optional · gryvia.io/model-params-billions for weight-memory preflight</span>
+            </label>
+            <label className="span1">
+              Extra memory (GiB)
+              <input
+                type="text"
+                inputMode="decimal"
+                placeholder="e.g. 8"
+                value={formData.extraMemoryGib}
+                onChange={(e) => setFormData({ ...formData, extraMemoryGib: e.target.value })}
+              />
+              <span className="faint">Optional · gryvia.io/extra-memory-gib</span>
+            </label>
+Environment variables</h2>
           <p className="faint">Values are stored in the job spec in plain text. Put real secrets in Kubernetes Secrets instead; marking a value secret only hides it while you type.</p>
           <div className="toolbar">
             <button type="button" className="btn-secondary" onClick={addEnvVar}>

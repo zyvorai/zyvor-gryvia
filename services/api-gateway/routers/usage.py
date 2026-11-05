@@ -17,7 +17,7 @@ from .tenancy import is_admin, namespace_of
 from .uiutil import namespaces, parse_ts
 
 PLURAL = "gryviausagerecords"
-CSV_COLUMNS = ["tenant", "namespace", "job", "sku", "gpuType", "gpus", "start", "end", "gpuHours", "rate",
+CSV_COLUMNS = ["tenant", "namespace", "job", "sku", "gpuType", "gpus", "kind", "start", "end", "gpuHours", "rate",
                "cost", "currency", "final"]
 
 
@@ -68,11 +68,18 @@ def parse_bound(value: Optional[str], name: str, end: bool) -> Optional[datetime
     return dt
 
 
+def _kind_of(r: Dict[str, Any]) -> str:
+    k = ((r.get("spec") or {}).get("kind") or "gpu").strip().lower()
+    return k if k else "gpu"
+
+
 def filter_records(records: Iterable[Dict[str, Any]], tenant: Optional[str], lo: Optional[datetime],
-                   hi: Optional[datetime]) -> List[Dict[str, Any]]:
+                   hi: Optional[datetime], kind: Optional[str] = None) -> List[Dict[str, Any]]:
     out = []
     for r in records:
         if tenant and _tenant_of(r) != tenant and (r.get("metadata") or {}).get("namespace") != namespace_of(tenant):
+            continue
+        if kind and kind != "all" and _kind_of(r) != kind:
             continue
         if lo or hi:
             s = _start_of(r)
@@ -132,6 +139,7 @@ def record_row(r: Dict[str, Any]) -> Dict[str, Any]:
     spec, m = r.get("spec") or {}, r.get("metadata") or {}
     return {"tenant": _tenant_of(r), "namespace": m.get("namespace", ""), "job": spec.get("job", ""),
             "sku": spec.get("sku", ""), "gpuType": spec.get("gpuType", ""), "gpus": spec.get("gpus", 0),
+            "kind": _kind_of(r),
             "start": spec.get("start", ""), "end": spec.get("end", ""), "gpuHours": _num(spec.get("gpuHours")),
             "rate": _num(spec.get("rate")), "cost": _num(spec.get("cost")),
             "currency": spec.get("currency") or "USD", "final": bool(spec.get("final", False))}
@@ -140,14 +148,15 @@ def record_row(r: Dict[str, Any]) -> Dict[str, Any]:
 def build_router(deps: Deps) -> APIRouter:
     router = APIRouter()
 
-    async def _load(request: Request, tenant: Optional[str], frm: Optional[str], to: Optional[str]):
+    async def _load(request: Request, tenant: Optional[str], frm: Optional[str], to: Optional[str],
+                    kind: Optional[str] = None):
         lo, hi = parse_bound(frm, "from", False), parse_bound(to, "to", True)
         if is_admin(request):
             records = await fetch_records(deps.k8s_custom, None)
         else:
             tenant = None  # forced: a tenant user only ever sees its own namespaces
             records = await fetch_records(deps.k8s_custom, namespaces(request, deps))
-        return filter_records(records, tenant, lo, hi)
+        return filter_records(records, tenant, lo, hi, kind)
 
     @router.get("/api/usage")
     @deps.limiter.limit("30/minute")
@@ -155,9 +164,10 @@ def build_router(deps: Deps) -> APIRouter:
                         frm: Optional[str] = Query(default=None, alias="from", max_length=40),
                         to: Optional[str] = Query(default=None, max_length=40),
                         groupBy: Literal["tenant", "sku", "day"] = "tenant",
+                        kind: Literal["all", "gpu", "tokens"] = "all",
                         _=Depends(deps.verify_auth)):
-        records = await _load(request, tenant, frm, to)
-        return {"groupBy": groupBy, **aggregate(records, groupBy)}
+        records = await _load(request, tenant, frm, to, kind)
+        return {"groupBy": groupBy, "kind": kind, **aggregate(records, groupBy)}
 
     @router.get("/api/usage/export")
     @deps.limiter.limit("10/minute")
@@ -165,8 +175,9 @@ def build_router(deps: Deps) -> APIRouter:
                            tenant: Optional[str] = Query(default=None, max_length=63),
                            frm: Optional[str] = Query(default=None, alias="from", max_length=40),
                            to: Optional[str] = Query(default=None, max_length=40),
+                           kind: Literal["all", "gpu", "tokens"] = "all",
                            _=Depends(deps.verify_auth)):
-        records = await _load(request, tenant, frm, to)
+        records = await _load(request, tenant, frm, to, kind)
         rows = [record_row(r) for r in records]
         rows.sort(key=lambda r: (r["start"], r["tenant"], r["job"]))
         stamp = datetime.now(timezone.utc).strftime("%Y%m%d")

@@ -1,3 +1,12 @@
+# Scheduling examples
+
+Prefer live backends over the older annotation sketches in this folder:
+
+- **KAI:** `scripts/e2e-kai.sh`, `docs/kai-scheduler.md`, `examples/kai/nested-tenants.yaml`
+- **Kueue:** `docs/kueue-integration.md`, chart `aiOperator.kueueIntegration`
+- **Native queues:** `deploy/native-scheduler-config.yaml`, `docs` / `NATIVE_SCHEDULER` guide
+
+
 # Scheduling Examples
 
 Example YAML manifests for Gryvia GPU scheduling CRDs covering elastic training, gang scheduling, and priority-based preemption.
