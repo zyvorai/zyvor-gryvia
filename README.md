@@ -21,7 +21,7 @@
 [![Book a demo](https://img.shields.io/badge/Book_a_demo-0071e3?style=for-the-badge)](https://zyvor.dev/schedule?utm_source=github&utm_medium=gryvia&utm_campaign=readme_hero)
 [![30-day PoC](https://img.shields.io/badge/30--day_PoC-000000?style=for-the-badge)](https://zyvor.dev/poc?utm_source=github&utm_medium=gryvia&utm_campaign=readme_hero)
 
-[**Quickstart**](#quickstart) · [**Website**](https://zyvorai.github.io/zyvor-gryvia/) · [**Docs**](website/docs/intro.md) · [**Architecture**](#architecture) · [**What works today**](#what-works-today) · [**License**](#license)
+[**Quickstart**](#quickstart) · [**Website**](https://zyvorai.github.io/zyvor-gryvia/) · [**Docs**](website/docs/intro.md) · [**Architecture**](#architecture) · [**Competitors**](docs/competitors.md) · [**What works today**](#what-works-today) · [**License**](#license)
 
 </div>
 
@@ -326,97 +326,6 @@ telemetry and rolls back measured error-rate/p95 breaches. See [docs/inference-s
 </details>
 
 ---
-
-<a id="what-works-today"></a>
-
-## What works today
-
-Gryvia is **alpha**: APIs (`gryvia.io/v1alpha1` CRDs) may change between releases and there is no upgrade guarantee
-yet. Everything below is the repository's own statement of what has been tested and where; the
-[changelog](CHANGELOG.md) and each guide say how. **Nothing has run on GPU hardware yet**: GPU paths are tested with
-simulated GPUs (fake-gpu-operator), fake clients and kind clusters, and the GPU validation checklist in
-[docs/gpu-validation.md](docs/gpu-validation.md) is still to be run on a real machine.
-
-| State | What |
-|---|---|
-| **Implemented and tested in CI** (unit tests, chart rendering, a kind install with demo data read back through the API and CLI) | The Helm chart; GPU, AI workload and quota operators; `GryviaAIJob` placement, run-to-completion Job and StatefulSet creation and the admission webhook; per-namespace quotas and budgets; tenants, SKU catalog, usage metering and estimate invoices; the API gateway with API-key, session and OIDC roles; the dashboard; the CLI |
-| **Run end to end on kind (simulated GPUs or CPU pods)** | KAI Scheduler backend (`scripts/e2e-kai.sh`: placement, half-GPU sharing, a 3-pod gang, tenant queues, KAI's reason in job status; KAI v0.18.5 and fake-gpu-operator); JupyterLab and code-server workspaces through the proxy (`scripts/e2e-workspaces.py`); Kueue gang admission and fair sharing (CPU pods); elastic resize and node-loss recovery of torchrun jobs (CPU); MultiKueue federation failover across three kind clusters |
-| **Implemented, unit tests or a CPU-only kind e2e; unverified on real clusters, GPUs and services** | The ML controllers for workspaces, inference services, the model registry, workflows and the auto tuner, and the opt-in model factory (no real fine-tune has run); the native queue scheduler (unit tests and a CPU-only k3s cluster); opt-in admission gate for quotas and hard budgets, node reservations, per-tenant RBAC and the signed invoice webhook; Prometheus metrics, dashboards, alerts and runbooks (never rendered against a live Prometheus or Grafana); the network-intelligence operator's collector and Netra sources (fake collector only); NVIDIA GPU Operator sub-chart, `install-k3s-gpu.sh` and node auto-registration (GPU-less k3s in CI only); storage and network operators (off by default); OIDC (fake identity provider only); GPU health remediation (fake runners); anything that needs GPUs, RDMA or a parallel filesystem |
-| **Experimental** | The eBPF collector, the 47 eBPF programs (verifier-load on x86_64 and arm64, attached on one Linux 7.0 x86_64 host only), fabric signals and the Flight Recorder; the network-intelligence operator |
-| **Removed legacy APIs** | SLA, audit, auto-scaler, retry policy, DR tests, benchmarks, metrics and quota policies (the CHANGELOG has the upgrade steps) |
-| **Not implemented** | Payments or tax invoices, a multi-cluster scheduler of its own (dispatch and failover go through Kueue MultiKueue), a mutating quota-pacing eBPF program |
-
-**Performance.** The only measured numbers are the eBPF collector's overhead on one shared x86 host
-([docs/ebpf-overhead.md](docs/ebpf-overhead.md)). The following are **design targets**, to be validated with
-`benchmarks/suite.yaml` on real hardware before they are quoted as results:
-
-<a id="performance-metrics"></a>
-
-| Metric | Target |
-|---|---|
-| Job scheduling latency | < 500 ms (8-GPU job) |
-| Fault recovery time | < 60 s (node failure) |
-| Concurrent queued jobs | 10,000+ |
-
-**Security.** Two roles in the API gateway: the API key and dashboard sessions are the provider **admin**; OIDC users
-(JWT validation, PKCE in the dashboard) are **tenant** users limited to the namespaces of their `GryviaTenant`.
-State-changing requests are audited. HTTPS for the dashboard and gateway, non-root read-only containers, per-tenant
-namespaces with ResourceQuotas, LimitRanges and optional NetworkPolicies, and cosign-signed release images and charts
-with SBOM and provenance. The eBPF collector is privileged, `hostNetwork` and off by default. Read the
-[threat model and known limits](SECURITY.md) before exposing an install beyond a lab, and report vulnerabilities
-privately as described there.
-
-The [CRD reference](website/docs/reference/crds.md) lists every kind with the operator that reconciles it (or `none`);
-[platform completion](docs/platform-completion.md) lists the remaining integration and hardware limits.
-
----
-
-## Documentation
-
-| Topic | Doc |
-|---|---|
-| Project website (overview, how it works, install) | [zyvorai.github.io/zyvor-gryvia](https://zyvorai.github.io/zyvor-gryvia/) |
-| Full documentation index | [website/docs/intro.md](website/docs/intro.md) |
-| Quick start | [website/docs/getting-started/quickstart.md](website/docs/getting-started/quickstart.md) |
-| Bare-metal / complete deployment | [DEPLOYMENT_GUIDE.md](website/docs/guides/DEPLOYMENT_GUIDE.md) · [COMPLETE_DEPLOYMENT_GUIDE.md](website/docs/guides/COMPLETE_DEPLOYMENT_GUIDE.md) |
-| Authentication and TLS | [guides/AUTH_AND_TLS.md](website/docs/guides/AUTH_AND_TLS.md) |
-| Cluster setup (admin) | [admin-guide/cluster-setup.md](website/docs/admin-guide/cluster-setup.md) |
-| Job management (user) | [user-guide/jobs.md](website/docs/user-guide/jobs.md) |
-| Scheduling internals | [guides/SCHEDULING.md](website/docs/guides/SCHEDULING.md) |
-| KAI Scheduler, Kueue, native queue scheduler | [docs/kai-scheduler.md](docs/kai-scheduler.md) · [docs/kueue-integration.md](docs/kueue-integration.md) · [docs/native-scheduler.md](docs/native-scheduler.md) |
-| Workspaces in the browser | [docs/workspaces.md](docs/workspaces.md) |
-| Storage & network operators | [guides/STORAGE_NETWORK_OPERATORS.md](website/docs/guides/STORAGE_NETWORK_OPERATORS.md) |
-| Network Intelligence (NetPredator) | [guides/NETWORK_INTELLIGENCE.md](website/docs/guides/NETWORK_INTELLIGENCE.md) |
-| CLI guide | [guides/CLI_GUIDE.md](website/docs/guides/CLI_GUIDE.md) |
-| API reference | [developer-guide/api-reference.md](website/docs/developer-guide/api-reference.md) |
-| ML workflows, integrations, playbooks | [guides/ML_WORKFLOWS.md](website/docs/guides/ML_WORKFLOWS.md) · [guides/INTEGRATIONS.md](website/docs/guides/INTEGRATIONS.md) · [guides/OPERATIONAL_PLAYBOOKS.md](website/docs/guides/OPERATIONAL_PLAYBOOKS.md) |
-| GPU as a Service (tenants, catalog, usage, invoices) | [guides/GPU_AS_A_SERVICE.md](website/docs/guides/GPU_AS_A_SERVICE.md) |
-| Gryvia as a GPU cloud's platform | [docs/gpu-cloud-platform.md](docs/gpu-cloud-platform.md) |
-| GPU nodes (NVIDIA GPU Operator, k3s bootstrap) | [guides/GPU_NODES.md](website/docs/guides/GPU_NODES.md) · [docs/gpu-validation.md](docs/gpu-validation.md) |
-| NVIDIA one-click (RDMA, GDS, MIG, Network and NIM operators) | [guides/NVIDIA_ONE_CLICK.md](website/docs/guides/NVIDIA_ONE_CLICK.md) |
-| Admission and recovery | [docs/admission-recovery.md](docs/admission-recovery.md) |
-| Job submission preflight | [docs/job-submission-preflight.md](docs/job-submission-preflight.md) |
-| Inference serving | [docs/inference-serving.md](docs/inference-serving.md) |
-| Operations (upgrade, uninstall, backup) | [guides/OPERATIONS.md](website/docs/guides/OPERATIONS.md) |
-| CRD reference (all kinds and their controllers) | [reference/crds.md](website/docs/reference/crds.md) |
-| eBPF programs, collector, Flight Recorder | [ebpf/README.md](ebpf/README.md) · [collector/README.md](collector/README.md) · [docs/flight-recorder.md](docs/flight-recorder.md) |
-| Helm charts | [helm/gryvia](helm/gryvia/README.md) · [helm/network-intelligence](helm/network-intelligence/README.md) |
-| Advanced features, FAQ, roadmap | [guides/ADVANCED_FEATURES.md](website/docs/guides/ADVANCED_FEATURES.md) · [guides/FAQ.md](website/docs/guides/FAQ.md) · [guides/ROADMAP.md](website/docs/guides/ROADMAP.md) |
-| Examples & tutorials | [examples/README.md](examples/README.md) |
-
----
-
-## Part of the Zyvor stack
-
-| Product | Role next to Gryvia |
-|---|---|
-| **Gryvia** | Kubernetes GPU platform: GPU-aware admission, tenants, quotas, metering |
-| **[Netra](https://github.com/zyvorai/zyvor-netra)** | Real network flows for Gryvia's gateway and network-intelligence operator (`apiGateway.netra.url`) |
-| **[Zyntra](https://github.com/zyvorai/zyvor-zyntra)** | Sovereign AI OS loop: an agent proposes in Zyntra, a person approves, and Zyntra writes the `GryviaPriority` ([docs/sovereign-aios.md](docs/sovereign-aios.md)) |
-| **[Duvora](https://github.com/zyvorai/zyvor-duvora)** | DPU fleet control plane; pairs with Gryvia on accelerated clusters |
-| **[Gryvia for Apple Silicon](https://github.com/zyvorai/zyvor-gryvia-apple)** | Native Swift Mac worker, SwiftUI desktop app and fleet console; runs independently of the Kubernetes `GryviaAIJob` path ([validation notes](https://github.com/zyvorai/zyvor-gryvia-apple/blob/main/TEST_RESULTS.md)) |
-
-→ [zyvor.dev](https://zyvor.dev)
 
 ## Support
 

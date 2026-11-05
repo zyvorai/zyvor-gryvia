@@ -38,8 +38,16 @@ lists what Gryvia does not provide.
 | Slurm users | `gryvia submit --sbatch` runs batch scripts as jobs with `SLURM_*` set; opt-in real Slurm (SchedMD's Slinky operator) with a partition per tenant and finished jobs metered as usage records | [Slurm](slurm.md); `scripts/e2e-jobs.sh sbatch` in `e2e-jobs.yml` (passes on kind); `e2e-slurm.yml` for Slinky (not yet passed) |
 | Upgrades without losing state | CRDs applied server-side (scope changes handled), Helm upgrade, rollback, backup and restore | [Operations](../website/docs/guides/OPERATIONS.md); `upgrade.yml` |
 
+## Competitors and neoclouds
+
+For how Gryvia compares to Run:ai/KAI, Volcano, SkyPilot, Kubeflow, Determined, KServe/Seldon and neocloud
+platforms, see [competitors](competitors.md). Gryvia is the installable platform layer; neoclouds sell hardware
+plus a managed platform. Competitor-sourced product waves are listed in the
+[roadmap](../website/docs/guides/ROADMAP.md#competitor-sourced-waves).
+
 ## What Gryvia does not provide
 
 - Hardware, facilities, provisioning of machines, or VM and bare-metal instance products (see above).
+- Multi-cloud cost brokerage (use SkyPilot *on* Gryvia clusters if you need that; see competitors doc).
 - Most end-to-end checks run on kind with CPU stand-ins. What has and has not run on GPUs is stated on each page
   (for example [GPU validation](gpu-validation.md)); nothing here claims GPU throughput or latency numbers.
