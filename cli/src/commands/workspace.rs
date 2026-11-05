@@ -109,6 +109,101 @@ pub async fn new(client: &GryviaClient, w: &NewWorkspace) -> Result<()> {
     Ok(())
 }
 
+/// Resolve the workspace pod name from status (or the conventional name).
+fn pod_name_of(ws: &Value, name: &str) -> String {
+    ws.pointer("/status/podName")
+        .and_then(Value::as_str)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(|| format!("{name}-workspace"))
+}
+
+async fn get_workspace(client: &GryviaClient, name: &str) -> Result<Value> {
+    let obj = crd::api(client, &WORKSPACES)
+        .get(name)
+        .await
+        .map_err(|e| api_error(&format!("Failed to get workspace {name}"), e))?;
+    serde_json::to_value(obj).context("serialize workspace")
+}
+
+/// `kubectl exec -it` into the workspace container (requires kubectl on PATH).
+pub async fn ssh(client: &GryviaClient, name: &str, command: Option<Vec<String>>) -> Result<()> {
+    let ws = get_workspace(client, &name).await?;
+    let ns = client.namespace();
+    let pod = pod_name_of(&ws, &name);
+    let patch = json!({
+        "metadata": {
+            "annotations": {
+                "gryvia.io/last-activity": chrono::Utc::now().to_rfc3339()
+            }
+        }
+    });
+    let _ = crd::api(client, &WORKSPACES)
+        .patch(&name, &PatchParams::default(), &Patch::Merge(&patch))
+        .await;
+
+    let mut args = vec![
+        "exec".into(),
+        "-it".into(),
+        "-n".into(),
+        ns.to_string(),
+        pod.clone(),
+        "-c".into(),
+        "workspace".into(),
+        "--".into(),
+    ];
+    if let Some(cmd) = command {
+        if cmd.is_empty() {
+            args.push("bash".into());
+            args.push("-l".into());
+        } else {
+            args.extend(cmd);
+        }
+    } else {
+        args.push("bash".into());
+        args.push("-l".into());
+    }
+    let status = std::process::Command::new("kubectl")
+        .args(&args)
+        .status()
+        .context("kubectl exec failed (is kubectl on PATH?)")?;
+    if !status.success() {
+        bail!("kubectl exec exited with {status}");
+    }
+    Ok(())
+}
+
+/// Copy a local path into the workspace `/workspace` directory via `kubectl cp`.
+pub async fn sync(client: &GryviaClient, name: &str, local_path: &str, remote_subdir: Option<&str>) -> Result<()> {
+    let ws = get_workspace(client, &name).await?;
+    let ns = client.namespace();
+    let pod = pod_name_of(&ws, &name);
+    let dest = match remote_subdir {
+        Some(s) if !s.is_empty() => format!("{ns}/{pod}:/workspace/{s}"),
+        _ => format!("{ns}/{pod}:/workspace/"),
+    };
+    let patch = json!({
+        "metadata": {
+            "annotations": {
+                "gryvia.io/last-activity": chrono::Utc::now().to_rfc3339()
+            }
+        }
+    });
+    let _ = crd::api(client, &WORKSPACES)
+        .patch(&name, &PatchParams::default(), &Patch::Merge(&patch))
+        .await;
+
+    let status = std::process::Command::new("kubectl")
+        .args(["cp", local_path, &dest, "-c", "workspace"])
+        .status()
+        .context("kubectl cp failed (is kubectl on PATH?)")?;
+    if !status.success() {
+        bail!("kubectl cp exited with {status}");
+    }
+    println!("Synced {local_path} → {dest}");
+    Ok(())
+}
+
 pub async fn set_paused(client: &GryviaClient, name: &str, paused: bool) -> Result<()> {
     let patch = json!({ "spec": { "paused": paused } });
     crd::api(client, &WORKSPACES)

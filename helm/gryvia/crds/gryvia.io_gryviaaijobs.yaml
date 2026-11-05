@@ -1309,6 +1309,11 @@ spec:
                   job is Failed (DeadlineExceeded) once it has been active this long. Not used by the
                   StatefulSet workload.
                 type: string
+              idleTimeout:
+                description: |-
+                  IdleTimeout cancels a Running job after this long with no activity (e.g. "30m").
+                  Activity is gryvia.io/last-activity when set, otherwise status.startTime.
+                type: string
               tolerations:
                 description: Tolerations
                 items:

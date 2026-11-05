@@ -25,8 +25,13 @@ type GryviaUsageRecordSpec struct {
 	// Sku is the name of the matching GryviaGpuSku, empty when the default price table was used
 	Sku string `json:"sku,omitempty"`
 
-	// Gpus is the number of GPUs the job holds
+	// Gpus is the whole GPU unit count (TotalGPUs); kept for compatibility and dashboards that
+	// expect an integer slot count.
 	Gpus int32 `json:"gpus"`
+
+	// EffectiveGpus is the physical GPU fraction billed (fractional share or MIG slice). When
+	// unset or zero on older records, consumers should fall back to gpus.
+	EffectiveGpus float64 `json:"effectiveGpus,omitempty"`
 
 	// Start is when the run started (the job first ran, or Kueue admitted it again)
 	Start metav1.Time `json:"start"`
@@ -34,7 +39,7 @@ type GryviaUsageRecordSpec struct {
 	// End is when the run finished (the job ended or Kueue evicted it); nil while it is running
 	End *metav1.Time `json:"end,omitempty"`
 
-	// GpuHours is wall-clock hours multiplied by gpus
+	// GpuHours is wall-clock hours multiplied by effectiveGpus (or gpus when effectiveGpus is 0)
 	GpuHours float64 `json:"gpuHours"`
 
 	// Rate is the price per GPU-hour used for cost

@@ -69,3 +69,20 @@ Sharing policy labels the GPU Operator already watches. The controller that writ
 
 There is no flag for it. On NVSwitch/HGX nodes the GPU Operator driver container runs Fabric
 Manager; look for it inside the `nvidia-driver-daemonset` pod rather than for a new DaemonSet.
+
+## Enable GPU sharing (Run:ai-style utilization path)
+
+Sharing policies are inert until you turn the controller on. Gryvia does not ship NVIDIA’s proprietary
+sharing UI; this is the Gryvia path that drives the same device-plugin labels the GPU Operator already watches:
+
+```bash
+helm upgrade gryvia ... \
+  --set gpuOperator.gpuSharing=true \
+  --set gpuOperator.devicePluginConfig=true \
+  --set nvidiaPlatform.timeSlicing.enabled=true \
+  --set nvidiaPlatform.timeSlicing.replicas=4
+```
+
+Then apply a `GryviaGPUSharingPolicy` (time-slicing or MIG). With `devicePluginConfig=true` the
+policy writes `gryvia-ts-<maxPodsPerGPU>` into the device-plugin ConfigMap. Not verified on GPUs.
+

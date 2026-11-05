@@ -3,6 +3,7 @@ package controllers
 import (
 	"context"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -360,7 +361,8 @@ func (r *GryviaTenantReconciler) calculateUsage(ctx context.Context, tenant *gry
 		switch job.Status.Phase {
 		case "Running":
 			usage.RunningJobs++
-			usage.UsedGPUs += int(job.Spec.TotalGPUs())
+			eff := job.Spec.EffectiveGPUs(job.Annotations)
+			usage.UsedGPUs += int(math.Ceil(eff))
 
 			if job.Status.StartTime != nil {
 				effectiveStart := job.Status.StartTime.Time
@@ -368,7 +370,7 @@ func (r *GryviaTenantReconciler) calculateUsage(ctx context.Context, tenant *gry
 					effectiveStart = startOfMonth
 				}
 				hours := time.Since(effectiveStart).Hours()
-				gpuHours := hours * float64(job.Spec.TotalGPUs())
+				gpuHours := hours * eff
 				usage.GPUHours += gpuHours
 				usage.CostUSD += gpuHours * budget.GetGPURate(job.Spec.GpuType)
 			}
@@ -382,7 +384,8 @@ func (r *GryviaTenantReconciler) calculateUsage(ctx context.Context, tenant *gry
 				if job.Status.CompletionTime.Time.After(startOfMonth) {
 					hours := job.Status.CompletionTime.Time.Sub(effectiveStart).Hours()
 					if hours > 0 {
-						gpuHours := hours * float64(job.Spec.TotalGPUs())
+						eff := job.Spec.EffectiveGPUs(job.Annotations)
+						gpuHours := hours * eff
 						usage.GPUHours += gpuHours
 						usage.CostUSD += gpuHours * budget.GetGPURate(job.Spec.GpuType)
 					}

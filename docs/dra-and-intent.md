@@ -39,5 +39,8 @@ The LLM gateway accepts an `IntentPolicy` (JSON) on the Gateway struct:
   the external base instead of waiting for cold start (`X-Gryvia-Burst: 1`).
 - Responses include `X-Gryvia-Resolved-Model`.
 
-Load policy via operator flag / ConfigMap in a follow-up; the library and unit tests are in
+Helm: set `llmGateway.intentPolicy` to a JSON string (chart mounts ConfigMap
+`*-llm-intent-policy` and passes `--intent-policy-file`). Library and unit tests:
 `pkg/llmgateway/intent.go`. Metering still records the tenant usage against the key.
+
+Example claim template: [examples/dra/resource-claim-template.yaml](../examples/dra/resource-claim-template.yaml).

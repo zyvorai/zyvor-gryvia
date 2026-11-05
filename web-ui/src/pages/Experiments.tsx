@@ -50,7 +50,7 @@ export default function Experiments() {
     <PageHero
       eyebrow="Experiments"
       title="Experiments."
-      lede="Live leaderboards for runs compared on one metric. Ranks follow the experiment's direction; the gap is to the best run."
+      lede="Live leaderboards for runs compared on one metric (Determined-style visibility without locking a training API). Ranks follow the experiment's direction; the gap is to the best run. Pair with GryviaTrainingProfiler CRDs for GPU util traces."
     />
   );
   if (isLoading) {
