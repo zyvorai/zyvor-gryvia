@@ -12,6 +12,8 @@
 
 **Place** every job on the right GPU · **Share** them by the half, the MIG slice or the gang · **Bill** every team by the GPU-hour
 
+Run:ai is a scheduler + org layer. Gryvia is the adult platform: Flight Recorder, eBPF fabric intelligence, workload intelligence, token+GPU FinOps, sovereign composition. See [`gryvia compare runai`](docs/competitors.md).
+
 [![Docs site](https://github.com/zyvorai/zyvor-gryvia/actions/workflows/pages.yml/badge.svg)](https://zyvorai.github.io/zyvor-gryvia/)
 [![License](https://img.shields.io/badge/License-Apache%202.0-0071e3?style=flat-square&labelColor=1d1d1f)](LICENSE)
 [![Kubernetes](https://img.shields.io/badge/Kubernetes-1.30+-0071e3?style=flat-square&labelColor=1d1d1f&logo=kubernetes&logoColor=white)](https://kubernetes.io/)

@@ -42,7 +42,7 @@ export function envSource(env: EnvEntry): string | undefined {
 // ---------------------------------------------------------------------------------------------
 // Fields the CRD has but the shared GryviaAIJob type does not declare yet (see gryvia.io_gryviaaijobs).
 export type JobCondition = { type: string; status: string; reason?: string; message?: string; lastTransitionTime?: string }
-export type JobSpecExtras = { priority?: number; timeout?: string; retryLimit?: number }
+export type JobSpecExtras = { priority?: number; timeout?: string; idleTimeout?: string; retryLimit?: number }
 type JobExtras = GryviaAIJob & { spec: GryviaAIJob['spec'] & JobSpecExtras; status?: { conditions?: JobCondition[] } }
 
 export const TEAM_LABEL = 'gryvia.io/team'
@@ -110,6 +110,7 @@ export type JobFormValues = {
   gpusPerNode: number
   priority: string
   timeout: string
+  idleTimeout: string
   retryLimit: string
   /** Optional: gryvia.io/model-params-billions for weight-memory preflight. */
   modelParamsBillions: string
@@ -136,6 +137,7 @@ export const EMPTY_FORM: JobFormValues = {
   gpusPerNode: 1,
   priority: '',
   timeout: '',
+  idleTimeout: '',
   retryLimit: '',
   modelParamsBillions: '',
   extraMemoryGib: '',
@@ -216,6 +218,7 @@ export function jobToForm(job: GryviaAIJob): { values: JobFormValues; skippedEnv
       gpusPerNode: dist?.gpusPerNode || 1,
       priority: spec?.priority === undefined ? '' : String(spec.priority),
       timeout: spec?.timeout ?? '',
+      idleTimeout: (spec as { idleTimeout?: string } | undefined)?.idleTimeout ?? '',
       retryLimit: spec?.retryLimit === undefined ? '' : String(spec.retryLimit),
       env: literals.map((e, i) => ({ id: i + 1, name: e.name, value: e.value ?? '', secret: isSensitiveEnv(e.name) })),
     },

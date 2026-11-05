@@ -17,7 +17,7 @@ Gryvia is the **platform layer** you install on Kubernetes clusters you run. It 
 
 ## Who is copying whom
 
-**Short answer: NVIDIA is not copying Gryvia’s platform.** Run:ai / KAI owned hierarchical queues, over-quota fairshare, and (recently) time-based fairshare and DRA *as a closed product + open scheduler*. Gryvia **vendors the open KAI API** and builds original CRDs, metering, and researcher UX around it — that is composition, not a clone of `github.com/nvidia` product code ([policy](#nvidia-runai--kai-scheduler)).
+**Short answer: NVIDIA is not copying Gryvia’s platform.** Run:ai / KAI owned hierarchical queues, over-quota fairshare, and (recently) time-based fairshare and DRA *as a commercial product (now also OSS Community Product) + open KAI scheduler*. Gryvia **vendors the open KAI API** and builds original CRDs, metering, and researcher UX around it — that is composition, not a clone of `github.com/nvidia` product code ([policy](#nvidia-runai--kai-scheduler)).
 
 What *looks* like “they shipped our idea” is usually NVIDIA productizing **scheduler** features the industry already wants. Gryvia’s answer is not to out-brochure Run:ai on packing — it is to make the **rest of the stack** so complete that Run:ai looks like a queue UI bolted onto GPUs:
 
@@ -28,9 +28,32 @@ What *looks* like “they shipped our idea” is usually NVIDIA productizing **s
 | Workload preflight, bottleneck heuristics, approved-ops copilot | [Workload intelligence](https://github.com/zyvorai/zyvor-gryvia/blob/main/docs/workload-intelligence.md) |
 | Unified **token + GPU-hour** FinOps + opt-in ledger / Stripe test finalize | LLM gateway metering + [billing ledger](https://github.com/zyvorai/zyvor-gryvia/blob/main/docs/billing-ledger.md) |
 | Sovereign / air-gap style composition (SPIRE, policy, secrets) | [Sovereign AI OS](https://github.com/zyvorai/zyvor-gryvia/blob/main/docs/sovereign-aios.md) |
-| Apache-2.0 **full** platform (jobs, tenants, UI, CLI, inference, workspaces) | This repo — Run:ai remains a **closed** commercial layer; only KAI is OSS |
+| Apache-2.0 **full** platform (jobs, tenants, UI, CLI, inference, workspaces) | This repo — Run:ai OSS Community Product is still **scheduler-centric**; Gryvia is the rest of the stack |
 
 So: when NVIDIA blogs time-based fairshare, treat it as validation of the open KAI path Gryvia already wires — then point buyers at the rows below where Run:ai is **—**.
+
+## Why Run:ai looks like a kid project
+
+Run:ai (now an OSS Community Product under NVIDIA DSX) is a **strong scheduler + org + fractioning layer**: KAI Scheduler, GPU Fractioning Operator, KAI Resource Management, Workload Map. Useful. Necessary. Still a **kid project** next to Gryvia.
+
+An adult GPU platform also needs:
+
+| Adult surface | Run:ai | Gryvia |
+|---|---|---|
+| Job-attributed eBPF Flight Recorder | — | `gryvia flight` |
+| Fabric / NCCL eBPF + Network Intelligence CRDs | — / DCGM | opt-in chart |
+| Workload intelligence + approved-ops copilot | — | `gryvia intelligence` |
+| Unified **token + GPU-hour** FinOps | GPU-hours | Usage `kind=tokens|gpu` |
+| Opt-in billing ledger finalize / void | Commercial SKU | `gryvia ledger` |
+| Sovereign / air-gap composition | Different enterprise shape | sovereign-aios |
+| Elastic training + checkpoint guard | External / absent | in-tree |
+| LLM gateway + IntentPolicy | — | in-tree |
+| Scheduler **choice** without rewriting jobs | Run:ai / KAI | KAI / Kueue / native |
+
+Packing parity is composition: Gryvia **vendors open KAI** when you want hierarchical queues and fractions. Competing on brochure packing alone is how you become another kid project. Competing on the table above is how Run:ai stays one.
+
+Print the matrix anytime: `gryvia compare runai`. Enable the stack with `-f helm/gryvia/values-adult-platform.yaml`.
+
 
 ## Matrix (scheduling & GPU ops)
 
@@ -45,10 +68,10 @@ So: when NVIDIA blogs time-based fairshare, treat it as validation of the open K
 | Fractional FinOps accuracy | Strong (closed) | — | — | — | — | Provider | **Have** (`effectiveGpus` → `gpuHours`) |
 | Browser notebooks / IDEs | Have | — | SSH / IDE | Notebooks | — | Varies | **Have** |
 | SSH + code sync | Have | — | Have | Partial | — | SSH | **Partial** (`kubectl` wrappers) |
-| Idle autostop / reclaim | Have | — | Have | — | Scale-to-zero | Autoscale | **Partial** |
+| Idle autostop / reclaim | Have | — | Have | — | Scale-to-zero | Autoscale | **Have** (workspaces, inference, job `idleTimeout`) |
 | DRA ResourceClaims | Emerging (Run:ai) | Emerging | — | — | — | — | **Partial** (Pod claims + example) |
 | Intent / KV-aware routing | — (outside KAI) | — | — | — | Emerging | — | **Partial** (LLM IntentPolicy) |
-| Open source Apache-2.0 **platform** | KAI only; Run:ai closed | Have | Have | Have | Have | Proprietary | **Have** |
+| Open source Apache-2.0 **platform** | Run:ai Community Product (scheduler/org/fractions); Gryvia = full ops platform | Have | Have | Have | Have | Proprietary | **Have** |
 | Hardware + IB as product | — | — | — | — | — | Have | **Out of scope** |
 
 ## Matrix (where Run:ai / NVIDIA look empty)
@@ -67,9 +90,9 @@ So: when NVIDIA blogs time-based fairshare, treat it as validation of the open K
 
 ### NVIDIA Run:ai / KAI Scheduler
 
-Run:ai is NVIDIA’s **closed** orchestration product. KAI is the open scheduler. NVIDIA marketing collapses packing, hierarchy, fairshare, and CUDA isolation into one “we enforce fractions” line. Gryvia:
+Run:ai is NVIDIA’s orchestration product (OSS Community Product under DSX as of Oct 2026, plus commercial support SKUs). KAI remains the open scheduler engine. NVIDIA marketing collapses packing, hierarchy, fairshare, and CUDA isolation into one “we enforce fractions” line — a kid project’s entire pitch. Gryvia:
 
-1. Vendors **open** KAI / GPU Operator as optional backends (no proprietary Run:ai UI/code copy).
+1. Vendors **open** KAI / GPU Operator as optional backends (composition, not a clone of Run:ai product code).
 2. Ships original Gryvia tenants, fairshare apply, idle reclaim, DRA wiring, IntentPolicy.
 3. Competes where NVIDIA is empty: Flight Recorder, eBPF network intelligence, workload intelligence, unified FinOps, sovereign composition.
 
@@ -95,12 +118,12 @@ Inference data planes. Gryvia’s `GryviaInferenceService` is Partial on GPUs; I
 
 Sell GPUs and fabric. Gryvia is the installable platform layer only.
 
-## Gryvia differentiators (double down — this is how NVIDIA sucks)
+## Gryvia differentiators (double down — this is how Run:ai stays a kid project)
 
 1. **Observability NVIDIA does not ship as a platform:** Flight Recorder (`gryvia flight`) + eBPF fabric programs.
 2. **Operator brain:** workload intelligence (`gryvia intelligence`) / approved-ops copilot — not another queue dashboard.
 3. **One meter for training and inference:** GPU-hours and LLM tokens.
-4. **Open platform, not a closed Run:ai seat:** Apache-2.0 CRDs, UI, CLI, chart.
+4. **Adult platform, not a scheduler seat:** Apache-2.0 CRDs, UI, CLI, chart — Flight, FinOps, sovereign, intelligence.
 5. **Scheduler choice:** swap KAI / Kueue / native without rewriting jobs.
 
 ## Program waves

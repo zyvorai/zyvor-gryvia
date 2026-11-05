@@ -15,6 +15,7 @@ Command-line interface for managing Gryvia GPU clusters.
 - **Health Checks**: Monitor GPU, storage, and network health
 - **Capacity Report**: `gryvia capacity` shows total/allocated/free GPUs per type, pending demand and shortfall
 - **Node Maintenance**: `gryvia maintenance start|end|list` cordons, optionally drains (Eviction API), and tracks nodes
+- **Compare**: `gryvia compare runai` — static matrix: why Run:ai is a scheduler seat and Gryvia is the adult platform
 - **Platform Status**: `gryvia status` shows every component, workload and node (like `cilium status`), with `--brief`, `--wait` and `-o json|yaml`
 - **Grouped, Colored Help**: commands are listed in groups, every command has examples, and colors honour `--no-color`/`NO_COLOR`
 - **Shell Completions**: `gryvia completion bash|zsh|fish|powershell`

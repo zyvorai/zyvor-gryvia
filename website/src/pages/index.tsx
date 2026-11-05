@@ -13,14 +13,14 @@ const REPO_DOCS = 'https://github.com/zyvorai/zyvor-gryvia/blob/main/docs';
 
 const NEW = [
   {
-    title: 'KAI Scheduler backend',
-    text: 'One Helm value hands placement to KAI: hierarchical queues, gangs, GPU fractions, a queue per tenant, and KAI’s reason on every waiting job.',
-    to: `${REPO_DOCS}/kai-scheduler.md`,
+    title: 'Beyond a queue UI',
+    text: 'Run:ai packs GPUs. Gryvia ships Flight Recorder, eBPF fabric intelligence, workload intelligence, token+GPU FinOps and sovereign composition. gryvia compare runai.',
+    to: '/docs/guides/COMPETITORS',
   },
   {
-    title: 'Jupyter and VS Code in the browser',
-    text: 'Open a workspace from the dashboard or the CLI through a signed, per-workspace session. Idle workspaces pause and keep their volume.',
-    to: `${REPO_DOCS}/workspaces.md`,
+    title: 'Adult platform, one Helm switch',
+    text: 'values-adult-platform.yaml turns on fairshare apply, Flight Recorder, intelligence actions and the billing ledger.',
+    to: `${REPO_DOCS}/competitors.md`,
   },
   {
     title: 'Submit without YAML',
