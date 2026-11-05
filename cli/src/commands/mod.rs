@@ -10,6 +10,8 @@ pub mod create;
 pub mod datasets;
 pub mod delete;
 pub mod experiment;
+pub mod export_skypilot;
+pub mod fairshare;
 pub mod flows;
 pub mod get;
 pub mod gpu_trace;

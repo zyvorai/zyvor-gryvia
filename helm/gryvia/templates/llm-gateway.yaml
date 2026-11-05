@@ -54,6 +54,9 @@ spec:
             - {{ printf "--flush-interval=%s" ($gw.flushInterval | default "5m") | quote }}
             - {{ printf "--quota-refresh-interval=%s" ($gw.quotaRefreshInterval | default "30s") | quote }}
             - {{ printf "--quota-sync-interval=%s" ($gw.quotaSyncInterval | default "1s") | quote }}
+            {{- if $gw.intentPolicy }}
+            - --intent-policy-file=/etc/gryvia/intent-policy.json
+            {{- end }}
           env:
             - name: POD_NAME
               valueFrom:
@@ -86,8 +89,20 @@ spec:
           resources:
             {{- toYaml . | nindent 12 }}
           {{- end }}
+          {{- if $gw.intentPolicy }}
+          volumeMounts:
+            - name: intent-policy
+              mountPath: /etc/gryvia
+              readOnly: true
+          {{- end }}
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
+      {{- if $gw.intentPolicy }}
+      volumes:
+        - name: intent-policy
+          configMap:
+            name: {{ include "gryvia.fullname" . }}-llm-intent-policy
+      {{- end }}
       {{- with $gw.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
@@ -265,5 +280,20 @@ spec:
     matchLabels:
       {{- include "gryvia.selectorLabels" . | nindent 6 }}
       app.kubernetes.io/component: llm-gateway
+{{- end }}
+
+{{- if $gw.intentPolicy }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "gryvia.fullname" . }}-llm-intent-policy
+  namespace: {{ include "gryvia.namespace" . }}
+  labels:
+    {{- include "gryvia.labels" . | nindent 4 }}
+    app.kubernetes.io/component: llm-gateway
+data:
+  intent-policy.json: |
+{{- $gw.intentPolicy | nindent 4 }}
 {{- end }}
 {{- end }}

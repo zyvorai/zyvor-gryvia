@@ -346,6 +346,41 @@ func (r *GryviaAIJobReconciler) cancelJob(ctx context.Context, job *gryviav1.Gry
 	return ctrl.Result{}, r.teardown(ctx, job, false)
 }
 
+const annotationJobLastActivity = "gryvia.io/last-activity"
+
+// checkIdleTimeout cancels a Running job whose last activity is older than spec.idleTimeout.
+// Returns done=true when the job was cancelled (caller should stop reconciling further).
+func (r *GryviaAIJobReconciler) checkIdleTimeout(ctx context.Context, job *gryviav1.GryviaAIJob) (bool, ctrl.Result, error) {
+	secs, err := job.Spec.IdleTimeoutSeconds()
+	if err != nil || secs == nil || job.Status.Phase != PhaseRunning {
+		return false, ctrl.Result{}, nil
+	}
+	last := time.Time{}
+	if raw := job.Annotations[annotationJobLastActivity]; raw != "" {
+		if t, err := time.Parse(time.RFC3339, raw); err == nil {
+			last = t
+		}
+	}
+	if last.IsZero() && job.Status.StartTime != nil {
+		last = job.Status.StartTime.Time
+	}
+	if last.IsZero() {
+		// StartTime not set yet; the active-job requeue (30s) will try again.
+		return false, ctrl.Result{}, nil
+	}
+	deadline := last.Add(time.Duration(*secs) * time.Second)
+	now := time.Now()
+	if now.Before(deadline) {
+		// Caller continues reconcile; active jobs already requeue every 30s.
+		return false, ctrl.Result{}, nil
+	}
+	msg := fmt.Sprintf("Cancelled after idleTimeout %s (last activity %s)", job.Spec.IdleTimeout, last.UTC().Format(time.RFC3339))
+	if err := r.finishJob(ctx, job, PhaseCancelled, "IdleTimeout", msg); err != nil {
+		return true, ctrl.Result{}, err
+	}
+	return true, ctrl.Result{}, r.teardown(ctx, job, false)
+}
+
 // failJob marks the job Failed for a reason that is not a workload failure (invalid spec).
 func (r *GryviaAIJobReconciler) failJob(ctx context.Context, job *gryviav1.GryviaAIJob, reason, msg string) error {
 	return r.finishJob(ctx, job, PhaseFailed, reason, msg)

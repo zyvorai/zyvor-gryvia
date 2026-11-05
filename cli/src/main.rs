@@ -45,6 +45,7 @@ fn inline_job(cmd: &Commands) -> Option<commands::submit::InlineJob> {
         memory,
         env,
         command,
+        idle_timeout,
         ..
     } = cmd
     else {
@@ -66,6 +67,7 @@ fn inline_job(cmd: &Commands) -> Option<commands::submit::InlineJob> {
         memory: memory.clone(),
         env: env.clone(),
         command: command.clone(),
+        idle_timeout: idle_timeout.clone(),
     })
 }
 
@@ -208,6 +210,10 @@ enum Commands {
             conflicts_with = "sbatch"
         )]
         env: Vec<String>,
+
+        /// Cancel a Running job after this idle duration (e.g. 30m); uses gryvia.io/last-activity or startTime
+        #[arg(long, value_name = "DURATION", requires = "image", conflicts_with = "sbatch")]
+        idle_timeout: Option<String>,
 
         /// Command and arguments after `--`
         #[arg(last = true, value_name = "COMMAND")]
@@ -584,6 +590,13 @@ enum Commands {
         file: String,
     },
 
+    /// Export helpers (SkyPilot YAML and more)
+    #[command(after_help = examples(&["gryvia export skypilot train-job", "gryvia export skypilot"]))]
+    Export {
+        #[command(subcommand)]
+        action: ExportCommands,
+    },
+
     /// Show cluster health and diagnostics
     #[command(after_help = examples(&["gryvia health", "gryvia health gpu"]))]
     Health {
@@ -797,6 +810,39 @@ enum WorkspaceCommands {
         /// Print the one-time link instead of opening a browser
         #[arg(long)]
         print: bool,
+    },
+
+    /// Shell into the workspace pod (`kubectl exec -it`, requires kubectl)
+    Ssh {
+        /// Workspace name
+        name: String,
+
+        /// Optional command (default: bash -l)
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        command: Vec<String>,
+    },
+
+    /// Copy a local path into the workspace `/workspace` tree (`kubectl cp`)
+    Sync {
+        /// Workspace name
+        name: String,
+
+        /// Local file or directory
+        #[arg(long = "path", short = 'p')]
+        path: String,
+
+        /// Optional subdirectory under /workspace
+        #[arg(long = "dest")]
+        dest: Option<String>,
+    },
+}
+
+#[derive(Subcommand)]
+enum ExportCommands {
+    /// Print a SkyPilot task YAML that targets Kubernetes (run SkyPilot on a Gryvia cluster)
+    Skypilot {
+        /// GryviaAIJob name (default: newest in the namespace)
+        name: Option<String>,
     },
 }
 
@@ -1107,6 +1153,17 @@ enum TenantCommands {
         /// Skip confirmation
         #[arg(short, long)]
         yes: bool,
+    },
+
+    /// Lookback fairshare: GPU-hours vs fairShareWeight recommendations
+    Fairshare {
+        /// Lookback window in days
+        #[arg(long, default_value_t = 7)]
+        days: i64,
+
+        /// Output format
+        #[arg(short, long, value_enum, default_value_t = OutputFormat::Table, env = "GRYVIA_OUTPUT")]
+        output: OutputFormat,
     },
 }
 
@@ -1833,6 +1890,17 @@ async fn run() -> Result<()> {
             WorkspaceCommands::Open { .. } => {
                 unreachable!("handled before the kube client is created")
             }
+            WorkspaceCommands::Ssh { name, command } => {
+                let cmd = if command.is_empty() {
+                    None
+                } else {
+                    Some(command)
+                };
+                commands::workspace::ssh(&client, &name, cmd).await?;
+            }
+            WorkspaceCommands::Sync { name, path, dest } => {
+                commands::workspace::sync(&client, &name, &path, dest.as_deref()).await?;
+            }
         },
         Commands::Llm { action } => match action {
             LlmCommands::Keys {
@@ -1918,6 +1986,9 @@ async fn run() -> Result<()> {
             TenantCommands::Delete { name, yes } => {
                 commands::tenant::delete(&client, &name, yes).await?;
             }
+            TenantCommands::Fairshare { days, output } => {
+                commands::fairshare::report(&client, days, output.as_str()).await?;
+            }
         },
         Commands::Usage {
             tenant,
@@ -1962,6 +2033,11 @@ async fn run() -> Result<()> {
         Commands::Create { resource } => {
             commands::create::execute(&client, &resource).await?;
         }
+        Commands::Export { action } => match action {
+            ExportCommands::Skypilot { name } => {
+                commands::export_skypilot::skypilot(&client, name.as_deref()).await?;
+            }
+        },
         Commands::Completion { .. } | Commands::Validate { .. } => {
             unreachable!("handled before the cluster client is created")
         }

@@ -1,0 +1,17 @@
+# Example ResourceClaimTemplate for Gryvia jobs with gryvia.io/gpu-isolation=dra.
+# Requires a cluster DRA driver (for example NVIDIA DRA). Not verified on GPUs in this repo.
+# Override the template name on the job with annotation gryvia.io/dra-claim-template.
+apiVersion: resource.k8s.io/v1beta1
+kind: ResourceClaimTemplate
+metadata:
+  name: gryvia-gpu
+  namespace: default
+spec:
+  spec:
+    devices:
+      requests:
+        - name: gpu
+          exactly:
+            deviceClassName: gpu.nvidia.com
+            allocationMode: ExactCount
+            count: 1

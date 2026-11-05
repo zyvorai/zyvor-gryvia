@@ -161,6 +161,8 @@ pub struct InlineJob {
     pub memory: Option<String>,
     pub env: Vec<String>,
     pub command: Vec<String>,
+    /// Cancel after this idle duration while Running (e.g. "30m"); maps to spec.idleTimeout.
+    pub idle_timeout: Option<String>,
 }
 
 /// A job name prefix from the image: `ghcr.io/org/trainer:1.2` becomes `trainer`.
@@ -240,6 +242,9 @@ pub fn build_inline_job(j: &InlineJob, namespace: &str) -> Result<serde_json::Va
     }
     if let Some(m) = &j.mig {
         spec["migProfile"] = json!(m);
+    }
+    if let Some(idle) = &j.idle_timeout {
+        spec["idleTimeout"] = json!(idle);
     }
     if let Some(q) = &j.queue {
         spec["queueName"] = json!(q);

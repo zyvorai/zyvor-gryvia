@@ -151,6 +151,9 @@ type GryviaAIJobSpec struct {
 	GPUs    int32  `json:"gpus"`
 	GpuType string `json:"gpuType,omitempty"`
 
+	// MigProfile asks for MIG slices instead of whole GPUs (mirrors the AI operator field).
+	MigProfile string `json:"migProfile,omitempty"`
+
 	// Additional fields used by the cost predictor
 	Model          string                      `json:"model,omitempty"`
 	StorageRequest string                      `json:"storageRequest,omitempty"`

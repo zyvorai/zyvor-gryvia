@@ -35,6 +35,7 @@ export default function Tenants() {
   const [deleting, setDeleting] = useState<string | null>(null)
 
   const { data, isLoading, isError, error, refetch, isRefetching } = useQuery({ queryKey: ['tenants'], queryFn: api.getTenants, refetchInterval: 30000 })
+  const fairshare = useQuery({ queryKey: ['fairshare', 7], queryFn: () => api.getFairshare(7), enabled: admin, refetchInterval: 60000 })
   const table = useTableState({ rows: data, searchText, sortAccessors: SORTS, defaultSort: { key: 'name', dir: 'asc' }, pageSize: 12 })
 
   const deleteMutation = useMutation({
@@ -168,6 +169,30 @@ export default function Tenants() {
           <div className="span3">
             <ErrorState title="Could not refresh tenants; showing the last data." error={error} onRetry={() => refetch()} retrying={isRefetching} />
           </div>
+        )}
+        {fairshare.data && (
+          <section className="card span3" aria-labelledby="fairshare-title">
+            <p className="eyebrow">Fairshare</p>
+            <h2 className="card-title" id="fairshare-title">
+              Lookback weights
+            </h2>
+            <p className="faint">
+              Last {fairshare.data.lookbackDays} days · {Math.round(fairshare.data.totalGpuHours * 100) / 100} GPU-hours
+              {fairshare.data.applyEnabled ? '' : ' · recommend-only'}
+            </p>
+            <div className="apple-metric-band">
+              {(fairshare.data.items ?? []).slice(0, 6).map((r) => (
+                <div key={r.tenant}>
+                  <span className="mono">{r.tenant}</span>
+                  <b>
+                    {r.weight} → {r.recommendedWeight}
+                  </b>
+                </div>
+              ))}
+              {(fairshare.data.items ?? []).length === 0 && <div><span>No tenants</span><b>—</b></div>}
+            </div>
+            <p className="faint">CLI: <span className="mono">gryvia tenant fairshare</span></p>
+          </section>
         )}
         <section className="card span3">
           <p className="eyebrow">Accounts</p>

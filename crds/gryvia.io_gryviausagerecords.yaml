@@ -81,9 +81,12 @@ spec:
                 description: GpuType of the job
                 type: string
               gpus:
-                description: Gpus is the number of GPUs the job holds
+                description: Gpus is the whole GPU unit count (TotalGPUs)
                 format: int32
                 type: integer
+              effectiveGpus:
+                description: EffectiveGpus is the physical GPU fraction billed (share or MIG)
+                type: number
               inputTokens:
                 description: InputTokens is the prompt tokens of a tokens record
                 format: int64

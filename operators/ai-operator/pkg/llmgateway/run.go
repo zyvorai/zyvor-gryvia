@@ -67,6 +67,7 @@ func Run(args []string) error {
 	counterNs := fs.String("counter-namespace", os.Getenv("POD_NAMESPACE"), "Namespace of the shared daily token counter ConfigMaps (default $POD_NAMESPACE).")
 	maxBody := fs.Int64("max-body-bytes", defaultMaxBody, "Largest accepted request body.")
 	timeout := fs.Duration("upstream-timeout", 10*time.Minute, "Longest upstream request, streaming included.")
+	intentFile := fs.String("intent-policy-file", "", "Optional JSON IntentPolicy path (simple/large model routing and burst URL). See docs/dra-and-intent.md.")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -141,7 +142,16 @@ func Run(args []string) error {
 	}
 
 	source := &CacheSource{Reader: informers, KeyNamespace: *keyNamespace, PriceIn: *priceIn, PriceOut: *priceOut}
+	var intent IntentPolicy
+	if *intentFile != "" {
+		raw, err := os.ReadFile(*intentFile)
+		if err != nil {
+			return fmt.Errorf("intent-policy-file: %w", err)
+		}
+		intent = ParseIntentPolicy(raw)
+	}
 	gw := &Gateway{
+		Intent: intent,
 		Source:    source,
 		Indexes:   source,
 		Meter:     meter,

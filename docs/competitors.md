@@ -18,18 +18,18 @@ Gryvia is the **platform layer** you install on Kubernetes clusters you run. It 
 | Kubernetes-native GPU jobs | Have | Have | Partial (multi-cloud launcher) | Have | Serving-focused | Have (managed K8s) | **Have** (`GryviaAIJob`) |
 | Gang scheduling | Have (KAI) | Have | Partial | Partial | — | Via Slurm/Kueue | **Have** (KAI / Kueue / native) |
 | Fractional GPUs / MIG | Have (enforced fractions) | Partial (vGPU/MIG) | — | — | — | Provider-specific | **Partial** (KAI fractions + MIG/MPS/DRA intent) |
-| Time-based fairshare | Have (Run:ai) | DRF | — | — | — | — | **Partial** → Wave 1 lookback |
+| Time-based fairshare | Have (Run:ai) | DRF | — | — | — | — | **Partial** (lookback report + opt-in apply; not HW-proven) |
 | Hierarchical queues / tenants | Have | Have | Team pools | Profiles | — | Tenants | **Have** (`GryviaTenant`, KAI/Kueue queues) |
 | Quotas, budgets, chargeback | Have | Quotas | Cost-aware placement | — | — | Full billing | **Have** (estimates; ledger opt-in; no live payments) |
-| Fractional FinOps accuracy | Strong | — | — | — | — | Provider billing | **Partial** → Wave 1 |
+| Fractional FinOps accuracy | Strong | — | — | — | — | Provider billing | **Partial** (`effectiveGpus` metering; MIG heuristic) |
 | Browser notebooks / IDEs | Have | — | SSH / IDE sync | Notebooks | — | Varies | **Have** (Jupyter / VS Code proxy) |
-| SSH + code sync into workspace | Have | — | Have | Partial | — | SSH to nodes | **Gap** → Wave 2 |
-| Idle autostop / reclaim | Have | — | Have (autostop) | — | Scale-to-zero | Autoscale | **Partial** (workspaces + inference scale-to-zero; jobs → Wave 2) |
+| SSH + code sync into workspace | Have | — | Have | Partial | — | SSH to nodes | **Partial** (`gryvia workspace ssh/sync` via kubectl) |
+| Idle autostop / reclaim | Have | — | Have (autostop) | — | Scale-to-zero | Autoscale | **Partial** (workspaces, inference, job `idleTimeout`) |
 | Multi-cloud cost broker | — | — | Have | — | — | Native cloud | **Out of scope** (MultiKueue federation only) |
 | Experiment tracking / HPO UX | Partial | — | — | Have | — | — | **Partial** (AutoTuner, profiler; panels → Wave 4) |
 | Inference serving | Via platform | — | Launch only | KServe | Have | Endpoints | **Partial** (controller + canary; not GPU-proven) |
-| Intent / KV-aware routing | — | — | — | — | Emerging | — | **Gap** → Wave 3 |
-| DRA ResourceClaims | Emerging | Emerging | — | — | — | — | **Partial** (annotations) → Wave 3 |
+| Intent / KV-aware routing | — | — | — | — | Emerging | — | **Partial** (LLM IntentPolicy + optional burst) |
+| DRA ResourceClaims | Emerging | Emerging | — | — | — | — | **Partial** (Pod claims + example template; needs DRA driver) |
 | Slurm bridge | — | HPC roots | Slurm backend | — | — | SUNK / Slurm | **Have** (`--sbatch`, Slinky opt-in) |
 | Open source Apache-2.0 platform | KAI OSS; Run:ai product | Have | Have | Have | Have | Proprietary cloud | **Have** |
 | Hardware + IB fabric as product | — | — | — | — | — | Have | **Out of scope** |
@@ -40,7 +40,9 @@ Gryvia is the **platform layer** you install on Kubernetes clusters you run. It 
 
 Run:ai is NVIDIA’s commercial AI orchestration layer; **KAI Scheduler** is its open-source scheduling engine (CNCF Sandbox). Strengths: enforced GPU fractions, hierarchical projects, time-based fairshare over over-quota GPU-hours, strong utilization UX.
 
-Gryvia already uses KAI as an **opt-in backend** ([kai-scheduler](kai-scheduler.md)). Gaps to close in-tree: lookback fairshare recommendations, driver-enforced fractions on real GPUs, nested tenant hierarchies.
+**Policy:** Gryvia does **not** copy proprietary NVIDIA / Run:ai product code or UI. It vendors **open** components (KAI Scheduler API `scheduling.run.ai`, NVIDIA GPU Operator / device plugin charts) as optional backends and builds original Gryvia CRDs, metering, and researcher UX on top.
+
+Gryvia already uses KAI as an **opt-in backend** ([kai-scheduler](kai-scheduler.md)). In-tree closers: lookback fairshare (+ opt-in apply), fractional FinOps, nested `parentTenant` → KAI `parentQueue`, job idle reclaim, DRA claim wiring. Still open on hardware: driver-enforced fractions (NvFractions/HamiCore) and GPU-proven sharing.
 
 ### Volcano
 

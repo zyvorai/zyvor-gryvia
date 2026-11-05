@@ -13,8 +13,9 @@ package controllers
 //     overQuotaWeight. CPU and memory are unlimited.
 //
 // It also labels the tenant namespace gryvia.io/kai-queue=gryvia-<tenant>; the ai-operator (--kai-scheduler) puts
-// a job that names no queue into the queue of its namespace. spec.parentTenant, lendingLimit and cohort are not
-// mapped: KAI only runs jobs in leaf queues, so a tenant that is also a parent could not run jobs.
+// a job that names no queue into the queue of its namespace. spec.parentTenant maps to KAI parentQueue
+// (gryvia-<parent> instead of the shared gryvia root). Parent tenants become non-leaf queues: do not schedule
+// jobs into them (KAI runs jobs on leaves only). lendingLimit and cohort stay unmapped.
 //
 // Cluster-scoped queues cannot have a namespaced owner: they carry the label gryvia.io/tenant and a finalizer on the
 // GryviaTenant deletes them. Queues that exist without our managed-by label are never modified or deleted.
@@ -97,7 +98,11 @@ func BuildKAIParentQueue() *unstructured.Unstructured {
 }
 
 // BuildKAIQueue returns the tenant's leaf queue for the quota q (see tenantQuota).
-func BuildKAIQueue(tenant string, q quotaSource) *unstructured.Unstructured {
+// parentQueue is the KAI parentQueue name; empty means the shared root KAIParentQueue.
+func BuildKAIQueue(tenant string, q quotaSource, parentQueue string) *unstructured.Unstructured {
+	if parentQueue == "" {
+		parentQueue = KAIParentQueue
+	}
 	quota, limit := kaiUnlimited, kaiUnlimited
 	if q.Source != "unlimited" {
 		if n, err := strconv.ParseInt(q.Nominal, 10, 64); err == nil {
@@ -111,7 +116,7 @@ func BuildKAIQueue(tenant string, q quotaSource) *unstructured.Unstructured {
 	if q.Weight > 0 {
 		weight = int64(q.Weight)
 	}
-	obj := newKAIQueue(KAIQueueName(tenant), KAIParentQueue, managedLabels(tenant), kaiResource(quota, limit, weight))
+	obj := newKAIQueue(KAIQueueName(tenant), parentQueue, managedLabels(tenant), kaiResource(quota, limit, weight))
 	obj.SetAnnotations(map[string]string{kueueQuotaSourceAnnotation: q.Source})
 	return obj
 }
@@ -147,7 +152,11 @@ func (r *GryviaKAIReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	if err := r.List(ctx, quotas); err != nil {
 		return ctrl.Result{}, fmt.Errorf("list GryviaQuota: %w", err)
 	}
-	for _, obj := range []*unstructured.Unstructured{BuildKAIParentQueue(), BuildKAIQueue(tenant.Name, tenantQuota(tenant, quotas.Items))} {
+	parentQueue := KAIParentQueue
+	if tenant.Spec.ParentTenant != "" {
+		parentQueue = KAIQueueName(tenant.Spec.ParentTenant)
+	}
+	for _, obj := range []*unstructured.Unstructured{BuildKAIParentQueue(), BuildKAIQueue(tenant.Name, tenantQuota(tenant, quotas.Items), parentQueue)} {
 		if err := r.apply(ctx, obj); err != nil {
 			if meta.IsNoMatchError(err) {
 				logger.Info("KAI Queue CRD not found: is KAI Scheduler installed?")
@@ -222,7 +231,7 @@ func (r *GryviaKAIReconciler) apply(ctx context.Context, want *unstructured.Unst
 // cleanup deletes the tenant's queue (only if we manage it). The parent queue is shared and stays; the tenant
 // namespace is deleted with the tenant, so its label is left.
 func (r *GryviaKAIReconciler) cleanup(ctx context.Context, tenant string) error {
-	want := BuildKAIQueue(tenant, quotaSource{Source: "unlimited"})
+	want := BuildKAIQueue(tenant, quotaSource{Source: "unlimited"}, KAIParentQueue)
 	have := &unstructured.Unstructured{}
 	have.SetGroupVersionKind(want.GroupVersionKind())
 	err := r.Get(ctx, client.ObjectKeyFromObject(want), have)
