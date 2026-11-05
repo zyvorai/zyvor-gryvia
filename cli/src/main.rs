@@ -1161,6 +1161,18 @@ enum TenantCommands {
         #[arg(long, default_value_t = 7)]
         days: i64,
 
+        /// Patch GryviaTenant.spec.quotas.fairShareWeight from the recommendation
+        #[arg(long)]
+        apply: bool,
+
+        /// With --apply, print patches without writing (default when --apply is set without this flag: write)
+        #[arg(long)]
+        dry_run: bool,
+
+        /// Limit apply to one tenant
+        #[arg(long)]
+        tenant: Option<String>,
+
         /// Output format
         #[arg(short, long, value_enum, default_value_t = OutputFormat::Table, env = "GRYVIA_OUTPUT")]
         output: OutputFormat,
@@ -1986,8 +1998,22 @@ async fn run() -> Result<()> {
             TenantCommands::Delete { name, yes } => {
                 commands::tenant::delete(&client, &name, yes).await?;
             }
-            TenantCommands::Fairshare { days, output } => {
-                commands::fairshare::report(&client, days, output.as_str()).await?;
+            TenantCommands::Fairshare {
+                days,
+                apply,
+                dry_run,
+                tenant,
+                output,
+            } => {
+                commands::fairshare::report(
+                    &client,
+                    days,
+                    output.as_str(),
+                    apply,
+                    dry_run,
+                    tenant.as_deref(),
+                )
+                .await?;
             }
         },
         Commands::Usage {

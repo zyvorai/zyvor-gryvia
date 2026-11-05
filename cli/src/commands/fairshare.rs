@@ -1,10 +1,10 @@
-//! `gryvia tenant fairshare`: lookback GPU-hours vs fairShareWeight recommendations.
+//! `gryvia tenant fairshare`: lookback GPU-hours vs fairShareWeight, optional apply.
 
 use std::collections::BTreeMap;
 
 use anyhow::{anyhow, Result};
 use chrono::{Duration, Utc};
-use kube::api::ListParams;
+use kube::api::{ListParams, Patch, PatchParams};
 use serde::Serialize;
 use serde_json::Value;
 
@@ -52,38 +52,10 @@ fn record_tenant(r: &Value) -> String {
         .to_string()
 }
 
-/// Print lookback fairshare for the last `days` days.
-pub async fn report(client: &GryviaClient, days: i64, output: &str) -> Result<()> {
-    let tenants_api = super::capacity::gvk_api(client, "GryviaTenant", "gryviatenants");
-    let tenants = tenants_api
-        .list(&ListParams::default())
-        .await
-        .map_err(|e| {
-            anyhow!(
-                "Failed to list tenants: {}",
-                display::cluster_error_text(&e.to_string())
-            )
-        })?
-        .items
-        .iter()
-        .filter_map(|o| serde_json::to_value(o).ok())
-        .collect::<Vec<_>>();
-
-    let usage_api = super::capacity::gvk_api(client, "GryviaUsageRecord", "gryviausagerecords");
-    let records = usage_api
-        .list(&ListParams::default())
-        .await
-        .map(|l| {
-            l.items
-                .iter()
-                .filter_map(|o| serde_json::to_value(o).ok())
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
-
+fn compute_rows(tenants: &[Value], records: &[Value], days: i64) -> (Vec<Row>, f64) {
     let cutoff = Utc::now() - Duration::days(days.max(1));
     let mut hours: BTreeMap<String, f64> = BTreeMap::new();
-    for r in &records {
+    for r in records {
         let start = r
             .pointer("/spec/start")
             .and_then(Value::as_str)
@@ -105,7 +77,7 @@ pub async fn report(client: &GryviaClient, days: i64, output: &str) -> Result<()
     let mut total_w = 0.0_f64;
     let mut total_h = 0.0_f64;
     let mut base: Vec<(String, i64, f64)> = Vec::new();
-    for t in &tenants {
+    for t in tenants {
         let name = tenant_name(t).to_string();
         if name.is_empty() {
             continue;
@@ -151,13 +123,55 @@ pub async fn report(client: &GryviaClient, days: i64, output: &str) -> Result<()
         })
         .collect();
     rows.sort_by(|a, b| a.tenant.cmp(&b.tenant));
+    (rows, total_h)
+}
+
+/// Print lookback fairshare for the last `days` days; optionally apply recommended weights.
+pub async fn report(
+    client: &GryviaClient,
+    days: i64,
+    output: &str,
+    apply: bool,
+    dry_run: bool,
+    only_tenant: Option<&str>,
+) -> Result<()> {
+    let tenants_api = super::capacity::gvk_api(client, "GryviaTenant", "gryviatenants");
+    let tenants = tenants_api
+        .list(&ListParams::default())
+        .await
+        .map_err(|e| {
+            anyhow!(
+                "Failed to list tenants: {}",
+                display::cluster_error_text(&e.to_string())
+            )
+        })?
+        .items
+        .iter()
+        .filter_map(|o| serde_json::to_value(o).ok())
+        .collect::<Vec<_>>();
+
+    let usage_api = super::capacity::gvk_api(client, "GryviaUsageRecord", "gryviausagerecords");
+    let records = usage_api
+        .list(&ListParams::default())
+        .await
+        .map(|l| {
+            l.items
+                .iter()
+                .filter_map(|o| serde_json::to_value(o).ok())
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+
+    let (rows, total_h) = compute_rows(&tenants, &records, days);
 
     let payload = serde_json::json!({
         "lookbackDays": days,
         "totalGpuHours": total_h,
+        "apply": apply,
+        "dryRun": dry_run,
         "items": rows,
     });
-    if output != "table" {
+    if output != "table" && !apply {
         return crate::output::print_serialized(output, &payload);
     }
 
@@ -184,8 +198,62 @@ pub async fn report(client: &GryviaClient, days: i64, output: &str) -> Result<()
         println!("{line}");
     }
     println!();
-    println!(
-        "Lookback {days}d · total GPU-hours {total_h:.2} · recommend-only (gateway apply needs GRYVIA_FAIRSHARE_APPLY=1)"
-    );
+    println!("Lookback {days}d · total GPU-hours {total_h:.2}");
+
+    if !apply {
+        println!(
+            "Recommend-only. Apply with: gryvia tenant fairshare --apply [--dry-run]  (needs Kueue fair-sharing or KAI overQuotaWeight)"
+        );
+        return Ok(());
+    }
+
+    let mut applied = 0usize;
+    for r in &rows {
+        if let Some(want) = only_tenant {
+            if r.tenant != want {
+                continue;
+            }
+        }
+        if r.delta == 0 {
+            continue;
+        }
+        let patch = serde_json::json!({
+            "spec": { "quotas": { "fairShareWeight": r.recommended_weight } }
+        });
+        if dry_run {
+            println!(
+                "dry-run: {}  {} → {}",
+                r.tenant, r.weight, r.recommended_weight
+            );
+            applied += 1;
+            continue;
+        }
+        tenants_api
+            .patch(
+                &r.tenant,
+                &PatchParams::default(),
+                &Patch::Merge(&patch),
+            )
+            .await
+            .map_err(|e| {
+                anyhow!(
+                    "Failed to patch tenant {}: {}",
+                    r.tenant,
+                    display::cluster_error_text(&e.to_string())
+                )
+            })?;
+        println!(
+            "applied: {}  {} → {}",
+            r.tenant, r.weight, r.recommended_weight
+        );
+        applied += 1;
+    }
+    if applied == 0 {
+        println!("Nothing to apply (all deltas are 0).");
+    } else if dry_run {
+        println!("{applied} change(s) would be applied · re-run without --dry-run to patch");
+    } else {
+        println!("{applied} tenant weight(s) patched");
+    }
     Ok(())
 }

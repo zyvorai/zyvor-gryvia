@@ -1,7 +1,9 @@
 # NVIDIA one-click install
 
-Gryvia turns NVIDIA operators on. It does not replace them. None of this path
-has been proven on real GPUs, NVSwitch or InfiniBand in this repository.
+Gryvia turns **open** NVIDIA operators on (GPU Operator, Network Operator, NIM Operator).
+It does **not** replace them and does **not** copy Run:ai’s proprietary UI.
+Unit tests cover Gryvia’s sharing labels and ConfigMap writes; CUDA/NCCL/NVSwitch/IB
+paths are unproven on real GPUs in this repository.
 
 ## Base (already in install-k3s-gpu.sh)
 
@@ -59,10 +61,11 @@ release Secret; create the `ngc-api` Secret yourself if that is not acceptable.
 | `nvidiaNim.enabled` | NIM Operator |
 | `nvidiaPlatform.validate` | post-install `nvidia-smi` Job, not NCCL |
 
-Sharing policy labels the GPU Operator already watches. The controller that writes them is **opt-in**: set
-`gpuOperator.gpuSharing=true` (flag `--enable-gpu-sharing`), otherwise a `GryviaGPUSharingPolicy` does nothing:
+Sharing: enabling `nvidiaPlatform.timeSlicing.enabled` **also** turns on Gryvia’s sharing controller and
+device-plugin ConfigMap writes (no triple `--set`). Equivalent explicit flags: `gpuOperator.gpuSharing` and
+`gpuOperator.devicePluginConfig`.
 
-- time-slicing → `nvidia.com/device-plugin.config=gryvia-time-slicing`. That key's replica count is the chart's `nvidiaPlatform.timeSlicing.replicas`, not the policy's `maxPodsPerGPU`. Set `gpuOperator.devicePluginConfig=true` and the policy writes its own key `gryvia-ts-<maxPodsPerGPU>` into the ConfigMap and labels nodes with it (Ready=False `ConfigWriteFailed` if the write fails). Whether the device plugin then advertises that many GPUs is not verified without a GPU node.
+- time-slicing → policy writes `gryvia-ts-<maxPodsPerGPU>` (or the chart’s `gryvia-time-slicing` key) and labels nodes; Ready=False `ConfigWriteFailed` if the write fails. Device-plugin advertising that many GPUs is unproven without a GPU node.
 - mig → `nvidia.com/mig.config=<first profile>` (must be a mig-parted name)
 
 ## Fabric Manager
@@ -70,19 +73,16 @@ Sharing policy labels the GPU Operator already watches. The controller that writ
 There is no flag for it. On NVSwitch/HGX nodes the GPU Operator driver container runs Fabric
 Manager; look for it inside the `nvidia-driver-daemonset` pod rather than for a new DaemonSet.
 
-## Enable GPU sharing (Run:ai-style utilization path)
-
-Sharing policies are inert until you turn the controller on. Gryvia does not ship NVIDIA’s proprietary
-sharing UI; this is the Gryvia path that drives the same device-plugin labels the GPU Operator already watches:
+## Enable GPU sharing (one switch)
 
 ```bash
 helm upgrade gryvia ... \
-  --set gpuOperator.gpuSharing=true \
-  --set gpuOperator.devicePluginConfig=true \
   --set nvidiaPlatform.timeSlicing.enabled=true \
   --set nvidiaPlatform.timeSlicing.replicas=4
 ```
 
-Then apply a `GryviaGPUSharingPolicy` (time-slicing or MIG). With `devicePluginConfig=true` the
-policy writes `gryvia-ts-<maxPodsPerGPU>` into the device-plugin ConfigMap. Not verified on GPUs.
+That enables Gryvia’s sharing controller. Apply a `GryviaGPUSharingPolicy` (see `examples/nvidia/` and
+`examples/crds/gryviagpusharing-examples.yaml`). Prefer KAI `--gpu 0.5` for schedule-time packing
+([kai-scheduler](https://github.com/zyvorai/zyvor-gryvia/blob/main/docs/kai-scheduler.md)) when you want
+Run:ai-like density without NVIDIA’s closed product.
 

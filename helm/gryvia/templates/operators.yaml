@@ -79,10 +79,14 @@ spec:
             {{- if and (eq $name "ai-operator") (dig "platformCompletion" "inferenceTelemetry" nil $.Values.AsMap) }}
             - {{ printf "--inference-telemetry-image=%s" (include "gryvia.image" (dict "root" $ "image" $op.image)) | quote }}
             {{- end }}
-            {{- if and (eq $name "gpu-operator") $.Values.gpuOperator.gpuSharing }}
+            {{- /* timeSlicing.enabled implies sharing controller + device-plugin ConfigMap writes */ -}}
+            {{- $timeSlice := dig "nvidiaPlatform" "timeSlicing" "enabled" false $.Values.AsMap }}
+            {{- $gpuSharing := or $.Values.gpuOperator.gpuSharing $timeSlice }}
+            {{- $dpCfg := or $.Values.gpuOperator.devicePluginConfig $timeSlice }}
+            {{- if and (eq $name "gpu-operator") $gpuSharing }}
             - --enable-gpu-sharing=true
             {{- end }}
-            {{- if and (eq $name "gpu-operator") $.Values.gpuOperator.gpuSharing $.Values.gpuOperator.devicePluginConfig }}
+            {{- if and (eq $name "gpu-operator") $gpuSharing $dpCfg }}
             - {{ printf "--device-plugin-config-name=%s" (dig "nvidiaPlatform" "timeSlicing" "configName" nil $.Values.AsMap) | quote }}
             - {{ printf "--device-plugin-config-namespace=%s" $.Release.Namespace | quote }}
             {{- end }}

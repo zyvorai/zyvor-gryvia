@@ -17,11 +17,11 @@ Gryvia is the **platform layer** you install on Kubernetes clusters you run. It 
 |---|---|---|---|---|---|---|---|
 | Kubernetes-native GPU jobs | Have | Have | Partial (multi-cloud launcher) | Have | Serving-focused | Have (managed K8s) | **Have** (`GryviaAIJob`) |
 | Gang scheduling | Have (KAI) | Have | Partial | Partial | — | Via Slurm/Kueue | **Have** (KAI / Kueue / native) |
-| Fractional GPUs / MIG | Have (enforced fractions) | Partial (vGPU/MIG) | — | — | — | Provider-specific | **Partial** (KAI fractions + MIG/MPS/DRA intent) |
-| Time-based fairshare | Have (Run:ai) | DRF | — | — | — | — | **Partial** (lookback report + opt-in apply; not HW-proven) |
-| Hierarchical queues / tenants | Have | Have | Team pools | Profiles | — | Tenants | **Have** (`GryviaTenant`, KAI/Kueue queues) |
+| Fractional GPUs / MIG | Have (KAI + proprietary isolation) | Partial (vGPU/MIG) | — | — | — | Provider-specific | **Have** (KAI schedule packing on kind; MIG/MPS/DRA) · Gap only for CUDA `NvFractions`/`HamiCore` on HW |
+| Time-based fairshare | Have (Run:ai product) | DRF | — | — | — | — | **Have** (lookback + CLI/API apply → `fairShareWeight` / KAI `overQuotaWeight`; opt-in Helm) |
+| Hierarchical queues / tenants | Have | Have | Team pools | Profiles | — | Tenants | **Have** (`parentTenant` → nested KAI `parentQueue` + Kueue) |
 | Quotas, budgets, chargeback | Have | Quotas | Cost-aware placement | — | — | Full billing | **Have** (estimates; ledger opt-in; no live payments) |
-| Fractional FinOps accuracy | Strong | — | — | — | — | Provider billing | **Partial** (`effectiveGpus` metering; MIG heuristic) |
+| Fractional FinOps accuracy | Strong (closed product) | — | — | — | — | Provider billing | **Have** (`effectiveGpus` → `gpuHours`; MIG heuristic) |
 | Browser notebooks / IDEs | Have | — | SSH / IDE sync | Notebooks | — | Varies | **Have** (Jupyter / VS Code proxy) |
 | SSH + code sync into workspace | Have | — | Have | Partial | — | SSH to nodes | **Partial** (`gryvia workspace ssh/sync` via kubectl) |
 | Idle autostop / reclaim | Have | — | Have (autostop) | — | Scale-to-zero | Autoscale | **Partial** (workspaces, inference, job `idleTimeout`) |
@@ -38,11 +38,11 @@ Gryvia is the **platform layer** you install on Kubernetes clusters you run. It 
 
 ### NVIDIA Run:ai / KAI Scheduler
 
-Run:ai is NVIDIA’s commercial AI orchestration layer; **KAI Scheduler** is its open-source scheduling engine (CNCF Sandbox). Strengths: enforced GPU fractions, hierarchical projects, time-based fairshare over over-quota GPU-hours, strong utilization UX.
+Run:ai is NVIDIA’s **closed** commercial orchestration layer; **KAI Scheduler** is the open scheduling engine (CNCF Sandbox) Gryvia already vendors. NVIDIA’s brochure stacks schedule packing, hierarchical projects, and CUDA memory isolation into one “enforced fractions” line — Gryvia ships the open pieces (KAI packing, nested tenants, fairshare weights, sharing labels) and refuses to pretend proprietary `NvFractions`/`HamiCore` are proven without GPUs.
 
 **Policy:** Gryvia does **not** copy proprietary NVIDIA / Run:ai product code or UI. It vendors **open** components (KAI Scheduler API `scheduling.run.ai`, NVIDIA GPU Operator / device plugin charts) as optional backends and builds original Gryvia CRDs, metering, and researcher UX on top.
 
-Gryvia already uses KAI as an **opt-in backend** ([kai-scheduler](kai-scheduler.md)). In-tree closers: lookback fairshare (+ opt-in apply), fractional FinOps, nested `parentTenant` → KAI `parentQueue`, job idle reclaim, DRA claim wiring. Still open on hardware: driver-enforced fractions (NvFractions/HamiCore) and GPU-proven sharing.
+Gryvia already uses KAI as an **opt-in backend** ([kai-scheduler](kai-scheduler.md)). Shipped vs Run:ai: lookback fairshare with apply, fractional FinOps, nested `parentTenant` → KAI `parentQueue`, job idle reclaim, DRA claim wiring, one-switch time-slicing→sharing. Only CUDA driver isolation and GPU-proven device-plugin ads remain hardware-gated.
 
 ### Volcano
 

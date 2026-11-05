@@ -62,8 +62,9 @@ quota-operator keeps one KAI `Queue` per `GryviaTenant`, under a shared parent q
 
 It labels the namespace `tenant-<tenant>` with `gryvia.io/kai-queue=gryvia-<tenant>`, and a job there that names no
 queue goes to that queue. `spec.queueName` (or the `gryvia.io/queue-name` annotation) still wins. Deleting the tenant
-deletes its queue; the parent stays. Queues without Gryvia's managed-by label are never changed. Not mapped:
-`parentTenant` (KAI only runs jobs in leaf queues), `lendingLimit` and `cohort`.
+deletes its queue; the parent stays. Queues without Gryvia's managed-by label are never changed.
+`spec.parentTenant` maps to KAI `parentQueue=gryvia-<parent>` (nested projects). Parent queues are non-leaf:
+schedule jobs only on leaf tenants. Still unmapped: `lendingLimit` and `cohort`.
 
 ## Why a job is waiting
 
@@ -98,8 +99,18 @@ GPU fractions: `gryvia.io/gpu-isolation` is not used. KAI's install-time `global
 through the GPU Fractioning Operator). See KAI's [GPU sharing](https://github.com/kai-scheduler/KAI-Scheduler/tree/main/docs/gpu-sharing)
 guide. A job with `spec.migProfile` keeps its MIG resource.
 
+## Scheduler packing vs NVIDIA driver isolation
+
+| Layer | Gryvia status |
+|---|---|
+| **KAI schedule-time fractions** (`gpu-fraction` / `gpu-memory` annotations, kind e2e via `scripts/e2e-kai.sh`) | **Have** — packs multiple jobs per GPU without claiming CUDA memory isolation |
+| **Nested tenants** (`parentTenant` → KAI `parentQueue`) | **Have** — unit-tested; kind e2e covers tenant queues |
+| **Driver memory isolation** (KAI `HamiCore` / `NvFractions`, NVIDIA proprietary path) | **Unverified** — install-time `global.gpuSharingMode`; not proven on GPUs in this repo |
+| Shares above 1 GPU (e.g. 1.5) | Not mapped |
+
+NVIDIA Run:ai marketing often collapses these into one “enforced fractions” claim. Gryvia separates packing (shipped) from CUDA isolation (hardware / NVIDIA mode).
+
 ## Not done yet
 
 - Nothing has run on GPU hardware; memory isolation (`HamiCore`, `NvFractions`) is untested.
-- Tenant hierarchy (`parentTenant`) is not mapped to nested KAI queues.
 - `gryvia.io/gpu-share` above 1 (for example 1.5) and KAI's multi-GPU fractions are not mapped.
