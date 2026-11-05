@@ -93,6 +93,8 @@ pub struct Inputs {
     /// The GryviaGpuNode or job list could not be read, so an empty list means "unknown", not "none".
     pub gpu_nodes_failed: bool,
     pub jobs_failed: bool,
+    /// Detected from ai-operator Deployment args: kai | kueue | native | volcano | default.
+    pub scheduler_backend: String,
 }
 
 // ── Model ────────────────────────────────────────────────────────────────────────────────────────
@@ -351,6 +353,18 @@ pub fn build_model(inputs: &Inputs) -> StatusModel {
                 .collect::<Vec<_>>()
                 .join(", ")
         },
+        required: false,
+    });
+
+    let sched = if inputs.scheduler_backend.is_empty() {
+        "default (kube-scheduler)".into()
+    } else {
+        inputs.scheduler_backend.clone()
+    };
+    components.push(ComponentLine {
+        name: "Scheduler".into(),
+        state: Marker::Ok,
+        detail: sched,
         required: false,
     });
 

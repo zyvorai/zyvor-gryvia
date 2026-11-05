@@ -481,6 +481,36 @@ enum Commands {
         output: UsageFormat,
     },
 
+    /// Workload intelligence analysis (gateway)
+    #[command(subcommand)]
+    Intelligence(IntelligenceCommands),
+
+    /// Billing ledger verify and invoice finalize/void (gateway; needs billing.ledger.enabled)
+    #[command(subcommand)]
+    Ledger(LedgerCommands),
+
+    /// Flight Recorder report for a job (via the API gateway)
+    #[command(after_help = examples(&["gryvia flight train-job", "gryvia flight train-job -n ml --diagnosis", "gryvia flight train-job -o json"]))]
+    Flight {
+        /// GryviaAIJob name
+        job: String,
+
+        /// Job namespace (defaults to the gateway/token scope)
+        #[arg(short = 'n', long)]
+        namespace: Option<String>,
+
+        /// Also fetch diagnosis
+        #[arg(long)]
+        diagnosis: bool,
+
+        /// Fail if coverage is incomplete or truncated
+        #[arg(long)]
+        require_complete: bool,
+
+        #[arg(short, long, value_enum, default_value_t = OutputFormat::Table, env = "GRYVIA_OUTPUT")]
+        output: OutputFormat,
+    },
+
     /// Build monthly invoice estimates from metered usage
     ///
     /// Groups GryviaUsageRecord objects (all namespaces) into one invoice per tenant for a UTC month, with
@@ -1180,6 +1210,54 @@ enum TenantCommands {
 }
 
 #[derive(Subcommand)]
+#[derive(Subcommand)]
+#[derive(Subcommand)]
+enum IntelligenceCommands {
+    /// List analysis schemas
+    Schemas {
+        #[arg(short, long, value_enum, default_value_t = OutputFormat::Json, env = "GRYVIA_OUTPUT")]
+        output: OutputFormat,
+    },
+    /// POST /api/intelligence/{area} with optional JSON body (@file or - for stdin; default {})
+    Analyze {
+        /// One of: preflight, scheduling, bottlenecks, cost, inference-slo, laboratory, checkpoint, dataset, fabric, capacity, sovereign
+        area: String,
+        /// JSON object body
+        #[arg(long)]
+        body: Option<String>,
+        #[arg(short, long, value_enum, default_value_t = OutputFormat::Json, env = "GRYVIA_OUTPUT")]
+        output: OutputFormat,
+    },
+}
+
+enum LedgerCommands {
+    /// Verify the hash chain for a tenant
+    Verify {
+        tenant: String,
+        #[arg(short, long, value_enum, default_value_t = OutputFormat::Table, env = "GRYVIA_OUTPUT")]
+        output: OutputFormat,
+    },
+    /// Finalize a closed month from the ledger (admin)
+    Finalize {
+        tenant: String,
+        /// Month YYYY-MM
+        #[arg(long)]
+        month: String,
+        #[arg(short, long, value_enum, default_value_t = OutputFormat::Json, env = "GRYVIA_OUTPUT")]
+        output: OutputFormat,
+    },
+    /// Void a finalized invoice so the month can be finalized again
+    Void {
+        tenant: String,
+        #[arg(long)]
+        month: String,
+        #[arg(long, default_value = "voided via CLI")]
+        reason: String,
+        #[arg(short, long, value_enum, default_value_t = OutputFormat::Json, env = "GRYVIA_OUTPUT")]
+        output: OutputFormat,
+    },
+}
+
 enum MaintenanceCommands {
     /// Cordon a node and mark it as under maintenance
     Start {
@@ -2043,6 +2121,79 @@ async fn run() -> Result<()> {
                 };
                 commands::usage::execute(&client, opts).await?;
             }
+        }
+        Commands::Intelligence(action) => {
+            let gw = gateway.as_ref().ok_or_else(|| {
+                anyhow::anyhow!("set --gateway or GRYVIA_GATEWAY for intelligence commands")
+            })?;
+            match action {
+                IntelligenceCommands::Schemas { output } => {
+                    commands::intelligence::schemas(gw, output.as_str()).await?;
+                }
+                IntelligenceCommands::Analyze { area, body, output } => {
+                    let payload = match body {
+                        None => commands::intelligence::empty_body(),
+                        Some(s) if s == "-" => {
+                            let mut buf = String::new();
+                            std::io::Read::read_to_string(&mut std::io::stdin(), &mut buf)?;
+                            serde_json::from_str(&buf)?
+                        }
+                        Some(s) if s.starts_with('@') => {
+                            let path = &s[1..];
+                            let buf = std::fs::read_to_string(path)?;
+                            serde_json::from_str(&buf)?
+                        }
+                        Some(s) => serde_json::from_str(&s)?,
+                    };
+                    commands::intelligence::analyze(gw, &area, payload, output.as_str()).await?;
+                }
+            }
+        }
+        Commands::Ledger(action) => {
+            let gw = gateway.as_ref().ok_or_else(|| {
+                anyhow::anyhow!("set --gateway or GRYVIA_GATEWAY for ledger commands")
+            })?;
+            match action {
+                LedgerCommands::Verify { tenant, output } => {
+                    commands::ledger::verify(gw, &tenant, output.as_str()).await?;
+                }
+                LedgerCommands::Finalize {
+                    tenant,
+                    month,
+                    output,
+                } => {
+                    commands::ledger::finalize(gw, &tenant, &month, output.as_str()).await?;
+                }
+                LedgerCommands::Void {
+                    tenant,
+                    month,
+                    reason,
+                    output,
+                } => {
+                    commands::ledger::void_invoice(gw, &tenant, &month, &reason, output.as_str())
+                        .await?;
+                }
+            }
+        }
+        Commands::Flight {
+            job,
+            namespace,
+            diagnosis,
+            require_complete,
+            output,
+        } => {
+            let gw = gateway.as_ref().ok_or_else(|| {
+                anyhow::anyhow!("set --gateway or GRYVIA_GATEWAY for flight commands")
+            })?;
+            commands::flight::report(
+                gw,
+                &job,
+                namespace.as_deref(),
+                diagnosis,
+                require_complete,
+                output.as_str(),
+            )
+            .await?;
         }
         Commands::Invoice {
             tenant,

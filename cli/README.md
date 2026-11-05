@@ -11,7 +11,7 @@ Command-line interface for managing Gryvia GPU clusters.
 - **Cluster Overview**: Real-time cluster status and GPU utilization
 - **Cost Analysis**: Spending and budget usage from `GryviaQuota` status; `usage` and `invoice` aggregate `GryviaUsageRecord` metering into estimates (not real invoices)
 - **Tenants and Catalog**: `gryvia tenant list|get|create|delete` and `gryvia catalog` (alias `skus`)
-- **Network, Security and GPU insight**: `gryvia network`, `gryvia security` and `gryvia gpu` read the network-intelligence custom resources; these depend on collectors that are not fully implemented, so they can be empty (see operators/network-intelligence/README.md)
+- **Network, Security and GPU insight**: `gryvia network`, `gryvia security` and `gryvia gpu` read the network-intelligence custom resources; these depend on collectors that are implemented (see `gryvia network`, Flight Recorder, e2e-netintel), so they can be empty (see operators/network-intelligence/README.md)
 - **Health Checks**: Monitor GPU, storage, and network health
 - **Capacity Report**: `gryvia capacity` shows total/allocated/free GPUs per type, pending demand and shortfall
 - **Node Maintenance**: `gryvia maintenance start|end|list` cordons, optionally drains (Eviction API), and tracks nodes

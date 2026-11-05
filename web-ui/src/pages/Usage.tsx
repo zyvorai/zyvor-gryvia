@@ -32,6 +32,8 @@ export default function Usage() {
   const to = params.get('to') ?? defaults.to
   const groupBy = parseGroupBy(params.get('groupBy'), admin ? 'tenant' : 'sku')
   const tenant = admin ? (params.get('tenant') ?? '') : ''
+  const kindRaw = params.get('kind') ?? 'all'
+  const kind = kindRaw === 'gpu' || kindRaw === 'tokens' ? kindRaw : 'all'
   const [exporting, setExporting] = useState<'csv' | 'json' | null>(null)
 
   const setParam = (name: string, value: string) =>
@@ -47,7 +49,7 @@ export default function Usage() {
     )
 
   const rangeErr = rangeError(from, to)
-  const filters = { from, to, groupBy, tenant }
+  const filters = { from, to, groupBy, tenant, kind }
   const query = usageParams(filters, { groupBy })
 
   const tenants = useQuery({ queryKey: ['tenants'], queryFn: api.getTenants, enabled: admin })
@@ -83,8 +85,8 @@ export default function Usage() {
     <>
       <PageHero
         eyebrow="Usage"
-        title={admin ? 'GPU usage.' : 'Your GPU usage.'}
-        lede="GPU hours and estimated cost from job run time and the catalog rates. These are estimates, not invoices; nothing is charged."
+        title={admin ? 'Usage & FinOps.' : 'Your usage.'}
+        lede="GPU hours and LLM token costs from usage records. Filter by kind to unify training and inference FinOps. Estimates, not invoices."
       />
       <div className="grid">
         <section className="card span3">
@@ -121,6 +123,14 @@ export default function Usage() {
                 </select>
               </label>
             )}
+            <label>
+              Kind
+              <select value={kind} onChange={(e) => setParam('kind', e.target.value === 'all' ? '' : e.target.value)}>
+                <option value="all">GPU + tokens</option>
+                <option value="gpu">GPU hours</option>
+                <option value="tokens">LLM tokens</option>
+              </select>
+            </label>
             <button type="button" className="btn-secondary" onClick={() => doExport('csv')} disabled={!!rangeErr || exporting !== null} aria-busy={exporting === 'csv'}>
               {exporting === 'csv' ? 'Exporting…' : 'Export CSV'}
             </button>

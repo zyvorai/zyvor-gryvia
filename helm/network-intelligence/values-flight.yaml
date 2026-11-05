@@ -1,0 +1,5 @@
+# Opt-in Flight Recorder on the collector chart.
+# Create gryvia-flight-token in this release namespace with the same token as gryvia-system.
+ebpf:
+  enabled: true
+  flightTokenSecret: gryvia-flight-token

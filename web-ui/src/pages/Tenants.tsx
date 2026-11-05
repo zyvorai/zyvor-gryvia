@@ -36,6 +36,16 @@ export default function Tenants() {
 
   const { data, isLoading, isError, error, refetch, isRefetching } = useQuery({ queryKey: ['tenants'], queryFn: api.getTenants, refetchInterval: 30000 })
   const fairshare = useQuery({ queryKey: ['fairshare', 7], queryFn: () => api.getFairshare(7), enabled: admin, refetchInterval: 60000 })
+  const fairshareApply = useMutation({
+    mutationFn: (dryRun: boolean) => api.applyFairshare({ dryRun }, 7),
+    onSuccess: (res, dryRun) => {
+      const n = res.applied?.length ?? 0
+      notify.success(dryRun ? `Fairshare dry-run: ${n} change(s)` : `Applied fairshare to ${n} tenant(s)`)
+      if (!dryRun) queryClient.invalidateQueries({ queryKey: ['fairshare'] })
+      queryClient.invalidateQueries({ queryKey: ['tenants'] })
+    },
+    onError: (err) => notify.error('Fairshare apply failed', err),
+  })
   const table = useTableState({ rows: data, searchText, sortAccessors: SORTS, defaultSort: { key: 'name', dir: 'asc' }, pageSize: 12 })
 
   const deleteMutation = useMutation({
@@ -191,7 +201,14 @@ export default function Tenants() {
               ))}
               {(fairshare.data.items ?? []).length === 0 && <div><span>No tenants</span><b>—</b></div>}
             </div>
-            <p className="faint">CLI: <span className="mono">gryvia tenant fairshare</span></p>
+            <div className="row" style={{ gap: '0.5rem', marginTop: '0.75rem', flexWrap: 'wrap' }}>
+              <button type="button" className="btn-secondary" disabled={fairshareApply.isPending}
+                onClick={() => fairshareApply.mutate(true)}>Preview apply</button>
+              <button type="button" className="primary" disabled={fairshareApply.isPending || !fairshare.data.applyEnabled}
+                title={fairshare.data.applyEnabled ? 'Patch fairShareWeight on tenants' : 'Enable apiGateway.fairshareApply (or use CLI gryvia tenant fairshare --apply)'}
+                onClick={() => fairshareApply.mutate(false)}>Apply weights</button>
+            </div>
+            <p className="faint">CLI: <span className="mono">gryvia tenant fairshare --apply</span></p>
           </section>
         )}
         <section className="card span3">

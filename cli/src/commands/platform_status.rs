@@ -182,6 +182,29 @@ fn images(spec: Option<&k8s_openapi::api::core::v1::PodSpec>) -> Vec<String> {
 }
 
 /// Read everything the report needs. A failed read becomes a warning, never an error.
+
+fn detect_scheduler_backend(pod: Option<&k8s_openapi::api::core::v1::PodSpec>) -> Option<String> {
+    let pod = pod?;
+    for c in &pod.containers {
+        let Some(args) = c.args.as_ref() else { continue };
+        for a in args {
+            if a.contains("kai-scheduler") {
+                return Some("kai".into());
+            }
+            if a.contains("kueue") && (a.contains("true") || a.ends_with("kueue")) {
+                return Some("kueue".into());
+            }
+            if a.contains("native-queue") || a.contains("native-scheduler") {
+                return Some("native".into());
+            }
+            if a.contains("volcano") {
+                return Some("volcano".into());
+            }
+        }
+    }
+    None
+}
+
 pub async fn collect(client: &GryviaClient, namespace: &str) -> Inputs {
     let mut inputs = Inputs {
         namespace: namespace.to_string(),
@@ -195,14 +218,20 @@ pub async fn collect(client: &GryviaClient, namespace: &str) -> Inputs {
             for d in list.items {
                 let spec = d.spec.as_ref();
                 let status = d.status.as_ref();
+                let name = d.metadata.name.clone().unwrap_or_default();
                 inputs.workloads.push(WorkloadInfo {
                     kind: WorkloadKind::Deployment,
-                    name: d.metadata.name.clone().unwrap_or_default(),
+                    name: name.clone(),
                     desired: spec.and_then(|s| s.replicas).unwrap_or(1),
                     ready: status.and_then(|s| s.ready_replicas).unwrap_or(0),
                     available: status.and_then(|s| s.available_replicas).unwrap_or(0),
                     images: images(spec.and_then(|s| s.template.spec.as_ref())),
                 });
+                if name.contains("ai-operator") {
+                    if let Some(backend) = detect_scheduler_backend(spec.and_then(|s| s.template.spec.as_ref())) {
+                        inputs.scheduler_backend = backend;
+                    }
+                }
             }
         }
         Err(e) => inputs.warnings.push(format!(

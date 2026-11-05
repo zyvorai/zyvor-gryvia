@@ -58,8 +58,8 @@ So: when NVIDIA blogs time-based fairshare, treat it as validation of the open K
 | Flight Recorder (job-attributed eBPF timeline) | **—** | **Have** (preview; collector + gateway merge) |
 | Network / fabric eBPF + anomaly / flow CRDs | **—** / DCGM-centric | **Have** (opt-in network-intelligence chart) |
 | Workload intelligence + reviewer copilot | **—** / thin ops UI | **Have** (analysis APIs + dashboard; no silent writes) |
-| Unified token + GPU-hour FinOps | GPU-hour focused | **Have** (LLM gateway tokens + usage records) |
-| Billing ledger finalize / void / Stripe test | Closed commercial billing | **Partial** (opt-in ledger; test-mode Stripe) |
+| Unified token + GPU-hour FinOps | GPU-hour focused | **Have** (LLM tokens + GPU usage; Usage UI kind filter; CLI fairshare/ledger) |
+| Billing ledger finalize / void / Stripe test | Closed commercial billing | **Have** (opt-in ledger + CLI/UI finalize/void; Stripe test-mode) |
 | Sovereign / policy / identity composition | Enterprise SKUs, not this shape | **Have** (sovereign-aios path; demand-gated) |
 | Scheduler backend choice | Run:ai scheduler / KAI | **Have** (KAI **or** Kueue **or** native) |
 
@@ -97,8 +97,8 @@ Sell GPUs and fabric. Gryvia is the installable platform layer only.
 
 ## Gryvia differentiators (double down — this is how NVIDIA sucks)
 
-1. **Observability NVIDIA does not ship as a platform:** Flight Recorder + eBPF fabric programs.
-2. **Operator brain:** workload intelligence / approved-ops copilot — not another queue dashboard.
+1. **Observability NVIDIA does not ship as a platform:** Flight Recorder (`gryvia flight`) + eBPF fabric programs.
+2. **Operator brain:** workload intelligence (`gryvia intelligence`) / approved-ops copilot — not another queue dashboard.
 3. **One meter for training and inference:** GPU-hours and LLM tokens.
 4. **Open platform, not a closed Run:ai seat:** Apache-2.0 CRDs, UI, CLI, chart.
 5. **Scheduler choice:** swap KAI / Kueue / native without rewriting jobs.

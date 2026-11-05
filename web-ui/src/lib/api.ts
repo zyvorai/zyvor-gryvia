@@ -812,6 +812,15 @@ export const api = {
     return data
   },
 
+  applyFairshare: async (body: { dryRun?: boolean; tenant?: string } = {}, days = 7): Promise<{
+    applyEnabled: boolean
+    dryRun: boolean
+    applied: Array<{ tenant: string; from: number; to: number; status: string }>
+  }> => {
+    const { data } = await apiClient.post('/fairshare/apply', { dryRun: body.dryRun ?? true, tenant: body.tenant }, { params: { days } })
+    return data
+  },
+
   /** Authenticated download (the token is a bearer header, so a plain link would be rejected). */
   exportUsage: async (format: 'csv' | 'json', params: Record<string, string>): Promise<Blob> => {
     const { data } = await apiClient.get('/usage/export', { params: { ...params, format }, responseType: 'blob' })

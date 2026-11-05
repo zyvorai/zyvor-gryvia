@@ -204,7 +204,8 @@ export function rangeError(from: string, to: string): string | null {
   return null
 }
 
-export interface UsageFilters { from?: string; to?: string; groupBy: UsageGroupBy; tenant?: string }
+export type UsageKind = "all" | "gpu" | "tokens"
+export interface UsageFilters { from?: string; to?: string; groupBy: UsageGroupBy; tenant?: string; kind?: UsageKind }
 
 /** Query params for /usage and /usage/export; blank values are dropped. */
 export function usageParams(f: UsageFilters, extra: Record<string, string> = {}): Record<string, string> {
@@ -212,6 +213,7 @@ export function usageParams(f: UsageFilters, extra: Record<string, string> = {})
   if (f.tenant) out.tenant = f.tenant
   if (f.from) out.from = f.from
   if (f.to) out.to = f.to
+  if (f.kind && f.kind !== 'all') out.kind = f.kind
   return out
 }
 
