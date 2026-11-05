@@ -23,7 +23,7 @@ per-team metering. Open source, Apache 2.0.
 [![Book a demo](https://img.shields.io/badge/Book_a_demo-0071e3?style=for-the-badge)](https://zyvor.dev/schedule?utm_source=github&utm_medium=gryvia&utm_campaign=readme_hero)
 [![30-day PoC](https://img.shields.io/badge/30--day_PoC-000000?style=for-the-badge)](https://zyvor.dev/poc?utm_source=github&utm_medium=gryvia&utm_campaign=readme_hero)
 
-[**Quickstart**](#quickstart) · [**Website**](https://zyvorai.github.io/zyvor-gryvia/) · [**Docs**](website/docs/intro.md) · [**Architecture**](#architecture) · [**What works today**](#what-works-today) · [**License**](#license)
+[**Quickstart**](#quickstart) · [**Website**](https://zyvorai.github.io/zyvor-gryvia/) · [**Docs**](website/docs/intro.md) · [**Architecture**](#architecture) · [**Competitors**](docs/competitors.md) · [**What works today**](#what-works-today) · [**License**](#license)
 
 </div>
 
@@ -339,6 +339,7 @@ telemetry and rolls back measured error-rate/p95 breaches. See [docs/inference-s
 | eBPF programs, collector, Flight Recorder | [ebpf/README.md](ebpf/README.md) · [collector/README.md](collector/README.md) · [docs/flight-recorder.md](docs/flight-recorder.md) |
 | Helm charts | [helm/gryvia](helm/gryvia/README.md) · [helm/network-intelligence](helm/network-intelligence/README.md) |
 | Advanced features, FAQ, roadmap | [guides/ADVANCED_FEATURES.md](website/docs/guides/ADVANCED_FEATURES.md) · [guides/FAQ.md](website/docs/guides/FAQ.md) · [guides/ROADMAP.md](website/docs/guides/ROADMAP.md) |
+| Competitors vs Run:ai, Volcano, SkyPilot, Kubeflow | [docs/competitors.md](docs/competitors.md) |
 | Examples & tutorials | [examples/README.md](examples/README.md) |
 
 ---

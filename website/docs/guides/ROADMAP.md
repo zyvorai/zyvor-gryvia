@@ -53,9 +53,19 @@ The legacy kinds without a runtime, `GryviaSLA`, `GryviaAutoScaler`, `GryviaRetr
 - A *verified* GPU reset, driver reload and reboot on real hardware (opt-in quarantine, PDB-respecting drain, the health-check escalation ladder and the node-local reset agent with driver reload and kured/nsenter reboot, dry-run by default and unit-tested only, are implemented; see [docs/gpu-reset-agent.md](https://github.com/zyvorai/gryvia/blob/main/docs/gpu-reset-agent.md))
 - Payment processing and billing
 
-## Open work
+## Competitor-sourced waves
 
-Listed roughly in the order they would make the platform more useful; no dates.
+Ordered program driven by the [competitors matrix](COMPETITORS.md). No dates. Each wave ships behind flags or as recommend-only where it would change scheduling or billing.
+
+0. **Competitive docs.** Matrix and this wave list (done in-tree).
+1. **Fairshare + fractional FinOps.** Lookback GPU-hour vs tenant weight report; recommend (optional apply) Kueue `fairShareWeight`; bill fractional/MIG jobs as physical GPU fraction, not whole GPUs.
+2. **Researcher UX + reclaim.** Opt-in workspace SSH and `gryvia workspace sync`; job/inference idle autostop reclaim (workspaces and inference scale-to-zero already exist).
+3. **DRA + inference intent.** Emit `ResourceClaim`s when `gpu-isolation=dra`; LLM gateway intent routing and optional burst-to-external when local GPUs are saturated.
+4. **Interop.** Optional Volcano scheduling backend; SkyPilot export/docs (not a multi-cloud broker); lightweight experiment metrics panels.
+
+## Open work (hardware and maturity)
+
+Listed roughly in the order they would make the platform more useful; no dates. These remain required regardless of competitor waves.
 
 1. **Verify on real hardware.** Run the operators, the eBPF collector and the RDMA paths on GPU and InfiniBand or RoCE nodes and record measured results. Until then storage, NCCL and training performance are unknown: the earlier targets (for example 20 GB/s storage, 30 percent faster training, 99.9 percent uptime) were goals, never measurements. The procedures are [GPU validation](https://github.com/zyvorai/gryvia/blob/main/docs/gpu-validation.md) for the nodes and the [GPU-cluster runbook](https://github.com/zyvorai/gryvia/blob/main/docs/gpu-ai-runbook.md) for the AI features.
 2. **Prove the Kueue integration** (the kind workflow already passes in CI; next a GPU cluster) and verify on GPUs what is wired: the opt-in fabric penalty, opt-in rack/IB-block group placement with a generated Kueue `Topology`, and live elastic resize (requested, not sized automatically). The decision to integrate Kueue rather than build queueing in-tree is made.
