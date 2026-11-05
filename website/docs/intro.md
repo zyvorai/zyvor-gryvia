@@ -40,7 +40,7 @@ is verified, what is experimental and what is only a CRD or design so far. Start
 ### Reference
 - [FAQ](guides/FAQ.md) - Frequently asked questions
 - [Roadmap](guides/ROADMAP.md) - Feature roadmap
-- [Competitors](guides/COMPETITORS.md) - vs Run:ai, Volcano, SkyPilot, Kubeflow
+- [Competitors](guides/COMPETITORS.md) - vs Run:ai/NVIDIA (and where they are empty), Volcano, SkyPilot, Kubeflow
 - [Advanced Features](guides/ADVANCED_FEATURES.md) - Advanced platform features
 - [Integrations](guides/INTEGRATIONS.md) - Third-party integrations
 - [Budget Management](https://github.com/zyvorai/gryvia/blob/main/features/budget-management.md) - Budget design (see its status note)
