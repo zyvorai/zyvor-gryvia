@@ -15,75 +15,94 @@ How Gryvia compares to GPU orchestration and ML platform tools. Status values:
 
 Gryvia is the **platform layer** you install on Kubernetes clusters you run. It does not sell GPUs, VMs, or data centers. See [GPU as a Service](GPU_AS_A_SERVICE.md) and the [GPU cloud platform](https://github.com/zyvorai/zyvor-gryvia/blob/main/docs/gpu-cloud-platform.md) note.
 
-## Matrix
+## Who is copying whom
 
-| Capability | Run:ai / KAI | Volcano | SkyPilot / dstack | Kubeflow / Determined | KServe / Seldon | Neoclouds (CoreWeave / Lambda) | Gryvia |
+**Short answer: NVIDIA is not copying Gryvia’s platform.** Run:ai / KAI owned hierarchical queues, over-quota fairshare, and (recently) time-based fairshare and DRA *as a closed product + open scheduler*. Gryvia **vendors the open KAI API** and builds original CRDs, metering, and researcher UX around it — that is composition, not a clone of `github.com/nvidia` product code ([policy](#nvidia-runai--kai-scheduler)).
+
+What *looks* like “they shipped our idea” is usually NVIDIA productizing **scheduler** features the industry already wants. Gryvia’s answer is not to out-brochure Run:ai on packing — it is to make the **rest of the stack** so complete that Run:ai looks like a queue UI bolted onto GPUs:
+
+| Where NVIDIA / Run:ai is thin or absent | Gryvia |
+|---|---|
+| Job-attributed eBPF timeline | [Flight Recorder](https://github.com/zyvorai/zyvor-gryvia/blob/main/docs/flight-recorder.md) |
+| Fabric / NCCL / flow eBPF programs + Network Intelligence CRDs | [Network Intelligence](NETWORK_INTELLIGENCE.md) |
+| Workload preflight, bottleneck heuristics, approved-ops copilot | [Workload intelligence](https://github.com/zyvorai/zyvor-gryvia/blob/main/docs/workload-intelligence.md) |
+| Unified **token + GPU-hour** FinOps + opt-in ledger / Stripe test finalize | LLM gateway metering + [billing ledger](https://github.com/zyvorai/zyvor-gryvia/blob/main/docs/billing-ledger.md) |
+| Sovereign / air-gap style composition (SPIRE, policy, secrets) | [Sovereign AI OS](https://github.com/zyvorai/zyvor-gryvia/blob/main/docs/sovereign-aios.md) |
+| Apache-2.0 **full** platform (jobs, tenants, UI, CLI, inference, workspaces) | This repo — Run:ai remains a **closed** commercial layer; only KAI is OSS |
+
+So: when NVIDIA blogs time-based fairshare, treat it as validation of the open KAI path Gryvia already wires — then point buyers at the rows below where Run:ai is **—**.
+
+## Matrix (scheduling & GPU ops)
+
+| Capability | Run:ai / KAI | Volcano | SkyPilot / dstack | Kubeflow / Determined | KServe / Seldon | Neoclouds | Gryvia |
 |---|---|---|---|---|---|---|---|
-| Kubernetes-native GPU jobs | Have | Have | Partial (multi-cloud launcher) | Have | Serving-focused | Have (managed K8s) | **Have** (`GryviaAIJob`) |
+| Kubernetes-native GPU jobs | Have | Have | Partial | Have | Serving | Have | **Have** (`GryviaAIJob`) |
 | Gang scheduling | Have (KAI) | Have | Partial | Partial | — | Via Slurm/Kueue | **Have** (KAI / Kueue / native) |
-| Fractional GPUs / MIG | Have (KAI + proprietary isolation) | Partial (vGPU/MIG) | — | — | — | Provider-specific | **Have** (KAI schedule packing on kind; MIG/MPS/DRA) · Gap only for CUDA `NvFractions`/`HamiCore` on HW |
-| Time-based fairshare | Have (Run:ai product) | DRF | — | — | — | — | **Have** (lookback + CLI/API apply → `fairShareWeight` / KAI `overQuotaWeight`; opt-in Helm) |
-| Hierarchical queues / tenants | Have | Have | Team pools | Profiles | — | Tenants | **Have** (`parentTenant` → nested KAI `parentQueue` + Kueue) |
-| Quotas, budgets, chargeback | Have | Quotas | Cost-aware placement | — | — | Full billing | **Have** (estimates; ledger opt-in; no live payments) |
-| Fractional FinOps accuracy | Strong (closed product) | — | — | — | — | Provider billing | **Have** (`effectiveGpus` → `gpuHours`; MIG heuristic) |
-| Browser notebooks / IDEs | Have | — | SSH / IDE sync | Notebooks | — | Varies | **Have** (Jupyter / VS Code proxy) |
-| SSH + code sync into workspace | Have | — | Have | Partial | — | SSH to nodes | **Partial** (`gryvia workspace ssh/sync` via kubectl) |
-| Idle autostop / reclaim | Have | — | Have (autostop) | — | Scale-to-zero | Autoscale | **Partial** (workspaces, inference, job `idleTimeout`) |
-| Multi-cloud cost broker | — | — | Have | — | — | Native cloud | **Out of scope** (MultiKueue federation only) |
-| Experiment tracking / HPO UX | Partial | — | — | Have | — | — | **Partial** (AutoTuner, profiler; panels → Wave 4) |
-| Inference serving | Via platform | — | Launch only | KServe | Have | Endpoints | **Partial** (controller + canary; not GPU-proven) |
-| Intent / KV-aware routing | — | — | — | — | Emerging | — | **Partial** (LLM IntentPolicy + optional burst) |
-| DRA ResourceClaims | Emerging | Emerging | — | — | — | — | **Partial** (Pod claims + example template; needs DRA driver) |
-| Slurm bridge | — | HPC roots | Slurm backend | — | — | SUNK / Slurm | **Have** (`--sbatch`, Slinky opt-in) |
-| Open source Apache-2.0 platform | KAI OSS; Run:ai product | Have | Have | Have | Have | Proprietary cloud | **Have** |
-| Hardware + IB fabric as product | — | — | — | — | — | Have | **Out of scope** |
+| Fractional GPUs / MIG | Have (KAI + proprietary isolation) | Partial | — | — | — | Provider | **Have** (KAI packing on kind; MIG/MPS/DRA) · HW Gap: CUDA `NvFractions`/`HamiCore` |
+| Time-based fairshare | Have (Run:ai product / KAI) | DRF | — | — | — | — | **Have** (lookback + CLI/API apply → weights) |
+| Hierarchical queues / tenants | Have | Have | Team pools | Profiles | — | Tenants | **Have** (`parentTenant` → KAI `parentQueue`) |
+| Quotas, budgets, chargeback | Have | Quotas | Cost-aware | — | — | Full billing | **Have** (estimates; ledger opt-in) |
+| Fractional FinOps accuracy | Strong (closed) | — | — | — | — | Provider | **Have** (`effectiveGpus` → `gpuHours`) |
+| Browser notebooks / IDEs | Have | — | SSH / IDE | Notebooks | — | Varies | **Have** |
+| SSH + code sync | Have | — | Have | Partial | — | SSH | **Partial** (`kubectl` wrappers) |
+| Idle autostop / reclaim | Have | — | Have | — | Scale-to-zero | Autoscale | **Partial** |
+| DRA ResourceClaims | Emerging (Run:ai) | Emerging | — | — | — | — | **Partial** (Pod claims + example) |
+| Intent / KV-aware routing | — (outside KAI) | — | — | — | Emerging | — | **Partial** (LLM IntentPolicy) |
+| Open source Apache-2.0 **platform** | KAI only; Run:ai closed | Have | Have | Have | Have | Proprietary | **Have** |
+| Hardware + IB as product | — | — | — | — | — | Have | **Out of scope** |
+
+## Matrix (where Run:ai / NVIDIA look empty)
+
+| Capability | Run:ai / NVIDIA AI Enterprise surface | Gryvia |
+|---|---|---|
+| Flight Recorder (job-attributed eBPF timeline) | **—** | **Have** (preview; collector + gateway merge) |
+| Network / fabric eBPF + anomaly / flow CRDs | **—** / DCGM-centric | **Have** (opt-in network-intelligence chart) |
+| Workload intelligence + reviewer copilot | **—** / thin ops UI | **Have** (analysis APIs + dashboard; no silent writes) |
+| Unified token + GPU-hour FinOps | GPU-hour focused | **Have** (LLM gateway tokens + usage records) |
+| Billing ledger finalize / void / Stripe test | Closed commercial billing | **Partial** (opt-in ledger; test-mode Stripe) |
+| Sovereign / policy / identity composition | Enterprise SKUs, not this shape | **Have** (sovereign-aios path; demand-gated) |
+| Scheduler backend choice | Run:ai scheduler / KAI | **Have** (KAI **or** Kueue **or** native) |
 
 ## Competitor notes
 
 ### NVIDIA Run:ai / KAI Scheduler
 
-Run:ai is NVIDIA’s **closed** commercial orchestration layer; **KAI Scheduler** is the open scheduling engine (CNCF Sandbox) Gryvia already vendors. NVIDIA’s brochure stacks schedule packing, hierarchical projects, and CUDA memory isolation into one “enforced fractions” line — Gryvia ships the open pieces (KAI packing, nested tenants, fairshare weights, sharing labels) and refuses to pretend proprietary `NvFractions`/`HamiCore` are proven without GPUs.
+Run:ai is NVIDIA’s **closed** orchestration product. KAI is the open scheduler. NVIDIA marketing collapses packing, hierarchy, fairshare, and CUDA isolation into one “we enforce fractions” line. Gryvia:
 
-**Policy:** Gryvia does **not** copy proprietary NVIDIA / Run:ai product code or UI. It vendors **open** components (KAI Scheduler API `scheduling.run.ai`, NVIDIA GPU Operator / device plugin charts) as optional backends and builds original Gryvia CRDs, metering, and researcher UX on top.
+1. Vendors **open** KAI / GPU Operator as optional backends (no proprietary Run:ai UI/code copy).
+2. Ships original Gryvia tenants, fairshare apply, idle reclaim, DRA wiring, IntentPolicy.
+3. Competes where NVIDIA is empty: Flight Recorder, eBPF network intelligence, workload intelligence, unified FinOps, sovereign composition.
 
-Gryvia already uses KAI as an **opt-in backend** ([KAI Scheduler](https://github.com/zyvorai/zyvor-gryvia/blob/main/docs/kai-scheduler.md)). Shipped vs Run:ai: lookback fairshare with apply, fractional FinOps, nested `parentTenant` → KAI `parentQueue`, job idle reclaim, DRA claim wiring, one-switch time-slicing→sharing. Only CUDA driver isolation and GPU-proven device-plugin ads remain hardware-gated.
+Still hardware-gated for Gryvia: driver-enforced fractions and device-plugin ads on real GPUs — same honesty we demand of NVIDIA’s brochure.
 
 ### Volcano
 
-CNCF batch scheduler with mature gangs, DRF, framework plugins (PyTorch, MPI, Ray, Spark). Gryvia integrates **Kueue and KAI**, not Volcano by default ([Scheduling](SCHEDULING.md)). Wave 4 adds an optional Volcano backend rather than forking Volcano ([volcano](https://github.com/zyvorai/zyvor-gryvia/blob/main/docs/volcano.md)).
+CNCF batch scheduler. Gryvia integrates **Kueue and KAI**, with optional Volcano stub ([volcano](https://github.com/zyvorai/zyvor-gryvia/blob/main/docs/volcano.md)).
 
 ### SkyPilot / dstack
 
-Portable job launch across clouds, Kubernetes, and Slurm; cost/availability placement; autostop; SSH and code sync. Gryvia stays **cluster-local**. Wave 2 mirrors researcher UX (SSH/sync, job autostop). Wave 4 adds export/docs so SkyPilot can target Gryvia clusters — not a multi-cloud broker ([skypilot](https://github.com/zyvorai/zyvor-gryvia/blob/main/docs/skypilot.md)).
+Multi-cloud launchers. Gryvia stays cluster-local; SkyPilot export is interop, not brokerage ([skypilot](https://github.com/zyvorai/zyvor-gryvia/blob/main/docs/skypilot.md)).
 
 ### Kubeflow / Determined
 
-Full ML lifecycle (pipelines, notebooks, trainer, Katib, registry, KServe) or training-focused experiment platform. Gryvia ML controllers exist ([ROADMAP](ROADMAP.md)) but are CPU/kind-proven only. Side-by-side install is fine; combination untested. See also the [FAQ](FAQ.md).
+ML lifecycle / experiment platforms. Side-by-side install is fine; combination untested.
 
 ### KServe / Seldon
 
-Production inference: canaries, autoscaling, drift/explainability. Gryvia’s `GryviaInferenceService` covers canary, HPA, Gateway API, scale-to-zero; data plane unverified on GPUs. Wave 3 adds lean intent routing in the LLM gateway ([dra-and-intent](https://github.com/zyvorai/zyvor-gryvia/blob/main/docs/dra-and-intent.md)).
+Inference data planes. Gryvia’s `GryviaInferenceService` is Partial on GPUs; IntentPolicy is the lean gateway path.
 
 ### CoreWeave / Lambda (neoclouds)
 
-Sell GPUs, fabric, and managed orchestration. Gryvia is the installable platform layer only.
+Sell GPUs and fabric. Gryvia is the installable platform layer only.
 
-## Gryvia differentiators (double down)
+## Gryvia differentiators (double down — this is how NVIDIA sucks)
 
-- Workload intelligence and operator copilot
-- Network intelligence, fabric signals, Flight Recorder
-- Opt-in billing ledger and sovereign placement
-- Unified token + GPU-hour FinOps (training and inference)
-- Scheduler choice: KAI, Kueue, or native queue gate ([Native scheduler](NATIVE_SCHEDULER.md))
+1. **Observability NVIDIA does not ship as a platform:** Flight Recorder + eBPF fabric programs.
+2. **Operator brain:** workload intelligence / approved-ops copilot — not another queue dashboard.
+3. **One meter for training and inference:** GPU-hours and LLM tokens.
+4. **Open platform, not a closed Run:ai seat:** Apache-2.0 CRDs, UI, CLI, chart.
+5. **Scheduler choice:** swap KAI / Kueue / native without rewriting jobs.
 
 ## Program waves
 
-See [ROADMAP — Competitor-sourced waves](ROADMAP.md#competitor-sourced-waves). No committed dates.
-
-| Wave | Focus |
-|---|---|
-| 0 Docs | This page, ROADMAP waves |
-| 1 Fairshare + FinOps | Lookback weights, fractional/MIG billing |
-| 2 SSH / autostop | Workspace SSH/sync, job idleTimeout |
-| 3 DRA + intent | ResourceClaims, LLM intent routing / burst |
-| 4 Interop | Volcano backend, SkyPilot export, experiment panels |
+See [ROADMAP — Competitor-sourced waves](ROADMAP.md#competitor-sourced-waves). Waves 0–4 shipped in-tree (fairshare, idle, DRA/intent, Volcano/SkyPilot); remaining work is hardware proof, not brochure parity.

@@ -25,6 +25,11 @@ Teams that want to experiment with a GPU platform on Kubernetes and accept alpha
 
 They overlap on ML surface but emphasize different layers. Kubeflow is a suite of ML projects (pipelines, notebooks, trainer, Katib, registry, KServe). Gryvia is a GPU-aware job, tenancy, metering and scheduling platform: `GryviaAIJob`, tenants/quotas, KAI/Kueue/native queues, workspaces, inference, model registry, workflows and AutoTuner controllers exist (unit-tested; kind e2e with tiny CPU images; not verified on GPUs). Use Kubeflow when you need its pipeline or KServe ecosystem; use Gryvia when you need GPU placement, fair queues and GPUaaS metering. They can be installed side by side; that combination has not been tested here. Broader comparisons: [competitors](COMPETITORS.md).
 
+### Is Gryvia copying NVIDIA / Run:ai?
+
+No. Gryvia does not copy proprietary NVIDIA or Run:ai product code. It optionally vendors **open** KAI Scheduler and NVIDIA GPU Operator charts, then adds original Gryvia CRDs, metering, UI and CLI. Overlap on fairshare / fractions is Gryvia composing the same open KAI surface NVIDIA productizes — not a clone of Run:ai. Where Run:ai is empty (Flight Recorder, eBPF network intelligence, workload intelligence, unified token+GPU FinOps, sovereign composition), Gryvia competes. Details: [Competitors](COMPETITORS.md).
+
+
 ### Is Gryvia a GPU cloud?
 
 No. It is the platform layer a GPU cloud runs on its own clusters: tenants, quotas, queueing, metering, inference
