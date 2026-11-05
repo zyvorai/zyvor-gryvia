@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"net/http"
 	"sort"
 	"time"
 
@@ -220,7 +219,11 @@ func (r *GryviaSecurityPolicyReconciler) sendSecurityWebhook(ctx context.Context
 		logger.Error(err, "Failed to marshal security webhook payload")
 		return
 	}
-	httpClient := &http.Client{Timeout: securityWebhookTimeout}
+	if err := validateWebhookURL(policy.Spec.AlertWebhook); err != nil {
+		logger.Error(err, "Refusing to send security webhook alert")
+		return
+	}
+	httpClient := newWebhookClient(securityWebhookTimeout)
 	resp, err := httpClient.Post(policy.Spec.AlertWebhook, "application/json", bytes.NewReader(body))
 	if err != nil {
 		logger.Error(err, "Failed to send security webhook alert", "url", policy.Spec.AlertWebhook)

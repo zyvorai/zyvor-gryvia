@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"time"
 
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -319,7 +318,11 @@ func (r *GryviaNetworkAnomalyReconciler) sendWebhookAlert(ctx context.Context, d
 		return
 	}
 
-	httpClient := &http.Client{Timeout: webhookTimeout}
+	if err := validateWebhookURL(detector.Spec.AlertWebhook); err != nil {
+		logger.Error(err, "Refusing to send webhook alert")
+		return
+	}
+	httpClient := newWebhookClient(webhookTimeout)
 	resp, err := httpClient.Post(detector.Spec.AlertWebhook, "application/json", bytes.NewReader(body))
 	if err != nil {
 		logger.Error(err, "Failed to send webhook alert", "url", detector.Spec.AlertWebhook)

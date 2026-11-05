@@ -64,6 +64,7 @@ const config: Config = {
         {to: '/how-it-works', label: 'How it works', position: 'left'},
         {to: '/install', label: 'Install', position: 'left'},
         {type: 'docSidebar', sidebarId: 'docsSidebar', position: 'left', label: 'Docs'},
+        {to: '/support', label: 'Support', position: 'left'},
         {href: 'https://github.com/zyvorai/zyvor-gryvia', label: 'GitHub', position: 'right'},
       ],
     },
@@ -84,6 +85,7 @@ const config: Config = {
           title: 'Project',
           items: [
             {label: 'GitHub', href: 'https://github.com/zyvorai/zyvor-gryvia'},
+            {label: 'Support', to: '/support'},
             {label: 'Issues', href: 'https://github.com/zyvorai/zyvor-gryvia/issues'},
           ],
         },

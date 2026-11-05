@@ -23,7 +23,7 @@ jobs:
   build-operator:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-go@v7
         with:
@@ -49,7 +49,7 @@ jobs:
   build-collector:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-go@v7
         with:
@@ -72,7 +72,7 @@ jobs:
   lint-ebpf:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install eBPF build dependencies
         run: sudo apt-get update && sudo apt-get install -y clang llvm libbpf-dev

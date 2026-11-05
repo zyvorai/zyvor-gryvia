@@ -44,7 +44,7 @@ jobs:
     name: Script tests (fakes)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: shellcheck -S warning scripts/apply-crds.sh scripts/upgrade-test.sh scripts/backup-crs.sh scripts/tests/upgrade-test.test.sh scripts/tests/apply-crds.test.sh
       - run: bash scripts/tests/upgrade-test.test.sh
       - run: bash scripts/tests/apply-crds.test.sh
@@ -55,7 +55,7 @@ jobs:
     needs: script-tests
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0 # the base ref (origin/main~1) and the release tags come from history
       - uses: azure/setup-helm@v5
