@@ -1,0 +1,20 @@
+# One switch: the adult Gryvia stack that makes Run:ai look like a queue UI.
+# Pair network-intelligence with helm/network-intelligence/values-flight.yaml
+# and matching flight tokens (see docs/flight-recorder.md).
+#
+#   helm upgrade --install gryvia ./helm/gryvia -n gryvia-system \
+#     -f values-adult-platform.yaml
+#
+# Compose with KAI if you want packing parity:
+#     --set kaiScheduler.enabled=true
+apiGateway:
+  fairshareApply: true
+  flightTokenSecret: gryvia-flight-token
+  intelligenceActions: true
+  networkCost:
+    enabled: true
+platformCompletion:
+  kueueFairSharing: true
+billing:
+  ledger:
+    enabled: true

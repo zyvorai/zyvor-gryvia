@@ -4,6 +4,7 @@ pub mod cancel;
 pub mod capacity;
 pub mod catalog;
 pub mod cluster;
+pub mod compare;
 pub mod cost;
 pub mod crd;
 pub mod create;

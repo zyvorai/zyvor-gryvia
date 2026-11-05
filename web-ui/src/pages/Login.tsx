@@ -80,6 +80,7 @@ const ABOUT: LoginAbout = {
     'Runs on your hardware: sovereign and air-gap ready',
     "Kubernetes-native: CRDs and operators you already know how to run",
     'Honest status: every claim says how it is verified (alpha today)',
+    'Adult stack Run:ai lacks: Flight Recorder, eBPF fabric, FinOps tokens, sovereign',
   ],
 }
 

@@ -170,6 +170,7 @@ export default function SubmitJob() {
         env: formData.env.length > 0 ? formData.env.map(({ name, value }) => ({ name, value })) : undefined,
         ...(formData.priority.trim() !== '' ? { priority: Number(formData.priority) } : {}),
         ...(formData.timeout.trim() !== '' ? { timeout: formData.timeout.trim() } : {}),
+        ...(formData.idleTimeout.trim() !== '' ? { idleTimeout: formData.idleTimeout.trim() } : {}),
         ...(formData.retryLimit.trim() !== '' ? { retryLimit: Number(formData.retryLimit) } : {}),
       } as GryviaAIJob['spec'],
     }
@@ -517,6 +518,19 @@ export default function SubmitJob() {
               </small>
             </label>
             <label className="field">
+              <span>Idle timeout</span>
+              <input
+                type="text"
+                value={formData.idleTimeout}
+                onChange={(e) => setFormData({ ...formData, idleTimeout: e.target.value })}
+                aria-describedby="idle-timeout-help"
+                placeholder="e.g. 30m"
+              />
+              <small id="idle-timeout-help" className="faint">
+                Cancel a Running job after this much idle time (last activity or start). Empty means no idle reclaim.
+              </small>
+            </label>
+            <label className="field">
               <span>Retry limit (0-10)</span>
               <input
                 type="number"
@@ -536,10 +550,11 @@ export default function SubmitJob() {
         </section>
 
         <section className="card span3">
-          <p className="eyebrow">ENVIRONMENT</p>
-          <h2 className="card-title">
-            <label className="span1">
-              Model params (B)
+          <p className="eyebrow">PREFLIGHT</p>
+          <h2 className="card-title">Weight-memory hints</h2>
+          <div className="form-grid">
+            <label className="field">
+              <span>Model params (B)</span>
               <input
                 type="text"
                 inputMode="decimal"
@@ -547,10 +562,10 @@ export default function SubmitJob() {
                 value={formData.modelParamsBillions}
                 onChange={(e) => setFormData({ ...formData, modelParamsBillions: e.target.value })}
               />
-              <span className="faint">Optional · gryvia.io/model-params-billions for weight-memory preflight</span>
+              <small className="faint">Optional · gryvia.io/model-params-billions</small>
             </label>
-            <label className="span1">
-              Extra memory (GiB)
+            <label className="field">
+              <span>Extra memory (GiB)</span>
               <input
                 type="text"
                 inputMode="decimal"
@@ -558,9 +573,14 @@ export default function SubmitJob() {
                 value={formData.extraMemoryGib}
                 onChange={(e) => setFormData({ ...formData, extraMemoryGib: e.target.value })}
               />
-              <span className="faint">Optional · gryvia.io/extra-memory-gib</span>
+              <small className="faint">Optional · gryvia.io/extra-memory-gib</small>
             </label>
-Environment variables</h2>
+          </div>
+        </section>
+
+        <section className="card span3">
+          <p className="eyebrow">ENVIRONMENT</p>
+          <h2 className="card-title">Environment variables</h2>
           <p className="faint">Values are stored in the job spec in plain text. Put real secrets in Kubernetes Secrets instead; marking a value secret only hides it while you type.</p>
           <div className="toolbar">
             <button type="button" className="btn-secondary" onClick={addEnvVar}>
