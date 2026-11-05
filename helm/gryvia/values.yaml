@@ -17,11 +17,11 @@ gpuOperator:
   autoRegister: true
   # Reconcile GryviaGPUSharingPolicy (flag --enable-gpu-sharing): matching GPU nodes get the labels the NVIDIA GPU Operator
   # reads for time-slicing (nvidia.com/device-plugin.config) and MIG (nvidia.com/mig.config), plus gryvia.io/* labels.
-  # Off by default because it writes node labels. See website/docs/guides/NVIDIA_ONE_CLICK.md.
+  # Off by default because it writes node labels — unless nvidiaPlatform.timeSlicing.enabled is true, which
+  # auto-enables sharing + devicePluginConfig so GryviaGPUSharingPolicy is not a dead CR. See NVIDIA_ONE_CLICK.md.
   gpuSharing: false
-  # With gpuSharing, also let a time-slicing policy write its own key (gryvia-ts-<maxPodsPerGPU>) into the device-plugin
-  # ConfigMap (nvidiaPlatform.timeSlicing.configName, in the release namespace) and label nodes with it, so a policy's
-  # maxPodsPerGPU is what the plugin is told. Off: nodes get the fixed key gryvia-time-slicing (the chart's replicas).
+  # With gpuSharing (or timeSlicing.enabled), let a time-slicing policy write gryvia-ts-<maxPodsPerGPU> into the
+  # device-plugin ConfigMap and label nodes with it. Off alone: nodes get the fixed key gryvia-time-slicing.
   devicePluginConfig: false
   # Node-local GPU reset agent (DaemonSet on nodes labelled nvidia.com/gpu.present=true). A person or the health-check escalation ladder annotates a cordoned,
   # drained node with gryvia.io/gpu-reset-request=<id> (and optionally gryvia.io/gpu-reset-gpus=0,1); the agent records

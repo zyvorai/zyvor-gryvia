@@ -146,3 +146,27 @@ func TestKAIReconcile_WaitsForNamespaceAndLeavesUnmanagedQueues(t *testing.T) {
 		t.Error("cleanup deleted a queue it does not manage")
 	}
 }
+
+func TestKAIReconcile_NestedParentTenant(t *testing.T) {
+	parent := kueueTenant("dept", 8)
+	child := kueueTenant("team", 2)
+	child.Spec.ParentTenant = "dept"
+	r, c := newKAIReconciler(parent, child, tenantNS("dept"), tenantNS("team"))
+	reconcileKAI(t, r, "dept")
+	reconcileKAI(t, r, "team")
+
+	deptQ, ok := getKAIQueue(t, c, "gryvia-dept")
+	if !ok {
+		t.Fatal("dept queue missing")
+	}
+	if p, _, _ := unstructured.NestedString(deptQ.Object, "spec", "parentQueue"); p != KAIParentQueue {
+		t.Errorf("dept parentQueue = %q, want %q", p, KAIParentQueue)
+	}
+	teamQ, ok := getKAIQueue(t, c, "gryvia-team")
+	if !ok {
+		t.Fatal("team queue missing")
+	}
+	if p, _, _ := unstructured.NestedString(teamQ.Object, "spec", "parentQueue"); p != "gryvia-dept" {
+		t.Errorf("team parentQueue = %q, want gryvia-dept", p)
+	}
+}

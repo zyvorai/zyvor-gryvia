@@ -1,3 +1,7 @@
+# GryviaGPUSharingPolicy examples (node labels for NVIDIA GPU Operator).
+# For schedule-time half-GPU packing without these CRDs, use KAI:
+#   gryvia submit --gpu 0.5 ...   # → gpu-fraction annotation (scripts/e2e-kai.sh)
+# strategy: fractional below is soft / label-oriented — not CUDA NvFractions.
 # Example: Time-Slicing for V100 GPUs
 apiVersion: gryvia.io/v1alpha1
 kind: GryviaGPUSharingPolicy
