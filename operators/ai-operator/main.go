@@ -71,6 +71,8 @@ func main() {
 	var kueueDefaultQueue string
 	var kaiScheduler bool
 	var kaiDefaultQueue string
+	var volcanoScheduler bool
+	var volcanoDefaultQueue string
 	var admissionGate bool
 	var idleReclaim, idleReclaimSuspend bool
 	var idleReclaimThreshold float64
@@ -119,6 +121,10 @@ func main() {
 		"Schedule GryviaAIJob pods with KAI Scheduler (schedulerName kai-scheduler, label kai.scheduler/queue, gang size, gpu-fraction for gryvia.io/gpu-share). Needs KAI Scheduler installed. Mutually exclusive with --kueue-integration and --native-queue-scheduler. Off by default.")
 	flag.StringVar(&kaiDefaultQueue, "kai-default-queue", controllers.DefaultKAIQueue,
 		"With --kai-scheduler: KAI leaf queue of jobs that name no queue.")
+	flag.BoolVar(&volcanoScheduler, "volcano-scheduler", false,
+		"Schedule GryviaAIJob pods with Volcano (schedulerName volcano, annotation scheduling.volcano.sh/queue-name). Needs Volcano installed. Mutually exclusive with --kai-scheduler, --kueue-integration and --native-queue-scheduler. Off by default. See docs/volcano.md.")
+	flag.StringVar(&volcanoDefaultQueue, "volcano-default-queue", controllers.DefaultVolcanoQueue,
+		"With --volcano-scheduler: Volcano queue of jobs that name no queue.")
 	flag.BoolVar(&checkpointGuard, "checkpoint-guard", false,
 		"Inject a matching GryviaCheckpointGuard's checkpoint environment into new batch jobs, create their status ConfigMap and Role, and replace pods stuck on lost nodes for AutoRestore guards.")
 	flag.BoolVar(&idleReclaim, "idle-reclaim", false,
@@ -152,6 +158,10 @@ func main() {
 	}
 	if kaiScheduler && (kueueIntegration || nativeQueueScheduler) {
 		fmt.Fprintln(os.Stderr, "--kai-scheduler cannot be combined with --kueue-integration or --native-queue-scheduler")
+		os.Exit(1)
+	}
+	if volcanoScheduler && (kaiScheduler || kueueIntegration || nativeQueueScheduler) {
+		fmt.Fprintln(os.Stderr, "--volcano-scheduler cannot be combined with --kai-scheduler, --kueue-integration or --native-queue-scheduler")
 		os.Exit(1)
 	}
 	if kueueStrictAdmission && !kueueIntegration {
@@ -196,6 +206,8 @@ func main() {
 		KueueDefaultQueue:    kueueDefaultQueue,
 		KAIScheduler:         kaiScheduler,
 		KAIDefaultQueue:      kaiDefaultQueue,
+		VolcanoScheduler:     volcanoScheduler,
+		VolcanoDefaultQueue:  volcanoDefaultQueue,
 		Recorder:             mgr.GetEventRecorderFor("gryviaaijob-controller"),
 
 		AdmissionGate:         admissionGate,

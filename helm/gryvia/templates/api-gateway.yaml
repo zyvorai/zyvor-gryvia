@@ -54,6 +54,10 @@ spec:
         - name: GRYVIA_INTELLIGENCE_RETENTION_DAYS
           value: {{ (dig "apiGateway" "intelligenceRetentionDays" 30 .Values.AsMap) | int | quote }}
         {{- end }}
+        {{- if (dig "apiGateway" "fairshareApply" false .Values.AsMap) }}
+        - name: GRYVIA_FAIRSHARE_APPLY
+          value: "1"
+        {{- end }}
         {{- if (dig "billing" "ledger" "enabled" false .Values.AsMap) }}
         - name: GRYVIA_BILLING_LEDGER
           value: "1"

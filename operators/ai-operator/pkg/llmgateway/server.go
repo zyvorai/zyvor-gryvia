@@ -39,6 +39,8 @@ type Gateway struct {
 	Activator Activator
 	// WakePoll is how often a held request re-reads the routes (default 1s).
 	WakePoll time.Duration
+	// Intent rewrites models from prompt shape and optional burst-to-external when local GPUs are saturated.
+	Intent IntentPolicy
 
 	wakes, touches throttle
 }
@@ -182,29 +184,44 @@ func (g *Gateway) proxy(w http.ResponseWriter, r *http.Request, k Key) {
 		WriteError(w, http.StatusBadRequest, openAIErrorInvalid, "model is required")
 		return
 	}
+	rawForIntent, _ := json.Marshal(body)
+	resolved := g.Intent.ResolveModel(model, rawForIntent)
 	routes, err := g.Source.Routes(r.Context())
 	if err != nil {
 		WriteError(w, http.StatusServiceUnavailable, "api_error", "models are not available yet")
 		return
 	}
-	route, ok := pick(routes, k, model)
+	route, ok := pick(routes, k, resolved)
+	if !ok && resolved != model {
+		route, ok = pick(routes, k, model)
+		resolved = model
+	}
 	if !ok {
 		g.Meter.Request(k.Tenant, model, http.StatusNotFound)
 		WriteError(w, http.StatusNotFound, openAIErrorInvalid, fmt.Sprintf("model %q does not exist or is not available to this key", model))
 		return
 	}
-	if !g.allowed(w, r, k, model) {
+	if !g.allowed(w, r, k, resolved) {
 		return
 	}
 	woke := route.Waking()
+	burst := false
+	if woke && g.Intent.AllowBurst(resolved) {
+		burst = true
+		woke = false
+	}
 	if woke {
-		if route, ok = g.awaitReady(w, r, k, model, route); !ok {
+		if route, ok = g.awaitReady(w, r, k, resolved, route); !ok {
 			return
 		}
 	}
 
 	stream, _ := body["stream"].(bool)
-	body["model"] = route.ServedModel
+	if burst {
+		body["model"] = resolved
+	} else {
+		body["model"] = route.ServedModel
+	}
 	if stream && r.URL.Path != "/v1/embeddings" {
 		opts, _ := body["stream_options"].(map[string]interface{})
 		if opts == nil {
@@ -214,8 +231,12 @@ func (g *Gateway) proxy(w http.ResponseWriter, r *http.Request, k Key) {
 		body["stream_options"] = opts
 	}
 	out, _ := json.Marshal(body)
+	upstreamBase := route.Upstream
+	if burst {
+		upstreamBase = strings.TrimRight(g.Intent.BurstURL, "/")
+	}
 	send := func() (*http.Response, error) {
-		req, err := http.NewRequestWithContext(r.Context(), http.MethodPost, route.Upstream+r.URL.Path, bytes.NewReader(out))
+		req, err := http.NewRequestWithContext(r.Context(), http.MethodPost, upstreamBase+r.URL.Path, bytes.NewReader(out))
 		if err != nil {
 			return nil, err
 		}
@@ -242,6 +263,10 @@ func (g *Gateway) proxy(w http.ResponseWriter, r *http.Request, k Key) {
 		}
 	}
 	w.Header().Set("X-Gryvia-Model-Namespace", route.Namespace)
+	w.Header().Set("X-Gryvia-Resolved-Model", resolved)
+	if burst {
+		w.Header().Set("X-Gryvia-Burst", "1")
+	}
 	w.WriteHeader(resp.StatusCode)
 
 	var usage Usage

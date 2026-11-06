@@ -52,6 +52,21 @@ export const USAGE_GROUPS: { value: UsageGroupBy; label: string }[] = [
 ]
 
 export interface UsageRow { key: string; gpuHours: number; cost: number; currency?: string; jobs: number }
+export interface FairshareRow {
+  tenant: string
+  weight: number
+  gpuHours: number
+  shareTarget: number
+  shareActual: number
+  recommendedWeight: number
+  delta: number
+}
+export interface FairshareReport {
+  lookbackDays: number
+  totalGpuHours: number
+  applyEnabled: boolean
+  items: FairshareRow[]
+}
 export interface UsageReport {
   groupBy: UsageGroupBy
   items: UsageRow[]

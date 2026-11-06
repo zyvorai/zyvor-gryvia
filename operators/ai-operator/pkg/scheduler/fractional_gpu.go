@@ -34,6 +34,10 @@ type RuntimePlan struct {
 	Env          map[string]string
 	Annotations  map[string]string
 	Reason       string
+	// DRAClaimName, when set, asks ApplyRuntimePlan to attach a PodResourceClaim of this name
+	// (the controller must create a matching ResourceClaim / template; unverified on GPUs).
+	DRAClaimName string
+	DRAMilliGPU  int64
 }
 
 func ParseGPUShare(annotations map[string]string, wholeGPUs int32) (GPUShareRequest, error) {
@@ -140,6 +144,8 @@ func PlanGPURuntime(req GPUShareRequest, nodeLabels map[string]string) (RuntimeP
 		if req.MemoryMiB > 0 {
 			p.Annotations["gryvia.io/dra-memory-mib"] = strconv.FormatInt(req.MemoryMiB, 10)
 		}
+		p.DRAMilliGPU = req.MilliGPU
+		p.DRAClaimName = "gryvia-gpu"
 		p.Reason = "Kubernetes Dynamic Resource Allocation claim"
 	default:
 		return RuntimePlan{}, fmt.Errorf("unsupported runtime mode %q", mode)

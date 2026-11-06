@@ -10,7 +10,7 @@ import { getStoredToken, clearToken } from '@/lib/auth'
 import type { Reservation, ReservationBody } from '@/lib/reservations'
 import type { Budget } from '@/lib/budgets'
 import type { Experiment } from '@/lib/experiments'
-import type { Sku, SkuBody, TenantResource, CreateTenantBody, UsageReport } from '@/lib/cloud'
+import type { Sku, SkuBody, TenantResource, CreateTenantBody, UsageReport, FairshareReport } from '@/lib/cloud'
 import type { Invoice, InvoiceReport } from '@/lib/invoices'
 import type { ModelWatch, ModelWatchRun } from '@/lib/modelWatches'
 import type { Dataset } from '@/lib/datasets'
@@ -804,6 +804,11 @@ export const api = {
 
   getUsage: async (params: Record<string, string>): Promise<UsageReport> => {
     const { data } = await apiClient.get('/usage', { params })
+    return data
+  },
+
+  getFairshare: async (days = 7): Promise<FairshareReport> => {
+    const { data } = await apiClient.get('/fairshare', { params: { days } })
     return data
   },
 

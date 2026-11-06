@@ -96,6 +96,10 @@ aiOperator:
   # Mutually exclusive with kueueIntegration and nativeQueueScheduler. No extra RBAC. See docs/kai-scheduler.md.
   kaiScheduler: false
   kaiDefaultQueue: default-queue
+  # Hand pods to Volcano (schedulerName volcano). Mutually exclusive with kaiScheduler, kueueIntegration and
+  # nativeQueueScheduler. See docs/volcano.md.
+  volcanoScheduler: false
+  volcanoDefaultQueue: default
   # Admission gate (--admission-gate): before creating a job's PVC/Service/workload, check the GryviaQuota limits
   # (allowed GPU types and SKUs, max GPUs per job, concurrent GPUs) and hard budgets (GryviaQuota budget.hardLimit,
   # GryviaBudget enforcement block) against the metered spend plus a cost forecast for the job, and reject it
@@ -335,6 +339,10 @@ apiGateway:
   # every POST /api/jobs pass the same checks first (fail closed, strict fields, no gpuCount alias).
   submissionAdmission:
     enforce: false
+  # Allow POST /api/fairshare/apply to patch tenant fairShareWeight from lookback recommendations.
+  # Recommend-only (GET /api/fairshare) always works for admins. Needs platformCompletion.kueueFairSharing
+  # for Kueue ClusterQueues to honor the weight.
+  fairshareApply: false
   enabled: true
   image: {name: gryvia-api-gateway, tag: ""}
   replicas: 2

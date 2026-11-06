@@ -74,6 +74,12 @@ type GryviaAIJobReconciler struct {
 	// admission and priority preemption from the gryvia-native-scheduler ConfigMap. Mutually exclusive
 	// with KueueIntegration. See gryviaaijob_native_schedule.go.
 	NativeQueueScheduler bool
+	// VolcanoScheduler (flag --volcano-scheduler, default false) sets schedulerName=volcano and a Volcano queue
+	// annotation. Mutually exclusive with Kueue, KAI and the native queue gate. See docs/volcano.md.
+	VolcanoScheduler bool
+	// VolcanoDefaultQueue is used when the job names no queue (default "default").
+	VolcanoDefaultQueue string
+
 	// KAIScheduler (flag --kai-scheduler, default false) hands every job's pods to KAI Scheduler: scheduler name,
 	// queue label, gang size and fractional GPUs. Mutually exclusive with KueueIntegration and NativeQueueScheduler.
 	// See gryviaaijob_kai.go.
@@ -219,6 +225,12 @@ func (r *GryviaAIJobReconciler) reconcileAIJob(ctx context.Context, job *gryviav
 
 	if _, err := job.Spec.TimeoutSeconds(); err != nil {
 		return ctrl.Result{}, r.failJob(ctx, job, "InvalidSpec", err.Error())
+	}
+	if _, err := job.Spec.IdleTimeoutSeconds(); err != nil {
+		return ctrl.Result{}, r.failJob(ctx, job, "InvalidSpec", err.Error())
+	}
+	if done, res, err := r.checkIdleTimeout(ctx, job); done || err != nil {
+		return res, err
 	}
 
 	if done, res, err := r.nativeQueueGate(ctx, job); done || err != nil { // opt-in native DRF/gang/preemption gate
@@ -738,6 +750,9 @@ func (r *GryviaAIJobReconciler) buildPodTemplate(job *gryviav1.GryviaAIJob, labe
 	podLabels := labels
 	if r.KAIScheduler {
 		podLabels = r.applyKAI(job, labels, annotations, &podSpec)
+	}
+	if r.VolcanoScheduler {
+		r.applyVolcano(job, annotations, &podSpec)
 	}
 	applyRecoveryOptions(job, &podSpec)
 	datasetPodSpec(job, &podSpec)

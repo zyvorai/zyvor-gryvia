@@ -78,6 +78,11 @@ type GryviaAIJobSpec struct {
 	// StatefulSet workload.
 	Timeout string `json:"timeout,omitempty"`
 
+	// IdleTimeout cancels a Running job after this long with no activity (e.g. "30m").
+	// Activity is gryvia.io/last-activity when set, otherwise status.startTime. Distinct from
+	// timeout (absolute activeDeadline). Useful for long-lived StatefulSet / interactive jobs.
+	IdleTimeout string `json:"idleTimeout,omitempty"`
+
 	// Node selector
 	NodeSelector map[string]string `json:"nodeSelector,omitempty"`
 

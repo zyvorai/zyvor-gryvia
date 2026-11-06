@@ -146,7 +146,9 @@ func (r *GryviaUsageRecordReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	if hours < 0 {
 		hours = 0
 	}
-	gpuHours := hours * float64(job.Spec.TotalGPUs())
+	wholeGPUs := job.Spec.TotalGPUs()
+	effectiveGPUs := job.Spec.EffectiveGPUs(job.Annotations)
+	gpuHours := hours * effectiveGPUs
 
 	tenantName, tenant, err := r.resolveTenant(ctx, job)
 	if err != nil {
@@ -158,19 +160,20 @@ func (r *GryviaUsageRecordReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	}
 
 	spec := gryviav1.GryviaUsageRecordSpec{
-		Tenant:   tenantName,
-		Job:      job.Name,
-		JobUID:   string(job.UID),
-		GpuType:  job.Spec.GpuType,
-		Sku:      skuName,
-		Gpus:     job.Spec.TotalGPUs(),
-		Start:    runStart,
-		End:      endPtr,
-		GpuHours: gpuHours,
-		Rate:     rate,
-		Cost:     gpuHours * rate,
-		Currency: currency,
-		Final:    final,
+		Tenant:         tenantName,
+		Job:            job.Name,
+		JobUID:         string(job.UID),
+		GpuType:        job.Spec.GpuType,
+		Sku:            skuName,
+		Gpus:           wholeGPUs,
+		EffectiveGpus:  effectiveGPUs,
+		Start:          runStart,
+		End:            endPtr,
+		GpuHours:       gpuHours,
+		Rate:           rate,
+		Cost:           gpuHours * rate,
+		Currency:       currency,
+		Final:          final,
 	}
 
 	if !exists {
@@ -271,8 +274,12 @@ func (r *GryviaUsageRecordReconciler) closeOrphans(ctx context.Context, namespac
 		if hours < 0 {
 			hours = 0
 		}
+		billed := rec.Spec.EffectiveGpus
+		if billed <= 0 {
+			billed = float64(rec.Spec.Gpus)
+		}
 		rec.Spec.End = &now
-		rec.Spec.GpuHours = hours * float64(rec.Spec.Gpus)
+		rec.Spec.GpuHours = hours * billed
 		rec.Spec.Cost = rec.Spec.GpuHours * rec.Spec.Rate
 		rec.Spec.Final = true
 		if err := r.Update(ctx, rec); err != nil {
