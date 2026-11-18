@@ -4,6 +4,8 @@
 
 # Gryvia
 
+[Client overview (PDF)](docs/Gryvia-Client-Overview.pdf)
+
 ## Stop babysitting GPUs. Start shipping models.
 
 ### GPU is the new CPU. Gryvia is its scheduler.
