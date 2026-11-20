@@ -76,7 +76,7 @@ const ROWS: &[Row] = &[
         gryvia: "Have (KAI | Kueue | native)",
     },
     Row {
-        surface: "Apache-2.0 full platform (jobs, UI, CLI, chart)",
+        surface: "Full platform (jobs, UI, CLI, chart)",
         runai: "OSS Community Product (scheduler-centric stack)",
         gryvia: "Have (this repo)",
     },

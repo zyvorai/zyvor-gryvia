@@ -79,4 +79,4 @@ We welcome contributions! See [Contributing Guide](https://github.com/zyvorai/gr
 
 ## License
 
-Apache License 2.0 - see [LICENSE](https://github.com/zyvorai/gryvia/blob/main/LICENSE) for details.
+Zyvor Production License v1.0 - see [LICENSE](https://github.com/zyvorai/gryvia/blob/main/LICENSE) for details.

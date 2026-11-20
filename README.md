@@ -10,14 +10,14 @@
 
 ### GPU is the new CPU. Gryvia is its scheduler.
 
-**One Kubernetes-native platform to train, fine-tune and serve on shared GPU clusters.** Open source, Apache 2.0.
+**One Kubernetes-native platform to train, fine-tune and serve on shared GPU clusters.** Source-available under the Zyvor Production License v1.0 (free for non-production use).
 
 **Place** every job on the right GPU · **Share** them by the half, the MIG slice or the gang · **Bill** every team by the GPU-hour
 
 Run:ai is a scheduler + org layer. Gryvia is the adult platform: Flight Recorder, eBPF fabric intelligence, workload intelligence, token+GPU FinOps, sovereign composition. See [`gryvia compare runai`](docs/competitors.md).
 
 [![Docs site](https://github.com/zyvorai/zyvor-gryvia/actions/workflows/pages.yml/badge.svg)](https://zyvorai.github.io/zyvor-gryvia/)
-[![License](https://img.shields.io/badge/License-Apache%202.0-0071e3?style=flat-square&labelColor=1d1d1f)](LICENSE)
+[![License](https://img.shields.io/badge/License-Zyvor%20Production%201.0-0071e3?style=flat-square&labelColor=1d1d1f)](LICENSE)
 [![Kubernetes](https://img.shields.io/badge/Kubernetes-1.30+-0071e3?style=flat-square&labelColor=1d1d1f&logo=kubernetes&logoColor=white)](https://kubernetes.io/)
 [![Stars](https://img.shields.io/github/stars/zyvorai/zyvor-gryvia?style=flat-square&labelColor=1d1d1f&color=0071e3&logo=github)](https://github.com/zyvorai/zyvor-gryvia)
 
@@ -333,7 +333,7 @@ telemetry and rolls back measured error-rate/p95 breaches. See [docs/inference-s
 
 ## Support
 
-Free under Apache-2.0. If it helps you, you can donate any amount you like: <https://rzp.io/rzp/utwdYh3>. A donation is voluntary and supports development and maintenance. It is not a purchase: it buys no support, SLA, features, priority or license, and it is not tax-deductible (Zyvor AI Labs Private Limited is a company, not a charity). Zyvor Enterprise (supported releases, SLAs, a named contact and enterprise features) is separate: [sales@zyvor.dev](mailto:sales@zyvor.dev).
+Non-production use is free under the Zyvor Production License v1.0; production use requires a commercial license (sales@zyvor.dev). If it helps you, you can donate any amount you like: <https://rzp.io/rzp/utwdYh3>. A donation is voluntary and supports development and maintenance. It is not a purchase: it buys no support, SLA, features, priority or license, and it is not tax-deductible (Zyvor AI Labs Private Limited is a company, not a charity). Zyvor Enterprise (supported releases, SLAs, a named contact and enterprise features) is separate: [sales@zyvor.dev](mailto:sales@zyvor.dev).
 
 ## Contributing
 
@@ -341,7 +341,7 @@ We welcome contributions: see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 
-Gryvia is **free and open source** under the [Apache License 2.0](LICENSE). That does not change.
+Gryvia is licensed under the [Zyvor Production License v1.0](LICENSE) (SPDX: `LicenseRef-Zyvor-Production-1.0`). Non-production use (evaluation, development, testing, research, education) is free. Production Use requires a paid commercial license from Zyvor AI Labs Private Limited: [sales@zyvor.dev](mailto:sales@zyvor.dev) · [zyvor.dev/buy](https://zyvor.dev/buy). A 30-day trial key is available for production evaluation.
 
 **Zyvor Enterprise** adds what production teams ask for: supported releases, deployment and upgrade guidance, priority
 incident triage, a named technical contact and 24x7 critical intake. Plans and terms:

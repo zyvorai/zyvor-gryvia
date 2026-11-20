@@ -47,7 +47,7 @@ describe('Login', () => {
       'Sovereign AI OS', 'Workflows and experiments']) {
       expect(about.textContent).toContain(t)
     }
-    expect(screen.getByText('Open source under Apache-2.0')).toBeTruthy()
+    expect(screen.getByText('Source-available under the Zyvor Production License v1.0')).toBeTruthy()
   })
 
   it('focuses the username without leaving the hero', () => {

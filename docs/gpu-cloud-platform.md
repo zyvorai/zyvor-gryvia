@@ -33,7 +33,7 @@ lists what Gryvia does not provide.
 | Agents and RAG | `GryviaAgent` (tool-calling runtime behind the gateway), `GryviaVectorIndex` | [Agents](agents.md), [RAG](rag.md) |
 | Datasets and storage | `GryviaDataset` from http, S3-compatible stores and NFS, versioned and incremental | [Datasets](datasets.md); `e2e-ml.yml` |
 | Fabric and network | RDMA/NVLink-aware scheduling, network intelligence, per-tenant network cost | [Scheduling](../website/docs/guides/SCHEDULING.md), [Network intelligence](../website/docs/guides/NETWORK_INTELLIGENCE.md) |
-| Sovereign deployment, no lock-in | Runs on your own clusters; one release with Zyntra and Netra; Apache-licensed, standard Kubernetes objects | [Sovereign AIOS](sovereign-aios.md) |
+| Sovereign deployment, no lock-in | Runs on your own clusters; one release with Zyntra and Netra; Zyvor Production License v1.0, standard Kubernetes objects | [Sovereign AIOS](sovereign-aios.md) |
 | Several clusters or regions | MultiKueue admission check binding | [Kueue integration](kueue-integration.md) (`e2e-multikueue.yml`, [run 36875403171](https://github.com/zyvorai/gryvia/actions/runs/36875403171)) |
 | Slurm users | `gryvia submit --sbatch` runs batch scripts as jobs with `SLURM_*` set; opt-in real Slurm (SchedMD's Slinky operator) with a partition per tenant and finished jobs metered as usage records | [Slurm](slurm.md); `scripts/e2e-jobs.sh sbatch` in `e2e-jobs.yml` (passes on kind); `e2e-slurm.yml` for Slinky (not yet passed) |
 | Upgrades without losing state | CRDs applied server-side (scope changes handled), Helm upgrade, rollback, backup and restore | [Operations](../website/docs/guides/OPERATIONS.md); `upgrade.yml` |

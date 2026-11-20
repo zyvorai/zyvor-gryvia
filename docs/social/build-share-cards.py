@@ -30,7 +30,7 @@ CLUSTERS = [
     ("Cluster B", "A100 · RoCE v2"),
     ("Cluster C", "L40 Edge · Standard"),
 ]
-PILLS = ["Apache-2.0", "Go 1.24+", "Kubernetes 1.32+", "NVIDIA GPU"]
+PILLS = ["Zyvor Production 1.0", "Go 1.24+", "Kubernetes 1.32+", "NVIDIA GPU"]
 
 
 def svg(p, label):
@@ -143,7 +143,7 @@ def svg(p, label):
   <!-- footer -->
   <line x1="72" y1="560" x2="1128" y2="560" stroke="{p['hair']}" stroke-width="1"/>
   <text x="72" y="596" font-family="{MONO}" font-size="16" fill="{p['sec']}">github.com/zyvorai/gryvia</text>
-  <text x="1128" y="596" text-anchor="end" font-family="{SANS}" font-size="16" fill="{p['sec']}">Apache License 2.0</text>
+  <text x="1128" y="596" text-anchor="end" font-family="{SANS}" font-size="16" fill="{p['sec']}">Zyvor Production License v1.0</text>
 </svg>
 '''
 
