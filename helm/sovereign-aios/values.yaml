@@ -1,0 +1,179 @@
+# Sovereign AI OS: Gryvia, Zyntra and Netra in one release, wired to each other.
+#
+# Install into Gryvia's namespace (gryvia.namespace.name, gryvia-system by default): Zyntra and Netra mount Gryvia's
+# certificate and the shared credentials Secret, and Secrets cannot be mounted across namespaces.
+#
+#   make sovereign-aios-deps
+#   helm install sovereign-aios helm/sovereign-aios -n gryvia-system --create-namespace
+
+# One Secret holds the Gryvia API key (GRYVIA_API_KEY, also given to Zyntra as ZYNTRA_GRAVIA_TOKEN), the platform's
+# LLM gateway key (ZYNTRA_AI_API_KEY) and Netra's API and agent keys. All are generated once and kept across
+# upgrades. Its name must match gryvia.auth.existingSecret below.
+credentials:
+  secretName: sovereign-aios-credentials
+  # Leave empty to generate. The Gryvia and Netra keys open the admin APIs; the LLM key is metered like any tenant key.
+  gryviaApiKey: ""
+  llmKey: ""
+  netraApiKey: ""
+  netraAgentKey: ""
+
+# A Zyntra service token for the zyntra tools of GryviaAgents (docs/agents.md). Zyntra gives service tokens the viewer
+# and proposer roles only, so agents can draft proposals but people approve them. The token is generated once and
+# kept in the credentials Secret (AGENT_ZYNTRA_TOKEN); its SHA-256 goes into Zyntra's policy, which this chart renders
+# into the Secret zyntra.policyExistingSecret, merged with zyntra.policy. Each namespace listed gets a copy of the
+# token in Secret secretName (key token) for its agents' tokenSecretRef.
+agentToken:
+  enabled: true
+  name: gryvia-agents             # shown in Zyntra's audit as service:<name>
+  roles: [viewer, proposer]       # viewer alone for read-only agents
+  tenant: ""                      # bind to one Zyntra tenant; empty sees every object
+  token: ""                       # leave empty to generate (zst_ and 64 hex digits)
+  secretName: zyntra-agent-token
+  namespaces: []                  # e.g. [tenant-alpha]
+
+gryvia:
+  # Fixed service names (gryvia-llm-gateway) so the URLs below do not depend on the release name.
+  fullnameOverride: gryvia
+  auth:
+    apiKey: ""
+    existingSecret: sovereign-aios-credentials
+  # Netra serves Gryvia's certificate too, so Zyntra trusts both through one root. Change the namespace here if
+  # Gryvia's is not gryvia-system.
+  tls:
+    extraSANs: [netra, netra.gryvia-system.svc]
+  # The console's Sovereign AI OS page reads Zyntra with the agents' viewer/proposer token and Netra with its API key.
+  # Set the console URLs to where people open Zyntra and Netra (ingress or port-forward) to get links.
+  apiGateway:
+    netra:
+      url: https://netra:30870
+      tokenSecret: sovereign-aios-credentials
+      tokenKey: ZYNTRA_NETRA_TOKEN
+    sovereign:
+      zyntraURL: http://zyntra:8080
+      zyntraTokenSecret: sovereign-aios-credentials
+      zyntraTokenKey: AGENT_ZYNTRA_TOKEN
+      zyntraConsoleURL: ""
+      netraConsoleURL: ""
+      trustGryviaCert: true
+  llmGateway:
+    enabled: true
+  aiOperator:
+    agents:
+      enabled: true
+      # A released tag, not latest, so the air-gap image list (deploy/airgap/images.txt) is exact.
+      image: ghcr.io/zyvorai/gryvia-agent-runtime:1.0.0
+
+zyntra:
+  enabled: true
+  # Fixed service name: agents and the console reach Zyntra at http://zyntra.<namespace>.svc:8080.
+  fullnameOverride: zyntra
+  # The pack in files/zyntra-pack, mounted from a ConfigMap.
+  modelPath: /etc/zyntra-pack
+  # Approved changes are Gryvia custom resources (GryviaPriority, GryviaGPUSharingPolicy, GryviaAIJob suspend) that
+  # Zyntra applies through the Kubernetes API with the RBAC kubernetes.actions grants. Every change still needs a
+  # person's approval; set execute: dry-run to only validate them.
+  execute: apply
+  kubernetes:
+    actions: true
+  # Approval policy (quorum, users, ...) as inline YAML. This chart merges it with the agents' service token and
+  # writes the result to policyExistingSecret, which Zyntra reads instead. Zyntra does not restart when only the
+  # token's roles or tenant change: kubectl rollout restart deployment/zyntra.
+  policy: ""
+  policyExistingSecret: sovereign-aios-zyntra-policy
+  ai:
+    # Gryvia's LLM gateway: OpenAI-compatible, metered, local models only.
+    baseURL: http://gryvia-llm-gateway:8080/v1
+    # A model published on the gateway (gryvia.io/llm-model on a GryviaInferenceService).
+    model: ""
+    apiKeySecret: sovereign-aios-credentials
+    apiKeySecretKey: ZYNTRA_AI_API_KEY
+  env:
+    ZYNTRA_GRAVIA_URL: https://gryvia-api-gateway:8080
+    ZYNTRA_NETRA_URL: https://netra:30870
+    # Gryvia's gateway certificate is the only trusted root: Zyntra reaches nothing else over TLS. Replace with a
+    # bundle that also holds your CAs if packs read other HTTPS sources.
+    SSL_CERT_FILE: /etc/gryvia-tls/tls.crt
+  envFrom:
+    - secretRef:
+        name: sovereign-aios-credentials
+  extraVolumes:
+    - name: pack
+      configMap:
+        name: sovereign-aios-zyntra-pack
+    - name: gryvia-tls
+      secret:
+        secretName: gryvia-tls
+        items:
+          - {key: tls.crt, path: tls.crt}
+  extraVolumeMounts:
+    - {name: pack, mountPath: /etc/zyntra-pack, readOnly: true}
+    - {name: gryvia-tls, mountPath: /etc/gryvia-tls, readOnly: true}
+
+netra:
+  enabled: true
+  auth:
+    existingSecret: sovereign-aios-netra-auth
+  tls:
+    existingSecret: gryvia-tls
+  ai:
+    enabled: true
+    baseURL: http://gryvia-llm-gateway:8080/v1
+    model: ""
+    existingSecret: sovereign-aios-netra-ai
+
+# Hardening integrations, all off by default. Each needs its operator installed first (its CRDs), see
+# docs/sovereign-aios.md#hardening; deploy/argocd/sovereign-aios installs them in order.
+hardening:
+  # Kyverno >= 1.13 admission policies.
+  kyverno:
+    enabled: false
+    # Audit records violations in PolicyReports; Enforce rejects the Pod.
+    failureAction: Audit
+    # Namespaces the policies apply to; empty means every namespace not excluded.
+    namespaces: []
+    # The add-ons run their own upstream images (deploy/airgap/images.txt).
+    excludeNamespaces: [kube-system, kyverno, external-secrets, openbao, spire-server, spire-system, falco]
+    # Images must come from these registry prefixes (set to your Harbor mirror in an air gap).
+    allowedRegistries: [ghcr.io/zyvorai/, nvcr.io/nvidia/, docker.io/alpine/, alpine/]
+    # Cosign signatures on the Zyvor images.
+    verifyImages:
+      enabled: true
+      # Image patterns checked; in an air gap list the mirrored names (harbor.example/zyvorai/*).
+      images: [ghcr.io/zyvorai/*]
+      # keyless: the release workflows' GitHub OIDC identities (needs Rekor and the Sigstore roots, so online).
+      # key: a cosign public key, for images you re-signed after mirroring (scripts/airgap-mirror.sh --sign-key).
+      mode: keyless
+      keyless:
+        issuer: https://token.actions.githubusercontent.com
+        subjects:
+          - https://github.com/zyvorai/gryvia/.github/workflows/release.yml@*
+          - https://github.com/zyvorai/zyntra/.github/workflows/image.yml@*
+          - https://github.com/zyvorai/netra/.github/workflows/release.yml@*
+      publicKey: ""
+  # Falco rules for the platform (files/falco/sovereign-aios-rules.yaml) as a ConfigMap in Falco's namespace; mount it
+  # with deploy/hardening/falco-values.yaml.
+  falco:
+    enabled: false
+    namespace: falco
+  # SPIRE (spire-controller-manager) issues every pod in Gryvia's namespace and every agent an X.509 SVID.
+  spire:
+    enabled: false
+    trustDomain: sovereign.local
+    className: ""                 # spire-controller-manager className, if it runs with one
+    # Agent namespaces: their agent pods get spiffe://<trust domain>/agent/<namespace>/<agent>.
+    agentNamespaces: []
+  # Keys from OpenBao instead of generated ones: External Secrets Operator reads one KV v2 entry with the fields
+  # gryviaApiKey, llmKey (gk- and 64 hex), netraApiKey, netraAgentKey and agentZyntraToken (zst_ and 64 hex), and
+  # writes every Secret this chart would otherwise write, hashes included.
+  openbao:
+    enabled: false
+    esoApiVersion: external-secrets.io/v1
+    server: https://openbao.openbao.svc:8200
+    mount: secret
+    key: sovereign-aios
+    # OpenBao's Kubernetes auth: the role is bound to ESO's ServiceAccount.
+    authMountPath: kubernetes
+    role: sovereign-aios
+    serviceAccount: {name: external-secrets, namespace: external-secrets}
+    caBundle: ""                  # base64 PEM of OpenBao's CA
+    refreshInterval: 1h

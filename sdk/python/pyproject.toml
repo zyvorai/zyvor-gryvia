@@ -1,0 +1,44 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "gryvia"
+version = "0.1.0"
+description = "Python SDK for Gryvia - Kubernetes-native GPU compute platform for AI/ML"
+readme = "README.md"
+license = "LicenseRef-Zyvor-Production-1.0"
+requires-python = ">=3.10"
+authors = [
+    { name = "Gryvia Authors" },
+]
+keywords = ["kubernetes", "gpu", "ai", "ml", "gryvia"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: Other/Proprietary License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: System :: Distributed Computing",
+]
+dependencies = [
+    "httpx>=0.28.1",
+    "pydantic>=2.13.0",
+    "pyyaml>=6.0.3",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-asyncio>=0.21",
+    "respx>=0.20",
+]
+
+[project.urls]
+Homepage = "https://github.com/zyvorai/gryvia"
+Documentation = "https://github.com/zyvorai/gryvia/tree/main/sdk/python"
+Repository = "https://github.com/zyvorai/gryvia"

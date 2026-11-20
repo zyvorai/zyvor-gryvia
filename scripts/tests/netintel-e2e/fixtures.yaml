@@ -1,0 +1,115 @@
+# Objects the network-intelligence e2e test creates AFTER the operator is running (see
+# .github/workflows/e2e-netintel.yml). The services match the fake collector's graph.
+apiVersion: v1
+kind: Namespace
+metadata: {name: shop}
+---
+apiVersion: v1
+kind: Namespace
+metadata: {name: tenant-e2e}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: web, namespace: shop}
+spec: {selector: {app: web}, ports: [{port: 80}]}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: api, namespace: shop}
+spec: {selector: {app: api}, ports: [{port: 8080}]}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: db, namespace: shop}
+spec: {selector: {app: db}, ports: [{port: 5432}]}
+---
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaServiceGraph
+metadata: {name: g, namespace: shop}
+spec: {namespaces: [shop], refreshInterval: 20s}
+---
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaNetworkAnomaly
+metadata: {name: a, namespace: shop}
+spec:
+  targetService: api
+  detectionRules: [{metric: latency, operator: gt, threshold: 100, window: 20s}]
+---
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaSecurityPolicy
+metadata: {name: sp, namespace: shop}
+spec:
+  targetNamespaces: [shop]
+  detectionRules:
+    - {type: mining, enabled: true, sensitivity: high}
+    - {type: escape, enabled: true, sensitivity: high}
+---
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaTrafficInsight
+metadata: {name: ti, namespace: shop}
+spec: {service: api, namespace: shop, window: 20s}
+---
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaAutoPolicy
+metadata: {name: ap, namespace: shop}
+spec:
+  mode: suggest
+  targetNamespaces: [shop]
+---
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaNetworkRate
+metadata: {name: e2e-rate}
+spec: {sameZone: 0, crossZone: 0.02, internetEgress: 0.09, currency: USD}
+---
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaNetworkUsageRecord
+metadata: {name: e2e-r1, namespace: tenant-e2e}
+spec:
+  tenant: e2e
+  node: node-a
+  source: collector
+  hour: "2026-03-01T10:00:00Z"
+  peerClass: external
+  zoneClass: internet
+  egressBytes: 2000000000
+  final: true
+---
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaNetworkUsageRecord
+metadata: {name: e2e-r2, namespace: tenant-e2e}
+spec:
+  tenant: e2e
+  node: node-a
+  source: collector
+  hour: "2026-03-01T10:00:00Z"
+  peerClass: cluster
+  zoneClass: cross-zone
+  egressBytes: 5000000000
+  final: true
+---
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaNetworkCost
+metadata: {name: cost, namespace: shop}
+spec:
+  targetNamespaces: [tenant-e2e]
+  reportingInterval: 30s
+---
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaFabricSignal
+metadata: {name: sig-train, namespace: shop}
+spec: {jobRef: llama}
+---
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaFabricSignal
+metadata: {name: sig-serve, namespace: shop}
+spec: {jobRef: chat}
+---
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaTrainingInsight
+metadata: {name: train, namespace: shop}
+spec: {targetJob: llama}
+---
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaInferenceInsight
+metadata: {name: serve, namespace: shop}
+spec: {targetService: chat}

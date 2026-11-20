@@ -1,0 +1,295 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.22.0
+  name: gryvialiveexperiments.gryvia.io
+spec:
+  group: gryvia.io
+  names:
+    kind: GryviaLiveExperiment
+    listKind: GryviaLiveExperimentList
+    plural: gryvialiveexperiments
+    singular: gryvialiveexperiment
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .status.phase
+      name: Phase
+      type: string
+    - jsonPath: .status.leaderboard[0].job
+      name: Leader
+      type: string
+    - jsonPath: .status.gpuHoursSaved
+      name: GPUHoursSaved
+      type: number
+    - jsonPath: .status.costSaved
+      name: CostSaved
+      type: number
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: GryviaLiveExperiment is the Schema for the gryvialiveexperiments
+          API
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: GryviaLiveExperimentSpec defines the desired state of GryviaLiveExperiment
+            properties:
+              comparison:
+                description: Comparison defines how to compare the jobs
+                properties:
+                  direction:
+                    description: Direction indicates whether to minimize or maximize
+                      the primary metric
+                    type: string
+                  metricSource:
+                    description: MetricSource defines how to collect metrics
+                    properties:
+                      patterns:
+                        additionalProperties:
+                          type: string
+                        description: Patterns maps metric names to regex patterns
+                          for log-pattern source
+                        type: object
+                      type:
+                        description: 'Type is the source type: log-pattern or prometheus'
+                        type: string
+                    required:
+                    - type
+                    type: object
+                  primaryMetric:
+                    description: PrimaryMetric is the name of the primary metric to
+                      compare (e.g. loss, accuracy)
+                    type: string
+                  secondaryMetrics:
+                    description: SecondaryMetrics are additional metrics to factor
+                      into ranking
+                    items:
+                      description: SecondaryMetric defines a secondary metric with
+                        a weight for composite scoring
+                      properties:
+                        name:
+                          description: Name is the metric name
+                          type: string
+                        weight:
+                          description: Weight is the weight of this metric in the
+                            composite score (0-1)
+                          type: number
+                      required:
+                      - name
+                      - weight
+                      type: object
+                    type: array
+                required:
+                - direction
+                - primaryMetric
+                type: object
+              description:
+                description: Description is a human-readable description of the experiment
+                type: string
+              jobs:
+                description: Jobs is the list of jobs to compare in this experiment
+                items:
+                  description: ExperimentJob references a GryviaAIJob to include in
+                    the experiment
+                  properties:
+                    jobRef:
+                      description: JobRef is the name of the GryviaAIJob resource
+                        to track
+                      type: string
+                    name:
+                      description: Name is a friendly name for this job in the leaderboard
+                      type: string
+                  required:
+                  - jobRef
+                  - name
+                  type: object
+                type: array
+              notifications:
+                description: Notifications configures alerting and leaderboard updates
+                properties:
+                  channel:
+                    description: Channel is the notification channel (e.g. slack://channel,
+                      email://addr)
+                    type: string
+                  onNewLeader:
+                    description: OnNewLeader sends notification when leaderboard leader
+                      changes
+                    type: boolean
+                  onTermination:
+                    description: OnTermination sends notification when a job is early-terminated
+                    type: boolean
+                  realTimeLeaderboard:
+                    description: RealTimeLeaderboard enables real-time leaderboard
+                      updates in status
+                    type: boolean
+                type: object
+              strategy:
+                description: Strategy defines comparison timing and early stopping
+                  policy
+                properties:
+                  anomalyDetection:
+                    description: AnomalyDetection configures anomaly detection
+                    properties:
+                      gradientExplosionDetection:
+                        description: GradientExplosionDetection detects NaN/Inf loss
+                          values
+                        type: boolean
+                      lossDivergenceDetection:
+                        description: LossDivergenceDetection detects when loss starts
+                          increasing
+                        type: boolean
+                      lossPlateauDetection:
+                        description: LossPlateauDetection detects when loss stops
+                          decreasing
+                        type: boolean
+                    type: object
+                  comparisonPoints:
+                    description: ComparisonPoints defines at which points to compare
+                      jobs
+                    items:
+                      description: ComparisonPoint defines a point at which to compare
+                        jobs
+                      properties:
+                        type:
+                          description: 'Type is the unit for comparison points: epoch
+                            or step'
+                          type: string
+                        values:
+                          description: Values are the specific point values at which
+                            to compare
+                          items:
+                            type: integer
+                          type: array
+                      required:
+                      - type
+                      - values
+                      type: object
+                    type: array
+                  earlyTermination:
+                    description: EarlyTermination defines the early termination policy
+                    properties:
+                      confidenceLevel:
+                        description: ConfidenceLevel is the confidence level required
+                          for termination (0-1)
+                        type: number
+                      enabled:
+                        description: Enabled indicates whether early termination is
+                          enabled
+                        type: boolean
+                      graceEpochs:
+                        description: GraceEpochs is the number of epochs to wait before
+                          considering termination
+                        type: integer
+                      method:
+                        description: 'Method is the statistical method: bayesian,
+                          median, or percentile'
+                        type: string
+                      minRunFraction:
+                        description: MinRunFraction is the minimum fraction of total
+                          run before termination (0-1)
+                        type: number
+                    required:
+                    - enabled
+                    type: object
+                  intervention:
+                    description: Intervention configures automated intervention actions
+                    properties:
+                      actions:
+                        description: Actions is the list of intervention actions (terminate,
+                          notify, reduce-lr, checkpoint)
+                        items:
+                          type: string
+                        type: array
+                      enabled:
+                        description: Enabled indicates whether automated intervention
+                          is enabled
+                        type: boolean
+                    required:
+                    - enabled
+                    type: object
+                type: object
+            required:
+            - comparison
+            - jobs
+            type: object
+          status:
+            description: GryviaLiveExperimentStatus defines the observed state of
+              GryviaLiveExperiment
+            properties:
+              anomaliesDetected:
+                description: AnomaliesDetected is the number of anomalies detected
+                  across all jobs
+                type: integer
+              costSaved:
+                description: CostSaved is the estimated cost saved in dollars
+                type: number
+              gpuHoursSaved:
+                description: GPUHoursSaved is the estimated GPU-hours saved by early
+                  termination
+                type: number
+              leaderboard:
+                description: Leaderboard is the ranked list of jobs by performance
+                items:
+                  description: LeaderboardEntry represents a single job's position
+                    in the leaderboard
+                  properties:
+                    job:
+                      description: Job is the job name
+                      type: string
+                    primaryMetricValue:
+                      description: PrimaryMetricValue is the current value of the
+                        primary metric
+                      type: number
+                    rank:
+                      description: Rank is the position in the leaderboard (1-based)
+                      type: integer
+                    reason:
+                      description: Reason is the reason for early termination (if
+                        applicable)
+                      type: string
+                    status:
+                      description: Status is Running or TerminatedEarly
+                      type: string
+                  required:
+                  - job
+                  - primaryMetricValue
+                  - rank
+                  - status
+                  type: object
+                type: array
+              phase:
+                description: 'Phase is the current phase: Pending, Running, Completed,
+                  Failed'
+                type: string
+              startTime:
+                description: StartTime is when the experiment started
+                format: date-time
+                type: string
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

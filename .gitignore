@@ -1,0 +1,79 @@
+# Binaries
+bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary
+*.test
+*.out
+coverage.html
+coverage.xml
+
+# Go
+go.work
+vendor/
+
+# Rust
+target/
+**/*.rs.bk
+
+# Node
+node_modules/
+dist/
+*.log
+npm-debug.log*
+.npm
+.eslintcache
+
+# Python
+__pycache__/
+*.py[cod]
+.Python
+venv/
+*.egg-info/
+.pytest_cache/
+.coverage
+
+# Terraform
+.terraform/
+*.tfstate*
+terraform.tfvars
+.terraform.lock.hcl
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*~
+
+# OS
+.DS_Store
+
+# Kubernetes
+kubeconfig
+*.kubeconfig
+
+# Temporary
+tmp/
+*.tmp
+
+# Build
+build/
+_output/
+
+# Secrets
+*.key
+*.pem
+*.crt
+secrets/
+.env
+# self-signed throwaway fixtures for the CLI gateway TLS tests (no real secret)
+
+website/.docusaurus/
+website/build/
+
+# Helm dependencies are downloaded by `helm dependency build`; only Chart.lock is tracked
+helm/*/charts/

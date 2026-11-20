@@ -1,0 +1,136 @@
+{{- /*
+  Per-tenant Kubernetes RBAC (quotaOperator.tenantRbac). Three ClusterRoles the tenant controller binds with a
+  RoleBinding in tenant-<name> (see operators/quota-operator/controllers/gryviatenant_rbac.go). Being ClusterRoles
+  bound through RoleBindings, they grant access only inside the tenant namespace. Cluster-scoped objects
+  (GryviaQuota, GryviaBudget, GryviaGpuSku, GryviaReservation) cannot be granted this way and stay reachable only
+  through the gateway.
+
+  Design decisions (documented in docs/gpuaas-completion.md):
+    - No pods/exec: exec is a shell inside a GPU pod with the job's mounted data and credentials; tenants get logs,
+      and a workspace is reached with port-forward.
+    - pods/portforward create for member and admin: needed to reach a workspace (Jupyter/VS Code) without an ingress.
+      Trade-off: a port-forward reaches any port of any pod in the namespace, including the tenant's own services.
+    - Usage records are read-only for every role (they are the billing source of truth).
+    - No secrets for any role.
+*/ -}}
+{{- if and .Values.rbac.create .Values.quotaOperator.tenantRbac }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: gryvia-tenant-viewer
+  labels:
+    {{- include "gryvia.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["gryvia.io"]
+    resources:
+      - gryviaaijobs
+      - gryviaworkspaces
+      - gryviainferenceservices
+      - gryviaworkflows
+      - gryviaautotuners
+      - gryviamodelwatches
+      - gryviavectorindexes
+      - gryviaagents
+      - gryviajobhooks
+      - gryviamodelregistries
+      - gryviausagerecords
+      - gryvianetworkusagerecords
+      - gryviafabricsignals
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["pods", "pods/log", "events", "services", "configmaps"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: gryvia-tenant-member
+  labels:
+    {{- include "gryvia.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["gryvia.io"]
+    resources:
+      - gryviaaijobs
+      - gryviaworkspaces
+      - gryviainferenceservices
+      - gryviaworkflows
+      - gryviaautotuners
+      - gryviamodelwatches
+      - gryviavectorindexes
+      - gryviaagents
+      - gryviajobhooks
+      - gryviamodelregistries
+      - gryviausagerecords
+      - gryvianetworkusagerecords
+      - gryviafabricsignals
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["gryvia.io"]
+    resources:
+      - gryviaaijobs
+      - gryviaworkspaces
+      - gryviainferenceservices
+      - gryviaworkflows
+      - gryviaautotuners
+      - gryviamodelwatches
+      - gryviavectorindexes
+      - gryviaagents
+      - gryviajobhooks
+      - gryviamodelregistries
+    verbs: ["create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["pods", "pods/log", "events", "services", "configmaps"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["pods/portforward"]
+    verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: gryvia-tenant-admin
+  labels:
+    {{- include "gryvia.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["gryvia.io"]
+    resources:
+      - gryviaaijobs
+      - gryviaworkspaces
+      - gryviainferenceservices
+      - gryviaworkflows
+      - gryviaautotuners
+      - gryviamodelwatches
+      - gryviavectorindexes
+      - gryviaagents
+      - gryviajobhooks
+      - gryviamodelregistries
+      - gryviausagerecords
+      - gryvianetworkusagerecords
+      - gryviafabricsignals
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["gryvia.io"]
+    resources:
+      - gryviaaijobs
+      - gryviaworkspaces
+      - gryviainferenceservices
+      - gryviaworkflows
+      - gryviaautotuners
+      - gryviamodelwatches
+      - gryviavectorindexes
+      - gryviaagents
+      - gryviajobhooks
+      - gryviamodelregistries
+    verbs: ["create", "update", "patch", "delete"]
+  # Admin differs from member in what it may do to the tenant's own configuration objects and workloads' plumbing:
+  # manage configmaps and services in the namespace. It cannot touch quotas, limit ranges, network policies, role
+  # bindings or usage records, all of which the platform (the tenant controller) owns.
+  - apiGroups: [""]
+    resources: ["configmaps", "services"]
+    verbs: ["create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["pods", "pods/log", "events", "services", "configmaps"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["pods/portforward"]
+    verbs: ["create"]
+{{- end }}

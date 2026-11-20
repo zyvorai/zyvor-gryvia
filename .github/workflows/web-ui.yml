@@ -1,0 +1,97 @@
+name: Build and Test Web UI
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'web-ui/**'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'web-ui/**'
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: gryvia-ui
+
+jobs:
+  test:
+    name: Test Web UI
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: web-ui/package-lock.json
+
+      - name: Install dependencies
+        working-directory: web-ui
+        run: npm ci
+
+      - name: Run linter
+        working-directory: web-ui
+        run: npm run lint
+
+      - name: Build
+        working-directory: web-ui
+        run: npm run build
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: web-ui-dist
+          path: web-ui/dist
+
+  build-image:
+    name: Build Docker Image
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.event_name == 'push'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=sha,prefix={{branch}}-
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+
+      - name: Build and push
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: docker/Dockerfile.ui
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

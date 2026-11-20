@@ -1,0 +1,64 @@
+{{- /* Gryvia's own add-on: only when the NVIDIA GPU Operator sub-chart is not installed. */ -}}
+{{- if and .Values.nvidiaDevicePlugin.enabled (not (dig "nvidia" "enabled" nil .Values.AsMap)) }}
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: nvidia-device-plugin-daemonset
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "gryvia.labels" . | nindent 4 }}
+    app.kubernetes.io/component: nvidia-device-plugin
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: nvidia-device-plugin
+  updateStrategy:
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: nvidia-device-plugin
+    spec:
+      {{- with .Values.nvidiaDevicePlugin.runtimeClassName }}
+      runtimeClassName: {{ . }}
+      {{- end }}
+      {{- with .Values.nvidiaDevicePlugin.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: NoSchedule
+      priorityClassName: system-node-critical
+      containers:
+        - name: nvidia-device-plugin
+          image: "{{ .Values.nvidiaDevicePlugin.image.repository }}:{{ .Values.nvidiaDevicePlugin.image.tag }}"
+          imagePullPolicy: {{ .Values.nvidiaDevicePlugin.image.pullPolicy }}
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          resources:
+            limits:
+              cpu: 200m
+              memory: 256Mi
+            requests:
+              cpu: 50m
+              memory: 64Mi
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          volumeMounts:
+            - name: device-plugin
+              mountPath: /var/lib/kubelet/device-plugins
+      volumes:
+        - name: device-plugin
+          hostPath:
+            path: /var/lib/kubelet/device-plugins
+{{- end }}

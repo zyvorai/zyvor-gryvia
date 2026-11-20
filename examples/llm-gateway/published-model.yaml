@@ -1,0 +1,34 @@
+# Publish a served model through the LLM gateway (chart value llmGateway.enabled) and cap a team's tokens.
+# Keys of namespace ml-serving reach "chat"; with gryvia.io/llm-shared every tenant's keys reach it too.
+#   gryvia llm keys create ci -n ml-serving
+#   curl http://<release>-llm-gateway.gryvia-system:8080/v1/chat/completions -H "Authorization: Bearer $KEY" \
+#     -H "Content-Type: application/json" -d '{"model":"chat","messages":[{"role":"user","content":"Hello"}]}'
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaInferenceService
+metadata:
+  name: chat
+  namespace: ml-serving
+  annotations:
+    gryvia.io/llm-model: chat                                # the name callers put in "model"
+    gryvia.io/llm-served-model: /models/chat-assistant       # vLLM's model id when it differs (--served-model-name)
+    gryvia.io/llm-shared: "true"                             # every tenant may call it, not only ml-serving
+    gryvia.io/llm-price-input-per-1m: "0.20"                 # cost on the usage records (default: chart value)
+    gryvia.io/llm-price-output-per-1m: "0.60"
+spec:
+  modelRef: chat-assistant
+  backend: vllm
+  replicas: 1
+  gpuCount: 1
+  servicePort: 8000
+---
+# tokensPerDay: input plus output tokens per UTC day for keys of the listed namespaces; then HTTP 429.
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaQuota
+metadata:
+  name: research-tokens
+spec:
+  team: research
+  namespaces: [tenant-research]
+  gpuQuota:
+    maxGPUs: 8
+  tokensPerDay: 2000000

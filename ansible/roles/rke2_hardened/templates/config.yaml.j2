@@ -1,0 +1,34 @@
+# Managed by Ansible (role rke2_hardened).
+token: {{ rke2_token | to_json }}
+node-name: {{ ansible_facts.hostname | lower | to_json }}
+{% if not rke2_first_server %}
+server: {{ ('https://' ~ rke2_server_address ~ ':9345') | to_json }}
+{% endif %}
+{% if rke2_cis %}
+profile: cis
+protect-kernel-defaults: true
+{% endif %}
+selinux: {{ rke2_selinux | bool | to_json }}
+{% if rke2_node_labels %}
+node-label: {{ rke2_node_labels | to_json }}
+{% endif %}
+{% if rke2_node_taints %}
+node-taint: {{ rke2_node_taints | to_json }}
+{% endif %}
+{% if rke2_type == 'server' %}
+write-kubeconfig-mode: "0600"
+cni: {{ rke2_cni | to_json }}
+secrets-encryption: true
+pod-security-admission-config-file: /etc/rancher/rke2/psa.yaml
+audit-policy-file: /etc/rancher/rke2/audit-policy.yaml
+{% if rke2_tls_san or rke2_server_address %}
+tls-san: {{ (rke2_tls_san + ([rke2_server_address] if rke2_server_address else [])) | unique | to_json }}
+{% endif %}
+etcd-snapshot-schedule-cron: {{ rke2_etcd_snapshot_cron | to_json }}
+etcd-snapshot-retention: {{ rke2_etcd_snapshot_retention }}
+kube-apiserver-arg:
+  - "audit-log-path=/var/lib/rancher/rke2/server/logs/audit.log"
+  - "audit-log-maxage={{ rke2_audit_log_maxage }}"
+  - "audit-log-maxbackup={{ rke2_audit_log_maxbackup }}"
+  - "audit-log-maxsize={{ rke2_audit_log_maxsize }}"
+{% endif %}

@@ -1,0 +1,45 @@
+# Continuous evaluation of the served chat model: every night, score whatever version "chat-assistant" serves
+# against eval.jsonl through its OpenAI-compatible endpoint, and write the score onto that version's registry entry
+# as live_score. The entries registered by model-watch.yaml carry rollbackPolicy {metric: live_score,
+# threshold: "0.5"}: when live_score drops below 0.5 the operator archives the version and puts the one it replaced
+# back on the service (condition RolledBack, Event RolledBack). Same image and "datasets" PVC as model-watch.yaml.
+# Unverified on GPUs; see docs/model-factory.md.
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaWorkflow
+metadata:
+  name: chat-assistant-nightly-eval
+  namespace: ml-team
+spec:
+  schedule: "0 3 * * *"
+  steps:
+    - name: evaluate
+      type: job
+      timeoutSeconds: 3600
+      retries: 1
+      jobTemplate:
+        type: evaluation
+        image: registry.example.com/gryvia-model-factory:1.0
+        gpus: 0
+        command: [python3, /app/evaluate.py]
+        args:
+          - --endpoint=http://chat-assistant-inference.ml-team.svc.cluster.local:8080
+          - --served-model=chat-assistant
+          - --custom=/data/eval.jsonl
+          - --limit=500
+        resources:
+          requests: {cpu: "1", memory: 2Gi}
+        volumes:
+          - name: data
+            persistentVolumeClaim: {claimName: datasets, readOnly: true}
+        volumeMounts:
+          - {name: data, mountPath: /data, readOnly: true}
+    - name: record
+      type: registry
+      dependsOn: [evaluate]
+      registry:
+        # The entry the shared service serves when this step runs.
+        serviceName: chat-assistant
+        action: updateMetadata
+        metadata:
+          live_score: "{{steps.evaluate.outputs.score}}"
+          live_eval_run: "{{workflow.name}}-{{workflow.run}}"

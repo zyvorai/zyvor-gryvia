@@ -1,0 +1,23 @@
+# GryviaTrafficInsight - Real-time traffic analysis for a service
+# Continuously monitors the payment service over a 5-minute rolling window,
+# collecting latency, throughput, drops, and retransmit metrics.
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaTrafficInsight
+metadata:
+  name: payment-traffic-analysis
+  namespace: production
+spec:
+  # Target service to analyze
+  service: payment-service
+  namespace: production
+
+  # Rolling analysis window duration
+  window: "5m"
+
+  # Metrics to collect from eBPF-based flow observation
+  # Supported: latency, throughput, drops, retransmits
+  metrics:
+    - latency             # P50/P99 latency distribution
+    - throughput          # Bytes per second in/out
+    - drops               # Dropped packet counts
+    - retransmits         # TCP retransmission events

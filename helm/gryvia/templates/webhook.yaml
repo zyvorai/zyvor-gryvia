@@ -1,0 +1,87 @@
+{{- if and .Values.webhook.enabled .Values.aiOperator.enabled }}
+{{- /* Serving cert (own CA) for the ai-operator's admission webhook, minted once and reused on upgrades. */ -}}
+{{- $ns := include "gryvia.namespace" . }}
+{{- $svc := include "gryvia.webhookServiceName" . }}
+{{- $secretName := include "gryvia.webhookSecretName" . }}
+{{- $existing := lookup "v1" "Secret" $ns $secretName }}
+{{- $crt := "" }}
+{{- $key := "" }}
+{{- $ca := "" }}
+{{- if and $existing $existing.data (index $existing.data "tls.crt") (index $existing.data "tls.key") (index $existing.data "ca.crt") }}
+{{- $crt = index $existing.data "tls.crt" }}
+{{- $key = index $existing.data "tls.key" }}
+{{- $ca = index $existing.data "ca.crt" }}
+{{- else }}
+{{- $dns := list $svc (printf "%s.%s.svc" $svc $ns) (printf "%s.%s.svc.cluster.local" $svc $ns) }}
+{{- $cacert := genCA (printf "%s-ca" $svc) 3650 }}
+{{- $cert := genSignedCert (printf "%s.%s.svc" $svc $ns) nil $dns 3650 $cacert }}
+{{- $ca = b64enc $cacert.Cert }}
+{{- $crt = b64enc $cert.Cert }}
+{{- $key = b64enc $cert.Key }}
+{{- end }}
+---
+apiVersion: v1
+kind: Secret
+type: kubernetes.io/tls
+metadata:
+  name: {{ $secretName }}
+  namespace: {{ $ns }}
+  labels:
+    {{- include "gryvia.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/resource-policy: keep
+data:
+  tls.crt: {{ $crt }}
+  tls.key: {{ $key }}
+  ca.crt: {{ $ca }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $svc }}
+  namespace: {{ $ns }}
+  labels:
+    {{- include "gryvia.labels" . | nindent 4 }}
+    app.kubernetes.io/component: ai-operator-webhook
+spec:
+  selector:
+    {{- include "gryvia.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: ai-operator
+  ports:
+    - name: webhook
+      port: 443
+      targetPort: webhook
+      protocol: TCP
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: {{ include "gryvia.fullname" . }}-validating
+  labels:
+    {{- include "gryvia.labels" . | nindent 4 }}
+webhooks:
+  - name: vgryviaaijob.gryvia.io
+    admissionReviewVersions: ["v1"]
+    sideEffects: None
+    failurePolicy: {{ .Values.webhook.failurePolicy }}
+    timeoutSeconds: {{ .Values.webhook.timeoutSeconds }}
+    matchPolicy: Equivalent
+    namespaceSelector:
+      matchExpressions:
+        - key: kubernetes.io/metadata.name
+          operator: NotIn
+          values: ["kube-system"]
+    rules:
+      - apiGroups: ["gryvia.io"]
+        apiVersions: ["v1alpha1"]
+        resources: ["gryviaaijobs"]
+        operations: ["CREATE", "UPDATE"]
+        scope: Namespaced
+    clientConfig:
+      service:
+        name: {{ $svc }}
+        namespace: {{ $ns }}
+        path: /validate-gryvia-io-v1alpha1-gryviaaijob
+        port: 443
+      caBundle: {{ $ca }}
+{{- end }}

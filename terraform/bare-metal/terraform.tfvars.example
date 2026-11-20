@@ -1,0 +1,91 @@
+# Gryvia Bare Metal Configuration Example
+# Copy this file to terraform.tfvars and customize for your environment
+
+cluster_name            = "gryvia-production"
+control_plane_endpoint  = "10.0.1.100" # Load balancer VIP or single master
+kubernetes_version      = "1.28.5"
+
+# Control plane nodes (3 for HA)
+control_nodes = [
+  {
+    name = "master-01"
+    ip   = "10.0.1.101"
+  },
+  {
+    name = "master-02"
+    ip   = "10.0.1.102"
+  },
+  {
+    name = "master-03"
+    ip   = "10.0.1.103"
+  }
+]
+
+# GPU worker nodes
+gpu_nodes = [
+  # H100 nodes
+  {
+    name          = "gpu-h100-01"
+    ip            = "10.0.1.201"
+    gpu_type      = "H100"
+    gpu_count     = 8
+    rdma_enabled  = true
+    rdma_device   = "mlx5_0"
+    storage_mount = "/mnt/vast"
+  },
+  {
+    name          = "gpu-h100-02"
+    ip            = "10.0.1.202"
+    gpu_type      = "H100"
+    gpu_count     = 8
+    rdma_enabled  = true
+    rdma_device   = "mlx5_0"
+    storage_mount = "/mnt/vast"
+  },
+
+  # A100 nodes
+  {
+    name          = "gpu-a100-01"
+    ip            = "10.0.1.211"
+    gpu_type      = "A100"
+    gpu_count     = 8
+    rdma_enabled  = true
+    rdma_device   = "mlx5_0"
+    storage_mount = "/mnt/vast"
+  },
+  {
+    name          = "gpu-a100-02"
+    ip            = "10.0.1.212"
+    gpu_type      = "A100"
+    gpu_count     = 8
+    rdma_enabled  = true
+    rdma_device   = "mlx5_0"
+    storage_mount = "/mnt/vast"
+  },
+
+  # L40 nodes (inference/mixed workloads)
+  {
+    name          = "gpu-l40-01"
+    ip            = "10.0.1.221"
+    gpu_type      = "L40"
+    gpu_count     = 8
+    rdma_enabled  = true
+    rdma_device   = "mlx5_0"
+    storage_mount = "/mnt/vast"
+  }
+]
+
+# Networking
+pod_subnet     = "10.244.0.0/16"
+service_subnet = "10.96.0.0/12"
+rdma_subnet    = "192.168.100.0/24"
+
+# Storage (VAST Data)
+storage_backend       = "vast"
+storage_endpoint      = "vast-vip.example.com"
+storage_mountpath     = "/mnt/vast"
+storage_rdma_enabled  = true
+
+# SSH configuration
+ssh_user             = "ubuntu"
+ssh_private_key_path = "~/.ssh/gryvia_rsa"

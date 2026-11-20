@@ -1,0 +1,196 @@
+# Example: Immediate Exclusive Reservation
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaReservation
+metadata:
+  name: ml-research-reservation
+spec:
+  owner:
+    type: team
+    name: ml-research
+
+  resources:
+    gpuType: A100-80G
+    gpuCount: 32  # Reserve 32 GPUs
+
+  schedule:
+    type: immediate
+    endTime: "2024-01-25T18:00:00Z"  # 4 days
+
+  guarantees:
+    exclusive: true  # No other teams can use these GPUs
+    preemptible: false
+    sla:
+      availability: 99.9
+      maxQueueTime: 0s
+
+  billing:
+    chargeWhenIdle: true
+    discount: 15  # 15% discount for reservation
+
+  notifications:
+    beforeExpiry: 4h
+    onExpiry: true
+---
+# Example: Scheduled Reservation (Future)
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaReservation
+metadata:
+  name: paper-deadline-reservation
+spec:
+  owner:
+    type: team
+    name: vision-team
+
+  resources:
+    gpuType: H100
+    gpuCount: 64  # Large reservation for deadline
+
+  schedule:
+    type: scheduled
+    startTime: "2024-02-01T00:00:00Z"
+    endTime: "2024-02-05T23:59:59Z"  # 5 days for deadline
+
+  guarantees:
+    exclusive: true
+    preemptible: false
+    sla:
+      availability: 99.99
+
+  billing:
+    chargeWhenIdle: true
+    discount: 20  # 20% discount for advance reservation
+    prepaid: true  # Pay upfront
+
+  notifications:
+    beforeExpiry: 12h
+---
+# Example: Recurring Weekly Reservation
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaReservation
+metadata:
+  name: weekly-training-slot
+spec:
+  owner:
+    type: user
+    name: alice
+
+  resources:
+    gpuType: A100-80G
+    gpuCount: 8
+
+  schedule:
+    type: recurring
+    recurrence:
+      cron: "0 9 * * 1"  # Every Monday at 9 AM
+      duration: 8h  # 8-hour slots
+    autoExtend: true  # Extend if job still running
+
+  guarantees:
+    exclusive: false  # Can share if not using
+    preemptible: true  # Can be preempted for critical jobs
+
+  billing:
+    chargeWhenIdle: false  # Only charge when actually using
+    discount: 10
+---
+# Example: Node-Specific Reservation
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaReservation
+metadata:
+  name: dgx-node-reservation
+spec:
+  owner:
+    type: project
+    name: llm-training
+
+  resources:
+    nodes:
+      - dgx-a100-1
+      - dgx-a100-2
+    # Reserves all GPUs on these specific nodes
+
+  schedule:
+    type: immediate
+    endTime: "2024-01-30T00:00:00Z"
+
+  guarantees:
+    exclusive: true
+    preemptible: false
+
+  billing:
+    chargeWhenIdle: true
+    discount: 25  # Higher discount for whole-node reservation
+---
+# Example: Development Reservation (Non-Exclusive)
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaReservation
+metadata:
+  name: dev-team-reservation
+spec:
+  owner:
+    type: team
+    name: dev-team
+
+  resources:
+    gpuType: T4
+    gpuCount: 16
+
+  schedule:
+    type: immediate
+    endTime: "2024-02-01T00:00:00Z"
+
+  guarantees:
+    exclusive: false  # Others can use if idle
+    preemptible: true  # Can be preempted
+    sla:
+      availability: 80  # Lower SLA, lower cost
+      maxQueueTime: 15m
+
+  billing:
+    chargeWhenIdle: false
+    discount: 5
+---
+# Reservation Status Example
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaReservation
+metadata:
+  name: ml-research-reservation
+status:
+  state: active
+
+  actualStartTime: "2024-01-21T12:00:00Z"
+  actualEndTime: null  # Still active
+
+  allocatedNodes:
+    - gpu-node-01
+    - gpu-node-02
+    - gpu-node-03
+    - gpu-node-04
+
+  allocatedGPUs: 32
+
+  utilizationMetrics:
+    totalReservedTime: 72h
+    totalUsedTime: 54h
+    utilizationPercent: 75.0
+    jobsRun: 24
+
+  cost:
+    totalCost: 51840.00  # $720/hour * 72 hours
+    usedCost: 38880.00   # $720/hour * 54 hours
+    wastedCost: 12960.00 # 25% idle time
+---
+# Using Reservation in Job
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaAIJob
+metadata:
+  name: reserved-training
+spec:
+  type: training
+
+  # Runs against the ml-research-reservation GryviaReservation (see above)
+  gpus: 8  # Must be within reserved amount
+  gpuType: A100-80G
+
+  image: nvcr.io/nvidia/pytorch:24.01-py3
+  command: ["python", "train.py"]

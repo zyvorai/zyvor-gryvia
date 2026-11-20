@@ -1,0 +1,96 @@
+{{- /* Gryvia's own add-on: only when the NVIDIA GPU Operator sub-chart is not installed. */ -}}
+{{- if and .Values.dcgmExporter.enabled (not (dig "nvidia" "enabled" nil .Values.AsMap)) }}
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: dcgm-exporter
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "gryvia.labels" . | nindent 4 }}
+    app.kubernetes.io/component: dcgm-exporter
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: dcgm-exporter
+  updateStrategy:
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: dcgm-exporter
+    spec:
+      {{- with .Values.dcgmExporter.runtimeClassName }}
+      runtimeClassName: {{ . }}
+      {{- end }}
+      {{- with .Values.dcgmExporter.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: NoSchedule
+      containers:
+        - name: dcgm-exporter
+          image: "{{ .Values.dcgmExporter.image.repository }}:{{ .Values.dcgmExporter.image.tag }}"
+          imagePullPolicy: {{ .Values.dcgmExporter.image.pullPolicy }}
+          ports:
+            - name: metrics
+              containerPort: 9400
+              protocol: TCP
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+              add:
+                - SYS_ADMIN
+          resources:
+            limits:
+              cpu: 200m
+              memory: 256Mi
+            requests:
+              cpu: 100m
+              memory: 128Mi
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: metrics
+            initialDelaySeconds: 15
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: metrics
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          volumeMounts:
+            - name: pod-gpu-resources
+              mountPath: /var/lib/kubelet/pod-resources
+              readOnly: true
+      volumes:
+        - name: pod-gpu-resources
+          hostPath:
+            path: /var/lib/kubelet/pod-resources
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dcgm-exporter
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "gryvia.labels" . | nindent 4 }}
+    app.kubernetes.io/component: dcgm-exporter
+spec:
+  type: {{ .Values.dcgmExporter.service.type }}
+  ports:
+    - name: metrics
+      port: {{ .Values.dcgmExporter.service.port }}
+      targetPort: metrics
+      protocol: TCP
+  selector:
+    app.kubernetes.io/component: dcgm-exporter
+{{- end }}

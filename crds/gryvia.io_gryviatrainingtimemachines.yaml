@@ -1,0 +1,344 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.22.0
+  name: gryviatrainingtimemachines.gryvia.io
+spec:
+  group: gryvia.io
+  names:
+    kind: GryviaTrainingTimeMachine
+    listKind: GryviaTrainingTimeMachineList
+    plural: gryviatrainingtimemachines
+    singular: gryviatrainingtimemachine
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.sourceJob
+      name: Source-Job
+      type: string
+    - jsonPath: .status.checkpointTimeline.totalCheckpoints
+      name: Checkpoints
+      type: integer
+    - jsonPath: .status.storageUsed
+      name: Storage
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: GryviaTrainingTimeMachine is the Schema for the gryviatrainingtimemachines
+          API
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: GryviaTrainingTimeMachineSpec defines the desired state of
+              GryviaTrainingTimeMachine
+            properties:
+              forks:
+                description: Forks defines fork requests to create new training jobs
+                  from checkpoints
+                items:
+                  description: ForkSpec defines a fork request to create a new training
+                    job from a checkpoint
+                  properties:
+                    fromCheckpoint:
+                      description: FromCheckpoint selects the checkpoint to fork from
+                      properties:
+                        epoch:
+                          description: Epoch selects a checkpoint at a specific epoch
+                          type: integer
+                        metric:
+                          description: Metric selects the checkpoint with the best
+                            metric value
+                          properties:
+                            name:
+                              description: Name is the metric name (e.g., val_loss,
+                                accuracy)
+                              type: string
+                            selector:
+                              description: Selector picks the checkpoint with min
+                                or max metric value
+                              type: string
+                          required:
+                          - name
+                          - selector
+                          type: object
+                        step:
+                          description: Step selects a checkpoint at a specific training
+                            step
+                          type: integer
+                      type: object
+                    name:
+                      description: Name is a unique name for this fork
+                      type: string
+                    newJobName:
+                      description: NewJobName is the name for the forked GryviaAIJob
+                        (auto-generated if omitted)
+                      type: string
+                    overrides:
+                      description: Overrides are modifications to apply to the forked
+                        job
+                      properties:
+                        args:
+                          description: Args is a list of argument overrides
+                          items:
+                            type: string
+                          type: array
+                        env:
+                          description: Env is a list of environment variable overrides
+                          items:
+                            description: EnvOverride defines an environment variable
+                              override
+                            properties:
+                              name:
+                                description: Name of the environment variable
+                                type: string
+                              value:
+                                description: Value of the environment variable
+                                type: string
+                            required:
+                            - name
+                            - value
+                            type: object
+                          type: array
+                      type: object
+                  required:
+                  - fromCheckpoint
+                  - name
+                  type: object
+                type: array
+              retention:
+                description: Retention defines the checkpoint retention policy
+                properties:
+                  keepAll:
+                    description: KeepAll keeps all checkpoints (overrides other retention
+                      settings)
+                    type: boolean
+                  keepBest:
+                    description: KeepBest keeps the N best checkpoints by primary
+                      metric
+                    type: integer
+                  keepEveryNth:
+                    description: KeepEveryNth keeps every Nth checkpoint
+                    type: integer
+                  keepMilestones:
+                    description: KeepMilestones is a list of specific checkpoint steps
+                      to always keep
+                    items:
+                      type: integer
+                    type: array
+                  maxStorageGi:
+                    description: MaxStorageGi is the maximum storage in GiB for all
+                      retained checkpoints
+                    type: integer
+                type: object
+              sourceJob:
+                description: SourceJob is the name of the GryviaAIJob to track checkpoints
+                  for
+                type: string
+              timeline:
+                description: Timeline configures checkpoint timeline indexing
+                properties:
+                  enabled:
+                    description: Enabled enables checkpoint timeline indexing
+                    type: boolean
+                  indexCheckpoints:
+                    description: IndexCheckpoints enables automatic checkpoint discovery
+                      and indexing
+                    type: boolean
+                  metadataPerCheckpoint:
+                    description: MetadataPerCheckpoint defines metadata fields to
+                      extract per checkpoint
+                    items:
+                      description: CheckpointMetadataField defines a metadata field
+                        to extract per checkpoint
+                      properties:
+                        name:
+                          description: Name of the metadata field (e.g., loss, accuracy,
+                            lr)
+                          type: string
+                        path:
+                          description: Path to extract value (log pattern or file
+                            path)
+                          type: string
+                        source:
+                          description: Source type for the metadata value (metric,
+                            log, file)
+                          type: string
+                      required:
+                      - name
+                      - source
+                      type: object
+                    type: array
+                type: object
+            required:
+            - sourceJob
+            type: object
+          status:
+            description: GryviaTrainingTimeMachineStatus defines the observed state
+              of GryviaTrainingTimeMachine
+            properties:
+              checkpointTimeline:
+                description: CheckpointTimeline is the status of indexed checkpoints
+                properties:
+                  bestCheckpoint:
+                    description: BestCheckpoint is the checkpoint with the best primary
+                      metric value
+                    properties:
+                      epoch:
+                        description: Epoch is the training epoch of this checkpoint
+                        type: integer
+                      metricName:
+                        description: MetricName is the primary metric name
+                        type: string
+                      metricValue:
+                        description: MetricValue is the primary metric value at this
+                          checkpoint
+                        type: number
+                      step:
+                        description: Step is the training step of this checkpoint
+                        type: integer
+                      timestamp:
+                        description: Timestamp is when this checkpoint was created
+                        format: date-time
+                        type: string
+                    type: object
+                  latestCheckpoint:
+                    description: LatestCheckpoint is the most recently indexed checkpoint
+                    properties:
+                      epoch:
+                        description: Epoch is the training epoch of this checkpoint
+                        type: integer
+                      metricName:
+                        description: MetricName is the primary metric name
+                        type: string
+                      metricValue:
+                        description: MetricValue is the primary metric value at this
+                          checkpoint
+                        type: number
+                      step:
+                        description: Step is the training step of this checkpoint
+                        type: integer
+                      timestamp:
+                        description: Timestamp is when this checkpoint was created
+                        format: date-time
+                        type: string
+                    type: object
+                  totalCheckpoints:
+                    description: TotalCheckpoints is the total number of indexed checkpoints
+                    type: integer
+                type: object
+              conditions:
+                description: Conditions represent the latest available observations
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+              forks:
+                description: Forks is the status of each fork request
+                items:
+                  description: ForkStatus represents the current status of a fork
+                  properties:
+                    currentMetric:
+                      description: CurrentMetric is the current primary metric value
+                        of the forked job
+                      type: number
+                    forkedJob:
+                      description: ForkedJob is the name of the forked GryviaAIJob
+                      type: string
+                    name:
+                      description: Name is the fork name
+                      type: string
+                    sourceStep:
+                      description: SourceStep is the training step from which the
+                        fork was created
+                      type: integer
+                    status:
+                      description: Status is the current status (Pending, Creating,
+                        Running, Succeeded, Failed)
+                      type: string
+                  required:
+                  - name
+                  type: object
+                type: array
+              storageUsed:
+                description: StorageUsed is the total storage used by retained checkpoints
+                  (e.g., "45Gi")
+                type: string
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

@@ -1,0 +1,43 @@
+# GryviaNetworkAnomaly - Detect and alert on network performance anomalies
+# Monitors the payment service for latency spikes > 100ms and throughput drops,
+# with automatic mitigation enabled and alerts sent to a webhook.
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaNetworkAnomaly
+metadata:
+  name: payment-anomaly-detector
+  namespace: production
+spec:
+  # Service to monitor for anomalies
+  targetService: payment-service
+
+  # Anomaly detection rules with threshold-based triggers
+  detectionRules:
+    # Alert when P99 latency exceeds 100ms over a 5-minute window
+    - metric: latency
+      operator: gt
+      threshold: 100            # milliseconds
+      window: "5m"
+
+    # Alert when throughput drops below 1000 requests/sec
+    - metric: throughput
+      operator: lt
+      threshold: 1000           # requests per second
+      window: "5m"
+
+    # Alert when error rate exceeds 5%
+    - metric: errors
+      operator: gt
+      threshold: 5              # percentage
+      window: "2m"
+
+    # Alert when packet drop count exceeds 100 in a 1-minute window
+    - metric: drops
+      operator: gt
+      threshold: 100
+      window: "1m"
+
+  # Webhook URL for anomaly alert notifications
+  alertWebhook: "https://alerts.internal/api/v1/network-anomaly"
+
+  # Automatically mitigate detected anomalies (e.g., reroute traffic, shed load)
+  autoMitigate: true

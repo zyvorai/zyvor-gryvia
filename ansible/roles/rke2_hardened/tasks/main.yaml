@@ -1,0 +1,226 @@
+- name: Check the settings
+  ansible.builtin.assert:
+    that:
+      - rke2_type in ['server', 'agent']
+      - rke2_token | length >= 32
+      - rke2_install_method in ['online', 'airgap']
+      - rke2_install_method == 'online' or rke2_artifacts_dir | length > 0
+      - rke2_type == 'server' or rke2_server_address | length > 0
+    fail_msg: >-
+      Set rke2_token (32+ characters), rke2_server_address for agents, and rke2_artifacts_dir with
+      rke2_install_method=airgap.
+
+- name: Set the architecture
+  ansible.builtin.set_fact:
+    rke2_arch: "{{ {'x86_64': 'amd64', 'aarch64': 'arm64'}[ansible_facts.architecture] }}"
+    rke2_first_server: "{{ rke2_type == 'server' and inventory_hostname == (groups['rke2_servers'] | first) }}"
+
+# --- FIPS ---------------------------------------------------------------------------------------------------------
+
+- name: Read the kernel FIPS mode
+  ansible.builtin.slurp:
+    src: /proc/sys/crypto/fips_enabled
+  register: rke2_fips_state
+  failed_when: false
+  when: rke2_fips
+
+- name: Switch a RHEL-family host to FIPS mode
+  when:
+    - rke2_fips
+    - (rke2_fips_state.content | default('MA==') | b64decode | trim) != '1'
+    - rke2_fips_enable_os
+    - ansible_facts.os_family == 'RedHat'
+  block:
+    - name: Enable FIPS mode
+      ansible.builtin.command: fips-mode-setup --enable
+      changed_when: true
+    - name: Reboot into FIPS mode
+      ansible.builtin.reboot:
+        reboot_timeout: 900
+    - name: Read the kernel FIPS mode again
+      ansible.builtin.slurp:
+        src: /proc/sys/crypto/fips_enabled
+      register: rke2_fips_state
+
+- name: Require the kernel in FIPS mode
+  ansible.builtin.assert:
+    that: (rke2_fips_state.content | default('MA==') | b64decode | trim) == '1'
+    fail_msg: >-
+      {{ inventory_hostname }} is not in FIPS mode. RHEL family: set rke2_fips_enable_os=true (runs fips-mode-setup
+      and reboots). Ubuntu: attach Ubuntu Pro, run `pro enable fips-updates` and reboot. Or set rke2_fips=false.
+  when: rke2_fips
+
+# --- Host preparation (CIS) ---------------------------------------------------------------------------------------
+
+- name: Require rke2-selinux for SELinux
+  when: rke2_selinux and ansible_facts.os_family == 'RedHat'
+  block:
+    - name: Read the installed packages
+      ansible.builtin.package_facts:
+    - name: Check for rke2-selinux
+      ansible.builtin.assert:
+        that: "'rke2-selinux' in ansible_facts.packages"
+        fail_msg: Install rke2-selinux (Rancher's RPM repository or your mirror), or set rke2_selinux=false.
+
+- name: Create the etcd user the CIS profile requires
+  ansible.builtin.user:
+    name: etcd
+    comment: etcd user
+    system: true
+    shell: /sbin/nologin
+    create_home: false
+  when: rke2_cis and rke2_type == 'server'
+
+- name: Create RKE2's directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+  loop:
+    - /etc/rancher/rke2
+    - /var/lib/rancher/rke2/agent/images
+    - /var/lib/rancher/rke2/server/logs
+    - /root/rke2-artifacts
+
+# --- Install ------------------------------------------------------------------------------------------------------
+
+- name: Download the RKE2 installer
+  ansible.builtin.get_url:
+    url: https://get.rke2.io
+    dest: /root/rke2-artifacts/install.sh
+    mode: "0700"
+  when: rke2_install_method == 'online'
+
+- name: Copy the release artifacts
+  ansible.builtin.copy:
+    src: "{{ rke2_artifacts_dir }}/{{ item }}"
+    dest: "/root/rke2-artifacts/{{ item }}"
+    mode: "0600"
+  loop:
+    - install.sh
+    - "rke2.linux-{{ rke2_arch }}.tar.gz"
+    - "sha256sum-{{ rke2_arch }}.txt"
+    - "rke2-images.linux-{{ rke2_arch }}.tar.zst"
+  when: rke2_install_method == 'airgap'
+
+- name: Place the system images where RKE2 imports them
+  ansible.builtin.copy:
+    src: "/root/rke2-artifacts/rke2-images.linux-{{ rke2_arch }}.tar.zst"
+    dest: "/var/lib/rancher/rke2/agent/images/rke2-images.linux-{{ rke2_arch }}.tar.zst"
+    remote_src: true
+    mode: "0600"
+  when: rke2_install_method == 'airgap'
+
+- name: Install RKE2 (the installer verifies the tarball against the release checksums)
+  ansible.builtin.command: sh /root/rke2-artifacts/install.sh
+  environment: "{{ rke2_install_env | combine(rke2_install_method == 'airgap' | ternary({'INSTALL_RKE2_ARTIFACT_PATH': '/root/rke2-artifacts'}, {})) }}"
+  vars:
+    rke2_install_env:
+      INSTALL_RKE2_VERSION: "{{ rke2_version }}"
+      INSTALL_RKE2_TYPE: "{{ rke2_type }}"
+      INSTALL_RKE2_METHOD: tar
+  args:
+    creates: /usr/local/bin/rke2
+
+- name: Apply the CIS kernel parameters
+  ansible.builtin.copy:
+    src: /usr/local/share/rke2/rke2-cis-sysctl.conf
+    dest: /etc/sysctl.d/60-rke2-cis.conf
+    remote_src: true
+    mode: "0644"
+  register: rke2_sysctl
+  when: rke2_cis
+
+- name: Load the kernel parameters
+  ansible.builtin.systemd:
+    name: systemd-sysctl
+    state: restarted
+  when: rke2_cis and rke2_sysctl.changed
+
+# --- Configuration ------------------------------------------------------------------------------------------------
+
+- name: Write the RKE2 configuration
+  ansible.builtin.template:
+    src: config.yaml.j2
+    dest: /etc/rancher/rke2/config.yaml
+    mode: "0600"
+  notify: Restart rke2
+
+- name: Write the Pod Security admission configuration
+  ansible.builtin.template:
+    src: psa.yaml.j2
+    dest: /etc/rancher/rke2/psa.yaml
+    mode: "0600"
+  when: rke2_type == 'server'
+  notify: Restart rke2
+
+- name: Write the API audit policy
+  ansible.builtin.template:
+    src: audit-policy.yaml.j2
+    dest: /etc/rancher/rke2/audit-policy.yaml
+    mode: "0600"
+  when: rke2_type == 'server'
+  notify: Restart rke2
+
+- name: Write the registry mirror's CA
+  ansible.builtin.copy:
+    content: "{{ rke2_registry_ca }}"
+    dest: /etc/rancher/rke2/registry-ca.crt
+    mode: "0644"
+  when: rke2_registry_ca | length > 0
+  notify: Restart rke2
+
+- name: Write the registry mirror configuration
+  ansible.builtin.template:
+    src: registries.yaml.j2
+    dest: /etc/rancher/rke2/registries.yaml
+    mode: "0600"
+  when: rke2_registry_mirror | length > 0
+  notify: Restart rke2
+
+# --- Start --------------------------------------------------------------------------------------------------------
+
+- name: Start the first server
+  ansible.builtin.systemd:
+    name: rke2-server
+    enabled: true
+    state: started
+  when: rke2_first_server
+
+- name: Start the other servers one at a time, then the agents
+  ansible.builtin.systemd:
+    name: "rke2-{{ rke2_type }}"
+    enabled: true
+    state: started
+  throttle: 1
+  when: not rke2_first_server
+
+- name: Wait for the node to be Ready
+  ansible.builtin.command: >-
+    /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml
+    wait --for=condition=Ready node/{{ ansible_facts.hostname }} --timeout=10s
+  register: rke2_ready
+  until: rke2_ready.rc == 0
+  retries: 60
+  delay: 10
+  changed_when: false
+  delegate_to: "{{ groups['rke2_servers'] | first }}"
+
+- name: Fetch the admin kubeconfig
+  when: rke2_first_server and rke2_fetch_kubeconfig | length > 0
+  block:
+    - name: Read the kubeconfig
+      ansible.builtin.slurp:
+        src: /etc/rancher/rke2/rke2.yaml
+      register: rke2_kubeconfig
+    - name: Save it with the server address
+      ansible.builtin.copy:
+        content: >-
+          {{ rke2_kubeconfig.content | b64decode
+             | replace('https://127.0.0.1:6443', 'https://' ~ (rke2_server_address or ansible_facts.default_ipv4.address) ~ ':6443') }}
+        dest: "{{ rke2_fetch_kubeconfig }}"
+        mode: "0600"
+      delegate_to: localhost
+      become: false

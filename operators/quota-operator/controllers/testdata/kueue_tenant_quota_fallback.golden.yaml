@@ -1,0 +1,63 @@
+apiVersion: kueue.x-k8s.io/v1beta1
+kind: ResourceFlavor
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: gryvia-quota-operator
+  name: gryvia-default
+---
+apiVersion: kueue.x-k8s.io/v1beta1
+kind: ResourceFlavor
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: gryvia-quota-operator
+  name: gryvia-compute
+---
+apiVersion: kueue.x-k8s.io/v1beta1
+kind: ClusterQueue
+metadata:
+  annotations:
+    gryvia.io/quota-source: quota
+  labels:
+    app.kubernetes.io/managed-by: gryvia-quota-operator
+    gryvia.io/tenant: ml
+  name: gryvia-ml
+spec:
+  cohort: gryvia
+  namespaceSelector:
+    matchLabels:
+      kubernetes.io/metadata.name: tenant-ml
+  preemption:
+    borrowWithinCohort:
+      policy: LowerPriority
+    reclaimWithinCohort: Any
+    withinClusterQueue: LowerPriority
+  queueingStrategy: BestEffortFIFO
+  resourceGroups:
+  - coveredResources:
+    - nvidia.com/gpu
+    flavors:
+    - name: gryvia-default
+      resources:
+      - name: nvidia.com/gpu
+        nominalQuota: "8"
+  - coveredResources:
+    - cpu
+    - memory
+    flavors:
+    - name: gryvia-compute
+      resources:
+      - name: cpu
+        nominalQuota: "100000"
+      - name: memory
+        nominalQuota: 1000Ti
+---
+apiVersion: kueue.x-k8s.io/v1beta1
+kind: LocalQueue
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: gryvia-quota-operator
+    gryvia.io/tenant: ml
+  name: gryvia
+  namespace: tenant-ml
+spec:
+  clusterQueue: gryvia-ml

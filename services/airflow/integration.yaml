@@ -1,0 +1,416 @@
+---
+# Apache Airflow for Data Pipelines
+# Orchestrate ML data workflows with Gryvia
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: airflow
+
+---
+# IMPORTANT: Change these credentials before deploying to production
+apiVersion: v1
+kind: Secret
+metadata:
+  name: airflow-credentials
+  namespace: airflow
+type: Opaque
+data:
+  # IMPORTANT: Replace with base64-encoded secure passwords before deploying
+  # Generate with: echo -n 'your-secure-password' | base64
+  POSTGRES_PASSWORD: "Q0hBTkdFLU1FLWJlZm9yZS1kZXBsb3k="
+  ADMIN_PASSWORD: "Q0hBTkdFLU1FLWJlZm9yZS1kZXBsb3k="
+
+---
+# Airflow PostgreSQL
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: airflow-postgres-pvc
+  namespace: airflow
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 50Gi
+  storageClassName: local-path
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: airflow-postgres
+  namespace: airflow
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: airflow-postgres
+  template:
+    metadata:
+      labels:
+        app: airflow-postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16
+          env:
+            - name: POSTGRES_USER
+              value: airflow
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: airflow-credentials
+                  key: POSTGRES_PASSWORD
+            - name: POSTGRES_DB
+              value: airflow
+          ports:
+            - containerPort: 5432
+          volumeMounts:
+            - name: postgres-data
+              mountPath: /var/lib/postgresql/data
+          resources:
+            requests:
+              memory: 2Gi
+              cpu: 1
+      volumes:
+        - name: postgres-data
+          persistentVolumeClaim:
+            claimName: airflow-postgres-pvc
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: airflow-postgres
+  namespace: airflow
+spec:
+  selector:
+    app: airflow-postgres
+  ports:
+    - port: 5432
+
+---
+# Airflow Webserver
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: airflow-webserver
+  namespace: airflow
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: airflow-webserver
+  template:
+    metadata:
+      labels:
+        app: airflow-webserver
+    spec:
+      initContainers:
+        - name: init-db
+          image: apache/airflow:2.8.0
+          command:
+            - bash
+            - -c
+            - |
+              airflow db init
+              airflow users create \
+                --username admin \
+                --password "${ADMIN_PASSWORD}" \
+                --firstname Admin \
+                --lastname User \
+                --role Admin \
+                --email admin@example.com || true
+          env:
+            - name: ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: airflow-credentials
+                  key: ADMIN_PASSWORD
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: airflow-credentials
+                  key: POSTGRES_PASSWORD
+            - name: AIRFLOW__CORE__SQL_ALCHEMY_CONN
+              value: postgresql+psycopg2://airflow:$(POSTGRES_PASSWORD)@airflow-postgres:5432/airflow
+            - name: AIRFLOW__CORE__EXECUTOR
+              value: KubernetesExecutor
+      containers:
+        - name: webserver
+          image: apache/airflow:2.8.0
+          command: ["airflow", "webserver"]
+          ports:
+            - containerPort: 8080
+          env:
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: airflow-credentials
+                  key: POSTGRES_PASSWORD
+            - name: AIRFLOW__CORE__SQL_ALCHEMY_CONN
+              value: postgresql+psycopg2://airflow:$(POSTGRES_PASSWORD)@airflow-postgres:5432/airflow
+            - name: AIRFLOW__CORE__EXECUTOR
+              value: KubernetesExecutor
+            - name: AIRFLOW__KUBERNETES__NAMESPACE
+              value: airflow
+            - name: AIRFLOW__KUBERNETES__WORKER_CONTAINER_REPOSITORY
+              value: apache/airflow
+            - name: AIRFLOW__KUBERNETES__WORKER_CONTAINER_TAG
+              value: "2.8.0"
+          volumeMounts:
+            - name: dags
+              mountPath: /opt/airflow/dags
+          resources:
+            requests:
+              memory: 2Gi
+              cpu: 1
+      volumes:
+        - name: dags
+          persistentVolumeClaim:
+            claimName: airflow-dags-pvc
+
+---
+# Airflow Scheduler
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: airflow-scheduler
+  namespace: airflow
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: airflow-scheduler
+  template:
+    metadata:
+      labels:
+        app: airflow-scheduler
+    spec:
+      serviceAccountName: airflow-scheduler
+      containers:
+        - name: scheduler
+          image: apache/airflow:2.8.0
+          command: ["airflow", "scheduler"]
+          env:
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: airflow-credentials
+                  key: POSTGRES_PASSWORD
+            - name: AIRFLOW__CORE__SQL_ALCHEMY_CONN
+              value: postgresql+psycopg2://airflow:$(POSTGRES_PASSWORD)@airflow-postgres:5432/airflow
+            - name: AIRFLOW__CORE__EXECUTOR
+              value: KubernetesExecutor
+            - name: AIRFLOW__KUBERNETES__NAMESPACE
+              value: airflow
+          volumeMounts:
+            - name: dags
+              mountPath: /opt/airflow/dags
+          resources:
+            requests:
+              memory: 2Gi
+              cpu: 1
+      volumes:
+        - name: dags
+          persistentVolumeClaim:
+            claimName: airflow-dags-pvc
+
+---
+# DAGs PVC
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: airflow-dags-pvc
+  namespace: airflow
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: vast-sc
+
+---
+# Airflow Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: airflow-webserver
+  namespace: airflow
+spec:
+  type: ClusterIP
+  selector:
+    app: airflow-webserver
+  ports:
+    - port: 8080
+      targetPort: 8080
+
+---
+# ServiceAccount for scheduler
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: airflow-scheduler
+  namespace: airflow
+
+---
+# Role for scheduler
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: airflow-scheduler
+  namespace: airflow
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "pods/log"]
+    verbs: ["create", "get", "list", "watch", "delete"]
+  - apiGroups: ["gryvia.io"]
+    resources: ["gryviaaijobs"]
+    verbs: ["create", "get", "list", "watch", "delete"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: airflow-scheduler
+  namespace: airflow
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: airflow-scheduler
+subjects:
+  - kind: ServiceAccount
+    name: airflow-scheduler
+    namespace: airflow
+
+---
+# Example DAG: ML Training Pipeline
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ml-pipeline-dag
+  namespace: airflow
+data:
+  ml_training_pipeline.py: |
+    from datetime import datetime, timedelta
+    from airflow import DAG
+    from airflow.providers.cncf.kubernetes.operators.kubernetes_pod import KubernetesPodOperator
+    from airflow.operators.python import PythonOperator
+    import yaml
+
+    default_args = {
+        'owner': 'airflow',
+        'depends_on_past': False,
+        'email_on_failure': True,
+        'email_on_retry': False,
+        'retries': 1,
+        'retry_delay': timedelta(minutes=5),
+    }
+
+    dag = DAG(
+        'ml_training_pipeline',
+        default_args=default_args,
+        description='Complete ML training pipeline with Gryvia',
+        schedule_interval=timedelta(days=1),
+        start_date=datetime(2024, 1, 1),
+        catchup=False,
+    )
+
+    # Task 1: Data Validation
+    validate_data = KubernetesPodOperator(
+        task_id='validate_data',
+        name='validate-data',
+        namespace='airflow',
+        image='python:3.11',
+        cmds=['python', '-c'],
+        arguments=['''
+    import pandas as pd
+    print("Validating dataset...")
+    # Validation logic
+    print("Dataset validated successfully")
+        '''],
+        dag=dag,
+    )
+
+    # Task 2: Data Preprocessing (GPU)
+    def create_preprocessing_job():
+        job_yaml = {
+            'apiVersion': 'gryvia.io/v1alpha1',
+            'kind': 'GryviaAIJob',
+            'metadata': {
+                'name': 'data-preprocessing',
+                'namespace': 'default'
+            },
+            'spec': {
+                'framework': 'pytorch',
+                'resources': {
+                    'gpuType': 'T4',
+                    'gpuCount': 1,
+                    'memory': '32Gi',
+                    'cpu': 16
+                },
+                'image': 'nvcr.io/nvidia/pytorch:24.01-py3',
+                'command': ['python', 'preprocess.py']
+            }
+        }
+        # Submit to Gryvia
+        return yaml.dump(job_yaml)
+
+    preprocess_data = PythonOperator(
+        task_id='preprocess_data',
+        python_callable=create_preprocessing_job,
+        dag=dag,
+    )
+
+    # Task 3: Training (Multi-GPU)
+    train_model = KubernetesPodOperator(
+        task_id='train_model',
+        name='train-model',
+        namespace='default',
+        image='nvcr.io/nvidia/pytorch:24.01-py3',
+        cmds=['torchrun', '--nproc_per_node=8', 'train.py'],
+        resources={
+            'request_memory': '512Gi',
+            'request_cpu': '64',
+            'limit_memory': '512Gi',
+            'limit_cpu': '64',
+            'limit_nvidia.com/gpu': '8'
+        },
+        node_selector={'gryvia.io/gpu-type': 'A100-80G'},
+        dag=dag,
+    )
+
+    # Task 4: Evaluation
+    evaluate_model = KubernetesPodOperator(
+        task_id='evaluate_model',
+        name='evaluate-model',
+        namespace='default',
+        image='nvcr.io/nvidia/pytorch:24.01-py3',
+        cmds=['python', 'evaluate.py'],
+        resources={
+            'request_memory': '64Gi',
+            'request_cpu': '16',
+            'limit_nvidia.com/gpu': '1'
+        },
+        dag=dag,
+    )
+
+    # Task 5: Register Model
+    register_model = PythonOperator(
+        task_id='register_model',
+        python_callable=lambda: print("Registering model in MLflow"),
+        dag=dag,
+    )
+
+    # Task 6: Deploy Model
+    deploy_model = PythonOperator(
+        task_id='deploy_model',
+        python_callable=lambda: print("Deploying model to KServe"),
+        dag=dag,
+    )
+
+    # Define dependencies
+    validate_data >> preprocess_data >> train_model >> evaluate_model >> register_model >> deploy_model

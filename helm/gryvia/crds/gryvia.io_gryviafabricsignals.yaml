@@ -1,0 +1,292 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.22.0
+  name: gryviafabricsignals.gryvia.io
+spec:
+  group: gryvia.io
+  names:
+    kind: GryviaFabricSignal
+    listKind: GryviaFabricSignalList
+    plural: gryviafabricsignals
+    shortNames:
+    - gfs
+    singular: gryviafabricsignal
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.jobRef
+      name: Job
+      type: string
+    - jsonPath: .status.stragglerRank
+      name: Straggler
+      type: integer
+    - jsonPath: .status.ncclP99ms
+      name: NCCL p99 ms
+      type: number
+    - jsonPath: .status.rdmaRetryRate
+      name: RDMA retry
+      type: number
+    - jsonPath: .status.gdsHitRatio
+      name: GDS hit
+      type: number
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: GryviaFabricSignal is the Schema for the gryviafabricsignals
+          API
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: GryviaFabricSignalSpec defines the desired state of GryviaFabricSignal
+            properties:
+              jobRef:
+                description: |-
+                  JobRef is the name of the GryviaAIJob in the same namespace whose fabric
+                  signals (NCCL stragglers, RDMA retries, GPUDirect Storage) are tracked
+                type: string
+              observeOnly:
+                default: true
+                description: |-
+                  ObserveOnly keeps the signals advisory: nothing is enforced (no lease
+                  revocation, no fail-open) based on them
+                type: boolean
+            type: object
+          status:
+            description: GryviaFabricSignalStatus defines the observed state of GryviaFabricSignal
+            properties:
+              cnpRate:
+                description: CNPRate is the RoCEv2 congestion notification packets
+                  per second seen on the node
+                type: number
+              collectiveMaxSkewMs:
+                description: |-
+                  CollectiveMaxSkewMs is the largest slowest-minus-fastest host-side NCCL call duration in
+                  milliseconds among collectives matched by (communicator ordinal, sequence, op) across the
+                  job's ranks on the publishing node (0 = none matched; informational, never part of scoreDelta)
+                type: number
+              e2eMeanMs:
+                description: |-
+                  E2EMeanMs is the mean end-to-end request latency in milliseconds for counter-only engines;
+                  not a percentile
+                type: number
+              e2eP99ms:
+                description: E2EP99Ms is the p99 end-to-end request latency in milliseconds
+                  inside the engine
+                type: number
+              engine:
+                description: |-
+                  Engine names the serving engine whose own metrics fill the fields below (vllm, triton,
+                  tgi, or mixed). Empty when the collector's opt-in metrics scraper (-infer-metrics) is off.
+                  Fields the engine does not export are left unset, meaning not measured, never zero
+                type: string
+              exfilEvents:
+                description: |-
+                  ExfilEvents is the number of large model-file reads followed by a connect to a non-internal
+                  address from the same process in the window (observe only, never part of scoreDelta)
+                format: int64
+                type: integer
+              gdsHitRatio:
+                description: GDSHitRatio is the fraction of cuFile bytes served over
+                  the direct GPUDirect Storage path
+                type: number
+              gpuCorrelationCoverage:
+                description: |-
+                  GPUCorrelationCoverage is the fraction of NCCL communication time covered by a DCGM sample;
+                  a low value means the dcgm-exporter collect interval is too coarse for the ratios above
+                type: number
+              gpuIdleDuringCommRatio:
+                description: |-
+                  GPUIdleDuringCommRatio is the fraction of NCCL communication time (covered by DCGM samples)
+                  during which SM_ACTIVE (else GPU_UTIL) was below the idle threshold. Set only when the
+                  collector runs with -dcgm-correlate and measured it; informational, never part of scoreDelta
+                type: number
+              inferWaitP99ms:
+                description: |-
+                  InferWaitP99Ms is the p99 NETWORK wait in milliseconds from accept to first read on
+                  inference ports (eBPF). It is not engine queue time, time to first token or inter-token
+                  latency: see the engine fields below
+                type: number
+              itlP99ms:
+                description: |-
+                  ITLP99Ms is the p99 inter-token latency (time per output token) in milliseconds (vLLM); for
+                  TGI it is the p99 of the per-request mean time per token
+                type: number
+              kvCacheUsage:
+                description: KVCacheUsage is the KV cache usage in [0,1] reported
+                  by the engine (worst replica)
+                maximum: 1
+                minimum: 0
+                type: number
+              ncclP99ms:
+                description: NCCLP99Ms is the p99 latency in milliseconds of straggler-flagged
+                  NCCL collectives
+                type: number
+              nodes:
+                description: |-
+                  Nodes holds one entry per collector node (collector flag -fabric-status-per-node); empty in
+                  the default mode. The ai-operator (--merge-fabric-signals) folds the fresh entries into the
+                  fields above: max for degradation metrics, sample-weighted means for ratios
+                items:
+                  description: |-
+                    FabricNodeStatus is what ONE node's collector measured for the job (collector flag
+                    -fabric-status-per-node). Each collector owns only its entry (server-side apply, field manager
+                    gryvia-collector-<node>), so nodes cannot overwrite each other. A nil field means the node did
+                    not measure it. With the ai-operator's --merge-fabric-signals the fresh entries are folded into
+                    the top-level status fields.
+                  properties:
+                    cnpRate:
+                      type: number
+                    collectiveMaxSkewMs:
+                      type: number
+                    e2eMeanMs:
+                      type: number
+                    e2eP99ms:
+                      type: number
+                    engine:
+                      type: string
+                    exfilEvents:
+                      format: int64
+                      type: integer
+                    gdsHitRatio:
+                      type: number
+                    gpuCorrelationCoverage:
+                      type: number
+                    gpuIdleDuringCommRatio:
+                      type: number
+                    inferWaitP99ms:
+                      type: number
+                    itlP99ms:
+                      type: number
+                    kvCacheUsage:
+                      type: number
+                    measuredAt:
+                      description: MeasuredAt is when the collector wrote this entry
+                      format: date-time
+                      type: string
+                    ncclP99ms:
+                      type: number
+                    node:
+                      description: Node is the Kubernetes node the collector runs
+                        on (list map key)
+                      type: string
+                    overlapIdleRatio:
+                      type: number
+                    pfcRate:
+                      type: number
+                    queueTimeMeanMs:
+                      type: number
+                    queueTimeP99ms:
+                      type: number
+                    rdmaRetryRate:
+                      type: number
+                    requestsWaiting:
+                      format: int64
+                      type: integer
+                    sampleCount:
+                      description: SampleCount is the number of signals folded into
+                        the entry (the weight of its ratios)
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    scoreDelta:
+                      type: number
+                    smActiveDuringCompute:
+                      type: number
+                    stragglerRank:
+                      format: int32
+                      type: integer
+                    ttftP99ms:
+                      type: number
+                    ttlSeconds:
+                      default: 300
+                      description: TTLSeconds is how long the entry stays valid after
+                        measuredAt; older entries are ignored
+                      format: int32
+                      minimum: 1
+                      type: integer
+                  required:
+                  - measuredAt
+                  - node
+                  type: object
+                maxItems: 256
+                type: array
+                x-kubernetes-list-map-keys:
+                - node
+                x-kubernetes-list-type: map
+              overlapIdleRatio:
+                description: |-
+                  OverlapIdleRatio is the fraction of the window the job spent in cudaDeviceSynchronize
+                  inside an in-flight ncclAllReduce (GPU idle while communicating)
+                type: number
+              pfcRate:
+                description: PFCRate is the 802.1Qbb priority-flow-control pause frames
+                  per second seen on the node
+                type: number
+              queueTimeMeanMs:
+                description: |-
+                  QueueTimeMeanMs is the mean engine queue time in milliseconds, for engines that export only
+                  cumulative duration counters (Triton without summary latencies); not a percentile
+                type: number
+              queueTimeP99ms:
+                description: QueueTimeP99Ms is the p99 time in milliseconds a request
+                  waited in the engine's queue
+                type: number
+              rdmaRetryRate:
+                description: RDMARetryRate is the ratio of RDMA retry/RNR error completions
+                  to posted sends
+                type: number
+              requestsWaiting:
+                description: |-
+                  RequestsWaiting is the number of requests queued in the engine (summed over the scraped
+                  replicas on the reporting node)
+                format: int64
+                type: integer
+              scoreDelta:
+                description: ScoreDelta is the penalty in [0,1] for the topology scorer
+                  (0 = healthy fabric)
+                maximum: 1
+                minimum: 0
+                type: number
+              smActiveDuringCompute:
+                description: |-
+                  SMActiveDuringCompute is the mean DCGM SM activity (0-1) outside the NCCL call windows,
+                  between the job's first and last observed collective (set only when measured)
+                type: number
+              stragglerRank:
+                description: StragglerRank is the rank of the most recent NCCL straggler
+                format: int32
+                type: integer
+              ttftP99ms:
+                description: TTFTP99Ms is the p99 time to first token in milliseconds
+                  over the collector window (vLLM)
+                type: number
+              updatedAt:
+                description: UpdatedAt is the time the status was last refreshed from
+                  collector signals
+                format: date-time
+                type: string
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

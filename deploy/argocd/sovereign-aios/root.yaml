@@ -1,0 +1,68 @@
+# App of apps for the Sovereign AI OS in an air gap. Charts come from Harbor (scripts/airgap-mirror.sh push), this
+# directory from your Git mirror. Replace harbor.sovereign.internal and git.sovereign.internal, set the robot
+# account's password, then:  kubectl apply -f deploy/argocd/sovereign-aios/root.yaml
+# Sync waves: External Secrets and OpenBao, then Kyverno and the SPIRE CRDs, then SPIRE and Falco, then the platform.
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: sovereign-aios
+  namespace: argocd
+spec:
+  description: Sovereign AI OS and its hardening add-ons, from the Harbor mirror only.
+  sourceRepos:
+  - harbor.sovereign.internal/charts
+  - https://git.sovereign.internal/zyvorai/gryvia.git
+  destinations:
+  - server: https://kubernetes.default.svc
+    namespace: argocd
+  - server: https://kubernetes.default.svc
+    namespace: external-secrets
+  - server: https://kubernetes.default.svc
+    namespace: falco
+  - server: https://kubernetes.default.svc
+    namespace: gryvia-llm-keys
+  - server: https://kubernetes.default.svc
+    namespace: gryvia-system
+  - server: https://kubernetes.default.svc
+    namespace: kyverno
+  - server: https://kubernetes.default.svc
+    namespace: openbao
+  - server: https://kubernetes.default.svc
+    namespace: spire-server
+  clusterResourceWhitelist:
+  - group: '*'
+    kind: '*'
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: sovereign-aios-harbor
+  namespace: argocd
+  labels:
+    argocd.argoproj.io/secret-type: repository
+stringData:
+  name: harbor
+  type: helm
+  enableOCI: 'true'
+  url: harbor.sovereign.internal/charts
+  username: robot$argocd
+  password: REPLACE
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: sovereign-aios-root
+  namespace: argocd
+spec:
+  project: sovereign-aios
+  source:
+    repoURL: https://git.sovereign.internal/zyvorai/gryvia.git
+    targetRevision: main
+    path: deploy/argocd/sovereign-aios/apps
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

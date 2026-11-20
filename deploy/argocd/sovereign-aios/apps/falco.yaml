@@ -1,0 +1,51 @@
+# Add-on falco; its images come through the nodes' registry mirror (ansible role rke2_hardened).
+# The version is the one pinned in deploy/airgap/charts.yaml (scripts/tests/sovereign-aios-airgap.test.sh).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: falco
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: '-1'
+  finalizers:
+  - resources-finalizer.argocd.argoproj.io
+spec:
+  project: sovereign-aios
+  source:
+    repoURL: harbor.sovereign.internal/charts
+    chart: falco
+    targetRevision: 9.2.0
+    helm:
+      valuesObject:
+        driver:
+          kind: modern_ebpf
+        falcoctl:
+          artifact:
+            install:
+              enabled: false
+            follow:
+              enabled: false
+        falco:
+          rules_files:
+          - /etc/falco/falco_rules.yaml
+          - /etc/falco/rules.d
+          json_output: true
+        mounts:
+          volumes:
+          - name: sovereign-aios-rules
+            configMap:
+              name: sovereign-aios-falco-rules
+          volumeMounts:
+          - name: sovereign-aios-rules
+            mountPath: /etc/falco/rules.d
+            readOnly: true
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: falco
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true
+    - ServerSideApply=true

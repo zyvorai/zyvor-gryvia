@@ -1,0 +1,34 @@
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaQuota
+metadata:
+  name: team-ml
+spec:
+  team: ml-research
+  namespaces:
+    - ml-training
+    - ml-inference
+  priority: 80
+
+  gpuQuota:
+    maxGPUs: 32
+    maxGPUsPerJob: 16
+    maxRunningJobs: 5
+    maxQueuedJobs: 10
+    allowedGPUTypes:
+      - H100
+      - A100-80G
+      - A100-40G
+
+  budget:
+    monthlyBudget: 50000.00  # $50k/month
+    alertThreshold: 80.0      # Alert at 80%
+    hardLimit: true           # Block new jobs when budget exceeded
+---
+# Example namespace with team label
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ml-training
+  labels:
+    gryvia.io/team: ml-research
+    gryvia.io/quota: team-ml

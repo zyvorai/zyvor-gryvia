@@ -1,0 +1,275 @@
+---
+# JupyterHub with Gryvia GPU Integration
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: jupyterhub
+
+---
+# JupyterHub Configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: jupyterhub-config
+  namespace: jupyterhub
+data:
+  jupyterhub_config.py: |
+    import os
+    from kubernetes.client.models import V1EnvVar
+
+    # Spawner configuration
+    c.KubeSpawner.image = 'jupyter/pytorch-notebook:2024.10.0'
+    c.KubeSpawner.cmd = ['start-singleuser.sh']
+
+    # GPU profiles
+    c.KubeSpawner.profile_list = [
+        {
+            'display_name': 'CPU Only (2 cores, 8GB RAM)',
+            'description': 'Basic notebook server',
+            'kubespawner_override': {
+                'cpu_limit': 2,
+                'cpu_guarantee': 1,
+                'mem_limit': '8G',
+                'mem_guarantee': '4G',
+            }
+        },
+        {
+            'display_name': 'Single T4 GPU',
+            'description': 'Development and prototyping',
+            'kubespawner_override': {
+                'cpu_limit': 8,
+                'cpu_guarantee': 4,
+                'mem_limit': '32G',
+                'mem_guarantee': '16G',
+                'extra_resource_limits': {
+                    'nvidia.com/gpu': '1'
+                },
+                'extra_resource_guarantees': {
+                    'nvidia.com/gpu': '1'
+                },
+                'node_selector': {
+                    'gryvia.io/gpu-type': 'T4'
+                }
+            }
+        },
+        {
+            'display_name': 'Single A100-40G GPU',
+            'description': 'Training and experimentation',
+            'kubespawner_override': {
+                'cpu_limit': 16,
+                'cpu_guarantee': 8,
+                'mem_limit': '64G',
+                'mem_guarantee': '32G',
+                'extra_resource_limits': {
+                    'nvidia.com/gpu': '1'
+                },
+                'extra_resource_guarantees': {
+                    'nvidia.com/gpu': '1'
+                },
+                'node_selector': {
+                    'gryvia.io/gpu-type': 'A100-40G'
+                }
+            }
+        },
+        {
+            'display_name': 'Single A100-80G GPU',
+            'description': 'Large model training',
+            'kubespawner_override': {
+                'cpu_limit': 16,
+                'cpu_guarantee': 8,
+                'mem_limit': '128G',
+                'mem_guarantee': '64G',
+                'extra_resource_limits': {
+                    'nvidia.com/gpu': '1'
+                },
+                'extra_resource_guarantees': {
+                    'nvidia.com/gpu': '1'
+                },
+                'node_selector': {
+                    'gryvia.io/gpu-type': 'A100-80G'
+                }
+            }
+        },
+        {
+            'display_name': 'Multi-GPU (4x A100-80G)',
+            'description': 'Distributed training',
+            'kubespawner_override': {
+                'cpu_limit': 64,
+                'cpu_guarantee': 32,
+                'mem_limit': '512G',
+                'mem_guarantee': '256G',
+                'extra_resource_limits': {
+                    'nvidia.com/gpu': '4'
+                },
+                'extra_resource_guarantees': {
+                    'nvidia.com/gpu': '4'
+                },
+                'node_selector': {
+                    'gryvia.io/gpu-type': 'A100-80G'
+                }
+            }
+        }
+    ]
+
+    # Storage
+    c.KubeSpawner.storage_pvc_ensure = True
+    c.KubeSpawner.storage_capacity = '100Gi'
+    c.KubeSpawner.storage_class = 'vast-sc'
+
+    # Environment variables
+    c.KubeSpawner.environment = {
+        'MLFLOW_TRACKING_URI': 'http://mlflow.gryvia-system.svc.cluster.local:5000',
+        'JUPYTER_ENABLE_LAB': 'yes'
+    }
+
+    # Idle culler
+    c.JupyterHub.services = [
+        {
+            'name': 'idle-culler',
+            'admin': True,
+            'command': [
+                'python3',
+                '-m', 'jupyterhub_idle_culler',
+                '--timeout=3600'  # 1 hour
+            ]
+        }
+    ]
+
+    # Authentication (configure as needed)
+    c.JupyterHub.authenticator_class = 'dummy'  # Replace with real auth
+
+---
+# JupyterHub Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jupyterhub
+  namespace: jupyterhub
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: jupyterhub
+  template:
+    metadata:
+      labels:
+        app: jupyterhub
+    spec:
+      serviceAccountName: jupyterhub
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: jupyterhub
+          image: jupyterhub/k8s-hub:3.2.1
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+          ports:
+            - containerPort: 8000
+              name: http
+          env:
+            - name: JUPYTERHUB_CRYPT_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: jupyterhub-secret
+                  key: crypt-key
+          volumeMounts:
+            - name: config
+              mountPath: /etc/jupyterhub/jupyterhub_config.py
+              subPath: jupyterhub_config.py
+          resources:
+            requests:
+              memory: 2Gi
+              cpu: 1
+            limits:
+              memory: 4Gi
+              cpu: 2
+      volumes:
+        - name: config
+          configMap:
+            name: jupyterhub-config
+
+---
+# JupyterHub Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: jupyterhub
+  namespace: jupyterhub
+spec:
+  type: LoadBalancer
+  selector:
+    app: jupyterhub
+  ports:
+    - port: 80
+      targetPort: 8000
+
+---
+# JupyterHub Secret
+apiVersion: v1
+kind: Secret
+metadata:
+  name: jupyterhub-secret
+  namespace: jupyterhub
+type: Opaque
+stringData:
+  crypt-key: "GENERATE-RANDOM-32-BYTE-KEY-HERE"  # openssl rand -hex 32
+
+---
+# ServiceAccount
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: jupyterhub
+  namespace: jupyterhub
+
+---
+# Role for spawning pods
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: jupyterhub-spawn
+  namespace: jupyterhub
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "persistentvolumeclaims", "services"]
+    verbs: ["get", "list", "watch", "create", "delete"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["get", "list", "watch"]
+
+---
+# RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: jupyterhub-spawn
+  namespace: jupyterhub
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: jupyterhub-spawn
+subjects:
+  - kind: ServiceAccount
+    name: jupyterhub
+    namespace: jupyterhub
+
+---
+# GPU quota integration
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaQuota
+metadata:
+  name: jupyterhub-users
+spec:
+  team: jupyterhub
+  namespaces:
+    - jupyterhub
+  gpuQuota:
+    maxGPUs: 32
+  budget:
+    monthlyBudget: 100000
+    alertThreshold: 80

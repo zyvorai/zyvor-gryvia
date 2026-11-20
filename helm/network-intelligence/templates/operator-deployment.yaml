@@ -1,0 +1,166 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "network-intelligence.fullname" . }}-operator
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "network-intelligence.labels" . | nindent 4 }}
+    app.kubernetes.io/component: operator
+spec:
+  replicas: {{ .Values.operator.replicas }}
+  selector:
+    matchLabels:
+      {{- include "network-intelligence.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: operator
+  template:
+    metadata:
+      labels:
+        {{- include "network-intelligence.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: operator
+    spec:
+      serviceAccountName: {{ include "network-intelligence.operatorServiceAccountName" . }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: manager
+          image: "{{ .Values.operator.image.repository }}:{{ .Values.operator.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.operator.image.pullPolicy }}
+          command:
+            - /manager
+          args:
+            - --leader-elect={{ .Values.ha.leaderElection }}
+            - --metrics-bind-address=:8080
+            - --health-probe-bind-address=:8081
+            {{- if .Values.operator.sources.enabled }}
+            {{- $c := .Values.operator.sources.collector }}
+            {{- $tok := default .Values.ebpf.security.apiTokenSecret $c.tokenSecret }}
+            - --collector-namespace={{ default .Values.namespace.name $c.namespace }}
+            - --collector-port={{ $c.port }}
+            - --collector-timeout={{ $c.timeout }}
+            {{- if $tok }}
+            - --collector-token-file=/etc/gryvia/collector-token/{{ $c.tokenKey }}
+            {{- end }}
+            {{- if $c.tls }}
+            - --collector-tls
+            - --collector-server-name={{ $c.serverName }}
+            {{- end }}
+            {{- if $c.caSecret }}
+            - --collector-ca-file=/etc/gryvia/collector-ca/{{ $c.caKey }}
+            {{- end }}
+            {{- if $c.clientCertSecret }}
+            - --collector-client-cert-file=/etc/gryvia/collector-client/tls.crt
+            - --collector-client-key-file=/etc/gryvia/collector-client/tls.key
+            {{- end }}
+            {{- end }}
+          {{- if .Values.operator.sources.enabled }}
+          {{- $c := .Values.operator.sources.collector }}
+          {{- $n := .Values.operator.sources.netra }}
+          env:
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            {{- if $n.url }}
+            - name: GRYVIA_NETRA_URL
+              value: {{ $n.url | quote }}
+            {{- end }}
+            {{- if and $n.url $n.tokenSecret }}
+            - name: GRYVIA_NETRA_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $n.tokenSecret | quote }}
+                  key: {{ $n.tokenKey | quote }}
+            {{- end }}
+            {{- if and $n.url $n.caSecret }}
+            - name: GRYVIA_NETRA_CA_FILE
+              value: /etc/gryvia/netra-ca/{{ $n.caKey }}
+            {{- end }}
+          {{- $tok := default .Values.ebpf.security.apiTokenSecret $c.tokenSecret }}
+          {{- if or $tok $c.caSecret $c.clientCertSecret (and $n.url $n.caSecret) }}
+          volumeMounts:
+            {{- if $tok }}
+            - name: collector-token
+              mountPath: /etc/gryvia/collector-token
+              readOnly: true
+            {{- end }}
+            {{- if $c.caSecret }}
+            - name: collector-ca
+              mountPath: /etc/gryvia/collector-ca
+              readOnly: true
+            {{- end }}
+            {{- if $c.clientCertSecret }}
+            - name: collector-client
+              mountPath: /etc/gryvia/collector-client
+              readOnly: true
+            {{- end }}
+            {{- if and $n.url $n.caSecret }}
+            - name: netra-ca
+              mountPath: /etc/gryvia/netra-ca
+              readOnly: true
+            {{- end }}
+          {{- end }}
+          {{- end }}
+          ports:
+            - name: metrics
+              containerPort: 8080
+              protocol: TCP
+            - name: health
+              containerPort: 8081
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: health
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: health
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.operator.resources | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+      {{- if .Values.operator.sources.enabled }}
+      {{- $c := .Values.operator.sources.collector }}
+      {{- $n := .Values.operator.sources.netra }}
+      {{- $tok := default .Values.ebpf.security.apiTokenSecret $c.tokenSecret }}
+      {{- if or $tok $c.caSecret $c.clientCertSecret (and $n.url $n.caSecret) }}
+      # Whole-Secret mounts (no subPath) so rotated tokens and certificates reach the running operator.
+      volumes:
+        {{- if $tok }}
+        - name: collector-token
+          secret:
+            secretName: {{ $tok | quote }}
+        {{- end }}
+        {{- if $c.caSecret }}
+        - name: collector-ca
+          secret:
+            secretName: {{ $c.caSecret | quote }}
+        {{- end }}
+        {{- if $c.clientCertSecret }}
+        - name: collector-client
+          secret:
+            secretName: {{ $c.clientCertSecret | quote }}
+        {{- end }}
+        {{- if and $n.url $n.caSecret }}
+        - name: netra-ca
+          secret:
+            secretName: {{ $n.caSecret | quote }}
+        {{- end }}
+      {{- end }}
+      {{- end }}
+      {{- with .Values.operator.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.operator.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

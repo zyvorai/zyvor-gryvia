@@ -1,0 +1,149 @@
+name: Build and Test CLI
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'cli/**'
+      - '.github/workflows/cli.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'cli/**'
+      - '.github/workflows/cli.yml'
+
+permissions:
+  contents: write
+  packages: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    name: Test CLI
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache cargo registry
+        uses: actions/cache@v6
+        with:
+          path: ~/.cargo/registry
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Cache cargo index
+        uses: actions/cache@v6
+        with:
+          path: ~/.cargo/git
+          key: ${{ runner.os }}-cargo-git-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Cache cargo build
+        uses: actions/cache@v6
+        with:
+          path: cli/target
+          key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Run tests
+        working-directory: cli
+        run: cargo test --verbose
+
+      - name: Run clippy
+        working-directory: cli
+        run: cargo clippy -- -D warnings
+
+      - name: Check formatting
+        working-directory: cli
+        run: cargo fmt -- --check
+
+  build:
+    name: Build CLI Binaries
+    runs-on: ${{ matrix.os }}
+    needs: test
+    if: github.event_name == 'push'
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            artifact: gryvia-linux-amd64
+          - os: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+            artifact: gryvia-linux-arm64
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            artifact: gryvia-darwin-amd64
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            artifact: gryvia-darwin-arm64
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install cross-compilation tools
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+
+      - name: Build binary
+        working-directory: cli
+        env:
+          # Without this, rustc links the aarch64 binary with the host `cc` ("--fix-cortex-a53-843419 is only supported on AArch64").
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Rename binary
+        run: |
+          cp cli/target/${{ matrix.target }}/release/gryvia ${{ matrix.artifact }}
+          chmod +x ${{ matrix.artifact }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.artifact }}
+
+  release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v8
+
+      - name: Create checksums
+        run: |
+          sha256sum gryvia-* > checksums.txt
+
+      - name: Create release
+        uses: softprops/action-gh-release@c062e08bd532815e2082a07b400cf8c3b4b23223 # v2
+        with:
+          files: |
+            gryvia-*
+            checksums.txt
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

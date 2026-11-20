@@ -1,0 +1,96 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: quota-operator
+  namespace: gryvia-system
+  labels:
+    app: quota-operator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: quota-operator
+  template:
+    metadata:
+      labels:
+        app: quota-operator
+    spec:
+      serviceAccountName: quota-operator
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: manager
+        image: gryvia/quota-operator:1.0.0
+        imagePullPolicy: IfNotPresent
+        command:
+        - /manager
+        args:
+        - --leader-elect
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          runAsUser: 65532
+          capabilities:
+            drop:
+            - ALL
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8081
+          initialDelaySeconds: 15
+          periodSeconds: 20
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: 8081
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        resources:
+          limits:
+            cpu: 500m
+            memory: 512Mi
+          requests:
+            cpu: 100m
+            memory: 128Mi
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: quota-operator
+  namespace: gryvia-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: quota-operator-role
+rules:
+- apiGroups: ["gryvia.io"]
+  resources: ["gryviaquotas"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: ["gryvia.io"]
+  resources: ["gryviaquotas/status"]
+  verbs: ["get", "update", "patch"]
+- apiGroups: ["gryvia.io"]
+  resources: ["gryviaaijobs"]
+  verbs: ["get", "list", "watch", "update", "patch"]
+- apiGroups: [""]
+  resources: ["namespaces"]
+  verbs: ["get", "list", "watch", "update", "patch"]
+- apiGroups: [""]
+  resources: ["resourcequotas"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: quota-operator-rolebinding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: quota-operator-role
+subjects:
+- kind: ServiceAccount
+  name: quota-operator
+  namespace: gryvia-system

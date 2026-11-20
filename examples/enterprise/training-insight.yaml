@@ -1,0 +1,25 @@
+# GryviaTrainingInsight - Analyze NCCL communication in distributed training
+# Monitors a distributed training job for straggler ranks, communication
+# bottlenecks, and inefficient collective patterns over a 5-minute window.
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaTrainingInsight
+metadata:
+  name: llm-training-analysis
+  namespace: ml-training
+spec:
+  # Name of the GryviaAIJob to analyze
+  targetJob: llama-70b-distributed
+
+  # Rolling window for aggregating communication metrics
+  analysisWindow: "5m"
+
+  # Metrics to collect from eBPF-instrumented NCCL calls
+  # collective_timing:     Latency of AllReduce, AllGather, ReduceScatter ops
+  # straggler_detection:   Identify ranks significantly slower than the median
+  # communication_ratio:   Ratio of communication time vs. compute time
+  # pattern_analysis:      Detect the collective pattern (ring, tree, pipelined)
+  metrics:
+    - collective_timing
+    - straggler_detection
+    - communication_ratio
+    - pattern_analysis

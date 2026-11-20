@@ -1,0 +1,137 @@
+{{- if and (dig "nvidia" "enabled" nil .Values.AsMap) (dig "nvidiaPlatform" "timeSlicing" "enabled" nil .Values.AsMap) }}
+# Device-plugin time-slicing config. The NVIDIA device plugin picks the data key named by the node label
+# nvidia.com/device-plugin.config, which the gpu-operator sets to "gryvia-time-slicing" for a time-slicing
+# GryviaGPUSharingPolicy, so the key below must keep that name. The GPU Operator reads this ConfigMap once
+# `--set nvidia.devicePlugin.config.name=<configName>` points its ClusterPolicy at it.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ (dig "nvidiaPlatform" "timeSlicing" "configName" nil .Values.AsMap) }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: gryvia
+    app.kubernetes.io/component: nvidia-time-slicing
+data:
+  gryvia-time-slicing: |
+    version: v1
+    flags:
+      migStrategy: none
+    sharing:
+      timeSlicing:
+        renameByDefault: false
+        resources:
+          - name: nvidia.com/gpu
+            replicas: {{ (dig "nvidiaPlatform" "timeSlicing" "replicas" nil .Values.AsMap) }}
+{{- end }}
+---
+{{- if and (dig "nvidia" "enabled" nil .Values.AsMap) (dig "nvidiaPlatform" "validate" "enabled" nil .Values.AsMap) }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: gryvia-nvidia-validate
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: gryvia
+    app.kubernetes.io/component: nvidia-validate
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+    helm.sh/hook-weight: "10"
+    # Runs after the install; with --wait it blocks until a GPU is schedulable, so on a cold node (driver still
+    # compiling) raise --timeout or run it after the GPU Operator is Ready.
+spec:
+  backoffLimit: 2
+  ttlSecondsAfterFinished: 600
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: nvidia-smi
+          image: {{ (dig "nvidiaPlatform" "validate" "image" nil .Values.AsMap) }}
+          command: ["nvidia-smi"]
+          resources:
+            limits:
+              nvidia.com/gpu: 1
+{{- end }}
+---
+{{- if and (dig "nvidiaNetwork" "enabled" nil .Values.AsMap) (dig "nvidiaNetwork" "nicClusterPolicy" "enabled" nil .Values.AsMap) }}
+apiVersion: mellanox.com/v1alpha1
+kind: NicClusterPolicy
+metadata:
+  name: nic-cluster-policy
+  labels:
+    app.kubernetes.io/name: gryvia
+    app.kubernetes.io/component: nvidia-network
+spec:
+  {{- if (dig "nvidiaNetwork" "nicClusterPolicy" "ofedDriver" nil .Values.AsMap) }}
+  ofedDriver:
+    image: doca-driver
+    repository: nvcr.io/nvidia/mellanox
+    version: doca3.5.0-26.07-0.7.7.0-0
+    startupProbe:
+      initialDelaySeconds: 10
+      periodSeconds: 10
+    livenessProbe:
+      initialDelaySeconds: 30
+      periodSeconds: 30
+    readinessProbe:
+      initialDelaySeconds: 10
+      periodSeconds: 30
+  {{- end }}
+  {{- if (dig "nvidiaNetwork" "nicClusterPolicy" "rdmaSharedDevicePlugin" nil .Values.AsMap) }}
+  rdmaSharedDevicePlugin:
+    image: k8s-rdma-shared-dev-plugin
+    repository: ghcr.io/mellanox
+    version: v1.5.4
+    config: |
+      {
+        "configList": [
+          {
+            "resourceName": "rdma_shared_device_a",
+            "rdmaHcaMax": 63,
+            "selectors": { "vendors": ["15b3"] }
+          }
+        ]
+      }
+  {{- end }}
+  {{- if (dig "nvidiaNetwork" "nicClusterPolicy" "sriovDevicePlugin" nil .Values.AsMap) }}
+  sriovDevicePlugin:
+    image: sriov-network-device-plugin
+    repository: ghcr.io/k8snetworkplumbingwg
+    version: v3.11.0
+    config: |
+      {
+        "resourceList": [
+          {
+            "resourceName": "sriov_rdma",
+            "selectors": { "vendors": ["15b3"], "isRdma": true }
+          }
+        ]
+      }
+  {{- end }}
+  {{- if (dig "nvidiaNetwork" "nicClusterPolicy" "secondaryNetwork" nil .Values.AsMap) }}
+  secondaryNetwork:
+    cniPlugins:
+      image: plugins
+      repository: ghcr.io/k8snetworkplumbingwg
+      version: v1.6.2
+    multus:
+      image: multus-cni
+      repository: ghcr.io/k8snetworkplumbingwg
+      version: v3.9.3
+  {{- end }}
+{{- end }}
+---
+{{- if and (dig "nvidiaNim" "enabled" nil .Values.AsMap) (dig "nvidiaNim" "ngcApiKey" nil .Values.AsMap) }}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: ngc-api
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: gryvia
+    app.kubernetes.io/component: nvidia-nim
+type: Opaque
+stringData:
+  NGC_API_KEY: {{ (dig "nvidiaNim" "ngcApiKey" nil .Values.AsMap) | quote }}
+{{- end }}

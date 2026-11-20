@@ -1,0 +1,38 @@
+# Standalone copy of the chart template. Apply after nvidiaNetwork.enabled=true
+# and the Network Operator CRD mellanox.com/v1alpha1 NicClusterPolicy exists.
+# Vendor 15b3 is Mellanox/NVIDIA. Change selectors if your NIC is different.
+# The Network Operator reconciles one NicClusterPolicy, named nic-cluster-policy (NVIDIA's documented name).
+# No IPAM is configured: add spec.nvIpam (NVIDIA k8s-ipam) or your own IPAM if you use secondary networks.
+# ofedDriver.version is the tag prefix; the operator appends the node kernel and OS. Match it to the operator release.
+apiVersion: mellanox.com/v1alpha1
+kind: NicClusterPolicy
+metadata:
+  name: nic-cluster-policy
+spec:
+  ofedDriver:
+    image: doca-driver
+    repository: nvcr.io/nvidia/mellanox
+    version: doca3.5.0-26.07-0.7.7.0-0
+  rdmaSharedDevicePlugin:
+    image: k8s-rdma-shared-dev-plugin
+    repository: ghcr.io/mellanox
+    version: v1.5.4
+    config: |
+      {
+        "configList": [
+          {
+            "resourceName": "rdma_shared_device_a",
+            "rdmaHcaMax": 63,
+            "selectors": { "vendors": ["15b3"] }
+          }
+        ]
+      }
+  secondaryNetwork:
+    cniPlugins:
+      image: plugins
+      repository: ghcr.io/k8snetworkplumbingwg
+      version: v1.6.2
+    multus:
+      image: multus-cni
+      repository: ghcr.io/k8snetworkplumbingwg
+      version: v3.9.3

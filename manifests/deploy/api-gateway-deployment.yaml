@@ -1,0 +1,214 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gryvia-api-gateway
+  namespace: gryvia-system
+  labels:
+    app: gryvia-api-gateway
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: gryvia-api-gateway
+  template:
+    metadata:
+      labels:
+        app: gryvia-api-gateway
+    spec:
+      serviceAccountName: gryvia-api-gateway
+      initContainers:
+      - name: gen-cert
+        image: alpine/openssl:3.3.2
+        command: ["/bin/sh", "-c"]
+        args:
+        - |
+          # Prefer the shared self-signed pair from the gryvia-tls Secret (created by the deploy
+          # script) so every pod and restart serves the same certificate; otherwise mint one.
+          if [ -s /tls-src/tls.crt ] && [ -s /tls-src/tls.key ]; then
+            cp /tls-src/tls.crt /tls-src/tls.key /tls/
+          else
+            openssl req -x509 -nodes -days 3650 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -keyout /tls/tls.key -out /tls/tls.crt -subj "/CN=gryvia-api-gateway/O=Gryvia" -addext "subjectAltName=DNS:gryvia-api-gateway,DNS:gryvia-api-gateway.gryvia-system.svc,DNS:localhost,IP:127.0.0.1,IP:$HOST_IP"
+          fi
+          chown 1000:1000 /tls/tls.key /tls/tls.crt
+          chmod 600 /tls/tls.key
+        env:
+        - name: HOST_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.hostIP
+        securityContext:
+          runAsUser: 0
+          runAsNonRoot: false
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop: ["ALL"]
+            add: ["CHOWN", "DAC_OVERRIDE", "FOWNER"]
+        volumeMounts:
+        - name: tls
+          mountPath: /tls
+        - name: tls-src
+          mountPath: /tls-src
+          readOnly: true
+      containers:
+      - name: api-gateway
+        image: gryvia/api-gateway:1.0.0
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8080
+          name: https
+        env:
+        - name: PROMETHEUS_URL
+          valueFrom:
+            configMapKeyRef:
+              name: gryvia-api-gateway-config
+              key: prometheus-url
+              optional: true
+        - name: GRYVIA_JOB_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: LOG_LEVEL
+          value: "INFO"
+        - name: GRYVIA_TLS_CERT
+          value: /tls/tls.crt
+        - name: GRYVIA_TLS_KEY
+          value: /tls/tls.key
+        resources:
+          requests:
+            cpu: 200m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: https
+            scheme: HTTPS
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: https
+            scheme: HTTPS
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 1000
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+        - name: tls
+          mountPath: /tls
+          readOnly: true
+      volumes:
+      - name: tmp
+        emptyDir: {}
+      - name: tls
+        emptyDir: {}
+      - name: tls-src
+        secret:
+          secretName: gryvia-tls
+          optional: true
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gryvia-api-gateway
+  namespace: gryvia-system
+  labels:
+    app: gryvia-api-gateway
+spec:
+  type: ClusterIP
+  selector:
+    app: gryvia-api-gateway
+  ports:
+  - port: 8080
+    targetPort: https
+    protocol: TCP
+    name: https
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: gryvia-api-gateway
+  namespace: gryvia-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: gryvia-api-gateway
+rules:
+# Read every kind the gateway serves.
+- apiGroups: ["gryvia.io"]
+  resources:
+  - gryviaaijobs
+  - gryviaquotas
+  - gryviagpunodes
+  - gryviastorages
+  - gryvianetworks
+  - gryviaworkspaces
+  - gryviamodelregistries
+  - gryviainferenceservices
+  - gryviaworkflows
+  - gryviaautotuners
+  - gryviamodelwatches
+  - gryviadatasets
+  - gryviaflowpolicies
+  - gryviatrafficinsights
+  - gryviaservicegraphs
+  - gryvianetworkanomalies
+  - gryvianetworkcosts
+  - gryviatracesessions
+  - gryviasecuritypolicies
+  - gryviatraininginsights
+  - gryviagpumemoryoptimizers
+  verbs: ["get", "list", "watch"]
+# Write only the kinds the API creates, deletes or updates.
+- apiGroups: ["gryvia.io"]
+  resources:
+  - gryviaaijobs
+  - gryviaworkspaces
+  - gryviainferenceservices
+  - gryviaworkflows
+  - gryviaautotuners
+  - gryviamodelwatches
+  - gryviadatasets
+  - gryviaflowpolicies
+  - gryviatracesessions
+  - gryviasecuritypolicies
+  - gryviamodelregistries
+  verbs: ["create", "delete", "patch"]
+- apiGroups: [""]
+  resources: ["nodes", "pods", "namespaces"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: [""]
+  resources: ["services", "endpoints"]
+  verbs: ["get", "list"]
+# Job runtime details (pod logs and events) for the dashboard.
+- apiGroups: [""]
+  resources: ["pods/log"]
+  verbs: ["get"]
+- apiGroups: [""]
+  resources: ["events"]
+  verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: gryvia-api-gateway
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: gryvia-api-gateway
+subjects:
+- kind: ServiceAccount
+  name: gryvia-api-gateway
+  namespace: gryvia-system

@@ -1,0 +1,31 @@
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaStorage
+metadata:
+  name: weka-cluster
+spec:
+  backend: weka
+  endpoint: weka-api.example.com
+  capacity: 500Ti
+  credentials:
+    secretName: weka-credentials
+    secretNamespace: gryvia-system
+  mountOptions:
+    - "rw"
+    - "noatime"
+  storageClass:
+    name: weka-cluster
+    parameters:
+      filesystemName: default
+      csiDriverVersion: "v2.6.0"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: weka-credentials
+  namespace: gryvia-system
+type: Opaque
+# IMPORTANT: Replace placeholders with real credentials before applying.
+stringData:
+  username: <REPLACE_WITH_USERNAME>
+  password: <REPLACE_WITH_PASSWORD>
+  organization: default

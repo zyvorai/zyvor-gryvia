@@ -1,0 +1,99 @@
+name: Upgrade and rollback
+
+# Installs the previous Gryvia (the newest released chart if one can be pulled from ghcr.io, otherwise the chart and
+# images built from origin/main, or origin/main~1 when this checkout is origin/main) on a kind cluster, creates the
+# demo data plus a tenant and a quota (a released base older than that data keeps only the objects it accepts; a
+# git-ref base must accept all of it), then upgrades to this checkout the way website/docs/guides/OPERATIONS.md says
+# (CRDs applied server-side, then `helm upgrade --reuse-values`), and asserts:
+#   - every gryvia.io object still has the same spec
+#   - `gryvia status --brief` prints OK and the gateway login works
+#   - `helm rollback` leaves healthy deployments and intact objects
+#   - a backup (scripts/backup-crs.sh export), a deletion and a restore give back the same objects
+# The logic is scripts/upgrade-test.sh; its argument handling is tested with fakes in scripts/tests/upgrade-test.test.sh.
+
+on:
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+    inputs:
+      base_ref:
+        description: 'Git ref to upgrade from (default: newest release tag if pullable, else origin/main)'
+        required: false
+      base_version:
+        description: 'Released chart version to upgrade from (for example v0.1.0); wins over base_ref'
+        required: false
+  pull_request:
+    paths:
+      - 'scripts/upgrade-test.sh'
+      - 'scripts/apply-crds.sh'
+      - 'scripts/tests/apply-crds.test.sh'
+      - 'scripts/backup-crs.sh'
+      - 'scripts/tests/upgrade-test.test.sh'
+      - 'scripts/tests/upgrade-fixtures.yaml'
+      - '.github/workflows/upgrade.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  script-tests:
+    name: Script tests (fakes)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: shellcheck -S warning scripts/apply-crds.sh scripts/upgrade-test.sh scripts/backup-crs.sh scripts/tests/upgrade-test.test.sh scripts/tests/apply-crds.test.sh
+      - run: bash scripts/tests/upgrade-test.test.sh
+      - run: bash scripts/tests/apply-crds.test.sh
+
+  upgrade:
+    name: Upgrade, rollback, backup/restore on kind
+    runs-on: ubuntu-latest
+    needs: script-tests
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # the base ref (origin/main~1) and the release tags come from history
+      - uses: azure/setup-helm@v5
+      - uses: helm/kind-action@v1
+        with:
+          install_only: true
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: cli
+      - name: Build the CLI
+        run: cargo build --release --locked
+        working-directory: cli
+      - name: Upgrade test
+        shell: bash
+        env:
+          BASE_REF: ${{ github.event.inputs.base_ref }}
+          BASE_VERSION: ${{ github.event.inputs.base_version }}
+        run: |
+          args=()
+          [ -n "$BASE_VERSION" ] && args+=(--base-version "$BASE_VERSION")
+          [ -z "$BASE_VERSION" ] && [ -n "$BASE_REF" ] && args+=(--base-ref "$BASE_REF")
+          # A PR compares against the branch it targets, not against a release.
+          if [ "${{ github.event_name }}" = pull_request ] && [ ${#args[@]} -eq 0 ]; then args+=(--base-ref "origin/${{ github.base_ref }}"); fi
+          ./scripts/upgrade-test.sh "${args[@]}" --cli "$PWD/cli/target/release/gryvia" 2>&1 | tee upgrade-test.log
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo '### Upgrade and rollback'
+            echo '```'
+            sed -n '/^upgrade-test summary/,$p' upgrade-test.log || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Dump state on failure
+        if: failure()
+        run: |
+          kubectl get pods -A || true
+          kubectl -n gryvia-system describe pods | tail -120 || true
+          kubectl -n gryvia-system logs -l app=gryvia-api-gateway --tail=80 || true
+          helm -n gryvia-system history gryvia || true

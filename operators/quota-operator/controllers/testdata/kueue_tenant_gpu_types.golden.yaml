@@ -1,0 +1,91 @@
+apiVersion: kueue.x-k8s.io/v1beta1
+kind: ResourceFlavor
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: gryvia-quota-operator
+  name: gryvia-default
+---
+apiVersion: kueue.x-k8s.io/v1beta1
+kind: ResourceFlavor
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: gryvia-quota-operator
+  name: gryvia-compute
+---
+apiVersion: kueue.x-k8s.io/v1beta1
+kind: ResourceFlavor
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: gryvia-quota-operator
+  name: gryvia-a100
+spec:
+  nodeLabels:
+    gryvia.io/gpu: A100
+---
+apiVersion: kueue.x-k8s.io/v1beta1
+kind: ResourceFlavor
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: gryvia-quota-operator
+  name: gryvia-h100
+spec:
+  nodeLabels:
+    gryvia.io/gpu: H100
+---
+apiVersion: kueue.x-k8s.io/v1beta1
+kind: ClusterQueue
+metadata:
+  annotations:
+    gryvia.io/quota-source: tenant
+  labels:
+    app.kubernetes.io/managed-by: gryvia-quota-operator
+    gryvia.io/tenant: q1
+  name: gryvia-q1
+spec:
+  cohort: gryvia
+  namespaceSelector:
+    matchLabels:
+      kubernetes.io/metadata.name: tenant-q1
+  preemption:
+    borrowWithinCohort:
+      policy: LowerPriority
+    reclaimWithinCohort: Any
+    withinClusterQueue: LowerPriority
+  queueingStrategy: BestEffortFIFO
+  resourceGroups:
+  - coveredResources:
+    - nvidia.com/gpu
+    flavors:
+    - name: gryvia-a100
+      resources:
+      - name: nvidia.com/gpu
+        nominalQuota: "2"
+    - name: gryvia-h100
+      resources:
+      - name: nvidia.com/gpu
+        nominalQuota: "2"
+    - name: gryvia-default
+      resources:
+      - name: nvidia.com/gpu
+        nominalQuota: "2"
+  - coveredResources:
+    - cpu
+    - memory
+    flavors:
+    - name: gryvia-compute
+      resources:
+      - name: cpu
+        nominalQuota: "100000"
+      - name: memory
+        nominalQuota: 1000Ti
+---
+apiVersion: kueue.x-k8s.io/v1beta1
+kind: LocalQueue
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: gryvia-quota-operator
+    gryvia.io/tenant: q1
+  name: gryvia
+  namespace: tenant-q1
+spec:
+  clusterQueue: gryvia-q1

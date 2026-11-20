@@ -1,0 +1,309 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.22.0
+  name: gryviachargebacks.gryvia.io
+spec:
+  group: gryvia.io
+  names:
+    kind: GryviaChargeback
+    listKind: GryviaChargebackList
+    plural: gryviachargebacks
+    singular: gryviachargeback
+  scope: Cluster
+  versions:
+  - name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: GryviaChargeback is the Schema for the gryviachargebacks API
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: GryviaChargebackSpec defines the desired state of GryviaChargeback
+            properties:
+              allocationModel:
+                description: AllocationModel defines how costs are allocated
+                properties:
+                  includePlatformCosts:
+                    description: IncludePlatformCosts includes platform overhead
+                    type: boolean
+                  method:
+                    description: Method is the allocation method (actual-usage, reserved-capacity,
+                      equal-split, weighted)
+                    type: string
+                  platformOverhead:
+                    description: PlatformOverhead is the overhead percentage
+                    type: number
+                type: object
+              costCenters:
+                description: CostCenters defines cost center configurations
+                items:
+                  description: CostCenter defines a cost center
+                  properties:
+                    billingContact:
+                      description: BillingContact for the cost center
+                      properties:
+                        department:
+                          type: string
+                        email:
+                          type: string
+                        name:
+                          type: string
+                      type: object
+                    budget:
+                      description: Budget allocations
+                      properties:
+                        annual:
+                          type: number
+                        monthly:
+                          type: number
+                        quarterly:
+                          type: number
+                      type: object
+                    description:
+                      description: Description of the cost center
+                      type: string
+                    id:
+                      description: ID is the cost center identifier
+                      type: string
+                    name:
+                      description: Name is the display name
+                      type: string
+                    teams:
+                      description: Teams assigned to this cost center
+                      items:
+                        type: string
+                      type: array
+                  type: object
+                type: array
+              mode:
+                description: Mode is showback (informational) or chargeback (billing)
+                type: string
+              period:
+                description: Period defines the billing period
+                properties:
+                  endDate:
+                    description: EndDate for custom periods
+                    type: string
+                  startDate:
+                    description: StartDate for custom periods
+                    type: string
+                  timezone:
+                    description: Timezone for period calculations
+                    type: string
+                  type:
+                    description: Type is the period type (monthly, quarterly, annual,
+                      custom)
+                    type: string
+                type: object
+              pricing:
+                description: Pricing defines GPU and resource pricing
+                properties:
+                  currency:
+                    description: Currency for pricing
+                    type: string
+                  gpuRates:
+                    additionalProperties:
+                      description: GPURate defines pricing for a GPU type
+                      properties:
+                        hourlyRate:
+                          description: HourlyRate is the on-demand hourly rate
+                          type: number
+                        monthlyReserved:
+                          description: MonthlyReserved is the monthly reserved rate
+                          type: number
+                        spotDiscount:
+                          description: SpotDiscount is the spot discount percentage
+                          type: number
+                      type: object
+                    description: GPURates is per-GPU-type pricing
+                    type: object
+                  network:
+                    description: Network pricing
+                    properties:
+                      egressPerGB:
+                        type: number
+                      ingressPerGB:
+                        type: number
+                    type: object
+                  storage:
+                    description: Storage pricing per GB/month
+                    properties:
+                      archive:
+                        type: number
+                      performance:
+                        type: number
+                      standard:
+                        type: number
+                    type: object
+                type: object
+              reports:
+                description: Reports defines report generation
+                properties:
+                  enabled:
+                    description: Enabled enables report generation
+                    type: boolean
+                  formats:
+                    description: Formats for reports (pdf, csv, excel, json, html)
+                    items:
+                      type: string
+                    type: array
+                  frequency:
+                    description: Frequency of reports (daily, weekly, monthly, quarterly)
+                    type: string
+                  includeDetails:
+                    description: IncludeDetails includes detailed breakdown
+                    type: boolean
+                type: object
+            type: object
+          status:
+            description: GryviaChargebackStatus defines the observed state of GryviaChargeback
+            properties:
+              conditions:
+                description: Conditions represent the latest available observations
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+              currentPeriod:
+                description: CurrentPeriod tracks the current period
+                properties:
+                  byResourceType:
+                    description: ByResourceType is the breakdown by resource type
+                    properties:
+                      compute:
+                        type: number
+                      network:
+                        type: number
+                      platform:
+                        type: number
+                      storage:
+                        type: number
+                      support:
+                        type: number
+                    type: object
+                  costCenters:
+                    description: CostCenters is the breakdown by cost center
+                    items:
+                      description: CostCenterStatus tracks cost center spending
+                      properties:
+                        budget:
+                          description: Budget for this cost center
+                          type: number
+                        cost:
+                          description: Cost for this cost center
+                          type: number
+                        id:
+                          description: ID of the cost center
+                          type: string
+                        name:
+                          description: Name of the cost center
+                          type: string
+                        percentUsed:
+                          description: PercentUsed of budget
+                          type: number
+                        variance:
+                          description: Variance from budget (negative = under, positive
+                            = over)
+                          type: number
+                      type: object
+                    type: array
+                  endDate:
+                    description: EndDate of the current period
+                    type: string
+                  startDate:
+                    description: StartDate of the current period
+                    type: string
+                  totalCost:
+                    description: TotalCost for the current period
+                    type: number
+                type: object
+              lastReport:
+                description: LastReport tracks the last generated report
+                properties:
+                  path:
+                    description: Path where the report is stored
+                    type: string
+                  period:
+                    description: Period covered by the report
+                    type: string
+                  timestamp:
+                    description: Timestamp when the report was generated
+                    format: date-time
+                    type: string
+                type: object
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

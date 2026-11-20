@@ -1,0 +1,56 @@
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaNetwork
+metadata:
+  name: sriov-highspeed
+spec:
+  networkType: sriov
+  mtu: 9000
+  nodeSelector:
+    gryvia.io/sriov: "true"
+  sriov:
+    physicalInterface: ens1f0
+    numVfs: 32
+    vfDriver: vfio-pci
+    resourceName: intel_sriov_netdevice
+---
+# Example Deployment using SR-IOV
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: inference-service
+spec:
+  replicas: 4
+  selector:
+    matchLabels:
+      app: inference
+  template:
+    metadata:
+      labels:
+        app: inference
+      annotations:
+        k8s.v1.cni.cncf.io/networks: sriov-highspeed
+    spec:
+      containers:
+      - name: triton
+        image: nvcr.io/nvidia/tritonserver:24.01-py3
+        ports:
+        - containerPort: 8000
+          name: http
+        - containerPort: 8001
+          name: grpc
+        - containerPort: 8002
+          name: metrics
+        resources:
+          limits:
+            nvidia.com/gpu: 1
+            intel.com/intel_sriov_netdevice: 1
+          requests:
+            nvidia.com/gpu: 1
+            intel.com/intel_sriov_netdevice: 1
+        volumeMounts:
+        - name: models
+          mountPath: /models
+      volumes:
+      - name: models
+        persistentVolumeClaim:
+          claimName: model-repository

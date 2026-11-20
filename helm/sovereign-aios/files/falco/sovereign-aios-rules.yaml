@@ -1,0 +1,71 @@
+# Falco rules for the Sovereign AI OS (Gryvia, Zyntra, Netra and GryviaAgents). Self-contained: no macros from
+# Falco's default rules are needed. Validated with `falco --validate` in .github/workflows/sovereign-aios.yml.
+
+- list: sovereign_aios_namespaces
+  items: [gryvia-system]
+
+- list: sovereign_aios_shells
+  items: [sh, bash, ash, dash, zsh, ksh, csh, tcsh, busybox]
+
+- list: sovereign_aios_private_nets
+  items: ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "127.0.0.0/8", "169.254.0.0/16", "fc00::/7", "::1/128"]
+
+- macro: sovereign_aios_spawn
+  condition: evt.type in (execve, execveat) and evt.dir = < and container.id != host
+
+- macro: sovereign_aios_agent
+  condition: container.image.repository endswith "/gryvia-agent-runtime"
+
+- macro: sovereign_aios_zyntra
+  condition: container.image.repository endswith "/zyntra"
+
+- rule: Shell in a Sovereign AI OS platform container
+  desc: An interactive or scripted shell started in a Gryvia, Zyntra or Netra container. Their images run one binary.
+  condition: sovereign_aios_spawn and k8s.ns.name in (sovereign_aios_namespaces) and proc.name in (sovereign_aios_shells)
+  output: >-
+    Shell in platform container (ns=%k8s.ns.name pod=%k8s.pod.name image=%container.image.repository
+    cmd=%proc.cmdline parent=%proc.pname user=%user.name)
+  priority: WARNING
+  tags: [sovereign_aios, container, shell, mitre_execution]
+
+- rule: GryviaAgent runtime started a program
+  desc: >-
+    The agent runtime is one Python process that calls tools over HTTP. Any other program means the tool loop or a
+    dependency was subverted.
+  condition: sovereign_aios_spawn and sovereign_aios_agent and not proc.name startswith python
+  output: >-
+    Agent runtime started a program (ns=%k8s.ns.name pod=%k8s.pod.name cmd=%proc.cmdline parent=%proc.pname)
+  priority: ERROR
+  tags: [sovereign_aios, agent, mitre_execution]
+
+- rule: GryviaAgent connected to a public address
+  desc: >-
+    Agents reach the LLM gateway, Zyntra and allowlisted tool hosts inside the cluster. Their NetworkPolicy blocks the
+    rest; this catches attempts and clusters whose CNI does not enforce NetworkPolicy.
+  condition: >-
+    evt.type = connect and evt.dir = < and (fd.typechar = 4 or fd.typechar = 6) and sovereign_aios_agent
+    and fd.sip != "0.0.0.0" and not fd.snet in (sovereign_aios_private_nets)
+  output: >-
+    Agent connected out of the cluster (ns=%k8s.ns.name pod=%k8s.pod.name connection=%fd.name)
+  priority: WARNING
+  tags: [sovereign_aios, agent, network, mitre_exfiltration]
+
+- rule: Zyntra started a program
+  desc: >-
+    Zyntra applies approved changes through the Kubernetes API from its own process; it has no reason to run another
+    program.
+  condition: sovereign_aios_spawn and sovereign_aios_zyntra and proc.name != zyntra
+  output: >-
+    Zyntra started a program (ns=%k8s.ns.name pod=%k8s.pod.name cmd=%proc.cmdline parent=%proc.pname)
+  priority: ERROR
+  tags: [sovereign_aios, zyntra, mitre_execution]
+
+- rule: Service account token read in a GryviaAgent
+  desc: Agent pods need no Kubernetes API access; reading a mounted service account token is unexpected.
+  condition: >-
+    evt.type in (open, openat, openat2) and evt.dir = < and fd.name startswith /var/run/secrets/kubernetes.io/serviceaccount
+    and sovereign_aios_agent
+  output: >-
+    Agent read a service account token (ns=%k8s.ns.name pod=%k8s.pod.name file=%fd.name cmd=%proc.cmdline)
+  priority: WARNING
+  tags: [sovereign_aios, agent, credentials, mitre_credential_access]

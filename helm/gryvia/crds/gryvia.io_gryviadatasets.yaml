@@ -1,0 +1,471 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.22.0
+  name: gryviadatasets.gryvia.io
+spec:
+  group: gryvia.io
+  names:
+    kind: GryviaDataset
+    listKind: GryviaDatasetList
+    plural: gryviadatasets
+    singular: gryviadataset
+  scope: Cluster
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.type
+      name: Type
+      type: string
+    - jsonPath: .status.currentVersion
+      name: Version
+      type: string
+    - jsonPath: .status.state
+      name: State
+      type: string
+    - jsonPath: .status.usage.jobsUsing
+      name: Jobs-Using
+      type: integer
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: GryviaDataset is the Schema for the gryviadatasets API
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: GryviaDatasetSpec defines the desired state of GryviaDataset
+            properties:
+              access:
+                description: Access defines access control
+                properties:
+                  allowedTeams:
+                    description: AllowedTeams lists teams that can access the dataset
+                    items:
+                      type: string
+                    type: array
+                  allowedUsers:
+                    description: AllowedUsers lists users that can access the dataset
+                    items:
+                      type: string
+                    type: array
+                  public:
+                    description: Public indicates whether the dataset is publicly
+                      accessible
+                    type: boolean
+                type: object
+              cache:
+                description: Cache defines caching configuration
+                properties:
+                  enabled:
+                    description: Enabled enables caching
+                    type: boolean
+                  size:
+                    description: Size is the cache size
+                    type: string
+                  storageClass:
+                    description: StorageClass is the storage class for cache PVCs
+                    type: string
+                  warmup:
+                    description: |-
+                      Warmup starts the spec.placement replica downloads together with the primary download instead of after it
+                      completes. Replicas are still only marked verified once the primary copy's digest is known.
+                    type: boolean
+                type: object
+              description:
+                description: Description is a human-readable description
+                type: string
+              license:
+                description: License is the dataset license
+                type: string
+              namespace:
+                description: |-
+                  Namespace is where the dataset is materialized (its PVC and download Jobs); jobs that read it run there.
+                  Empty uses the storage-operator's --dataset-namespace.
+                pattern: ^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$
+                type: string
+              placement:
+                description: |-
+                  Placement keeps an extra copy of the current version in each listed node pool, so jobs in that pool read
+                  local data. Each copy is its own PVC, filled by a download Job pinned to the pool, and is verified
+                  against the primary copy's digest.
+                properties:
+                  accessMode:
+                    description: |-
+                      AccessMode of the replica PVCs. ReadWriteOnce (default) volumes can only be mounted by pods on one node, so
+                      jobs mount a ReadWriteOnce replica only when they run on a single node; ReadOnlyMany or ReadWriteMany
+                      replicas are mounted by multi-node jobs too.
+                    enum:
+                    - ReadWriteOnce
+                    - ReadOnlyMany
+                    - ReadWriteMany
+                    type: string
+                  pools:
+                    description: Pools each get one replica.
+                    items:
+                      description: DatasetPool is a set of nodes that shares one replica.
+                      properties:
+                        name:
+                          description: Name identifies the pool (part of the replica
+                            PVC name).
+                          pattern: ^[a-z0-9]([-a-z0-9]{0,22}[a-z0-9])?$
+                          type: string
+                        nodeSelector:
+                          additionalProperties:
+                            type: string
+                          description: NodeSelector picks the pool's nodes (for example
+                            topology.kubernetes.io/zone or gryvia.io/rack).
+                          minProperties: 1
+                          type: object
+                      required:
+                      - name
+                      - nodeSelector
+                      type: object
+                    maxItems: 16
+                    minItems: 1
+                    type: array
+                  storageClass:
+                    description: |-
+                      StorageClass for the replica PVCs; a node-local class with volumeBindingMode WaitForFirstConsumer binds each
+                      replica inside its pool. Default: spec.cache.storageClass, then the cluster default.
+                    type: string
+                required:
+                - pools
+                type: object
+              source:
+                description: Source defines the data source
+                properties:
+                  http:
+                    description: HTTP is the HTTP configuration
+                    properties:
+                      checksumURL:
+                        description: ChecksumURL is the URL for checksum verification
+                        type: string
+                      url:
+                        description: URL is the download URL
+                        type: string
+                    required:
+                    - url
+                    type: object
+                  nfs:
+                    description: NFS is the NFS configuration
+                    properties:
+                      path:
+                        description: Path is the NFS export path
+                        type: string
+                      server:
+                        description: Server is the NFS server address
+                        type: string
+                    required:
+                    - path
+                    - server
+                    type: object
+                  s3:
+                    description: S3 is the S3 configuration
+                    properties:
+                      bucket:
+                        description: Bucket is the S3 bucket name
+                        type: string
+                      credentialsSecret:
+                        description: CredentialsSecret is the name of the secret with
+                          credentials
+                        type: string
+                      endpoint:
+                        description: |-
+                          Endpoint is the URL of an S3-compatible service (MinIO, Ceph RGW, R2, ...), for example
+                          http://minio.storage.svc:9000. Empty means AWS. Passed to the AWS CLI as AWS_ENDPOINT_URL.
+                        pattern: ^(https?://[^\s/]+(/[^\s]*)?)?$
+                        type: string
+                      prefix:
+                        description: Prefix is the S3 key prefix
+                        type: string
+                      region:
+                        description: Region is the S3 region
+                        type: string
+                    required:
+                    - bucket
+                    type: object
+                  type:
+                    description: Type is the source type (s3, gcs, azure-blob, nfs,
+                      http, git-lfs, vast)
+                    type: string
+                required:
+                - type
+                type: object
+              statistics:
+                description: Statistics defines dataset statistics
+                properties:
+                  fileCount:
+                    description: FileCount is the number of files
+                    format: int64
+                    type: integer
+                  sampleCount:
+                    description: SampleCount is the number of samples
+                    format: int64
+                    type: integer
+                  totalSizeBytes:
+                    description: TotalSizeBytes is the total size in bytes
+                    format: int64
+                    type: integer
+                type: object
+              tags:
+                description: Tags are searchable labels
+                items:
+                  type: string
+                type: array
+              type:
+                description: Type is the dataset type (image, text, audio, video,
+                  tabular, multimodal)
+                type: string
+              version:
+                description: Version is the semantic version
+                type: string
+              versioning:
+                description: Versioning defines versioning configuration
+                properties:
+                  enabled:
+                    description: Enabled enables versioning
+                    type: boolean
+                  retentionPolicy:
+                    description: RetentionPolicy defines version retention
+                    properties:
+                      keepDays:
+                        description: KeepDays is the number of days to keep versions
+                        format: int32
+                        type: integer
+                      keepLast:
+                        description: KeepLast is the number of versions to keep
+                        format: int32
+                        type: integer
+                    type: object
+                  strategy:
+                    description: Strategy is the versioning strategy (snapshot, incremental,
+                      git-lfs)
+                    type: string
+                type: object
+            required:
+            - source
+            type: object
+          status:
+            description: GryviaDatasetStatus defines the observed state of GryviaDataset
+            properties:
+              cacheStatus:
+                description: CacheStatus holds cache information
+                properties:
+                  cached:
+                    description: Cached indicates whether data is cached
+                    type: boolean
+                  hitRate:
+                    description: HitRate is the cache hit rate
+                    type: number
+                  lastAccess:
+                    description: LastAccess is the last cache access time
+                    format: date-time
+                    type: string
+                type: object
+              conditions:
+                description: Conditions report runtime capability and remediation
+                  state.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+              currentVersion:
+                description: CurrentVersion is the current active version
+                type: string
+              fileCount:
+                description: FileCount and TotalSizeBytes describe the current version
+                  as downloaded.
+                format: int64
+                type: integer
+              message:
+                description: Message explains the state (the download error, for example).
+                type: string
+              namespace:
+                description: Namespace and PVCName locate the materialized data; each
+                  version is the directory SubPath of the PVC.
+                type: string
+              pvcName:
+                type: string
+              replicas:
+                description: Replicas reports the spec.placement copies, one per pool.
+                items:
+                  description: DatasetReplica is the state of one pool's copy.
+                  properties:
+                    accessMode:
+                      type: string
+                    bytes:
+                      format: int64
+                      type: integer
+                    digest:
+                      description: Digest is the sha256 over the replica's files,
+                        computed like the primary copy's checksum.
+                      type: string
+                    files:
+                      format: int64
+                      type: integer
+                    lastSynced:
+                      description: LastSynced is when the replica last finished a
+                        download.
+                      format: date-time
+                      type: string
+                    message:
+                      type: string
+                    nodeSelector:
+                      additionalProperties:
+                        type: string
+                      type: object
+                    pool:
+                      type: string
+                    pvcName:
+                      type: string
+                    ready:
+                      description: Ready is true once the replica holds the current
+                        version; Verified once its digest equals the primary's.
+                      type: boolean
+                    sourceHash:
+                      type: string
+                    verified:
+                      type: boolean
+                    version:
+                      description: Version is the version directory (PVC SubPath)
+                        the replica holds; SourceHash the source it came from.
+                      type: string
+                  required:
+                  - pool
+                  - ready
+                  - verified
+                  type: object
+                type: array
+              sourceHash:
+                description: SourceHash identifies the source and version the current
+                  data was materialized from.
+                type: string
+              state:
+                description: State is the current state (initializing, ready, error,
+                  syncing)
+                type: string
+              subPath:
+                type: string
+              totalSizeBytes:
+                format: int64
+                type: integer
+              usage:
+                description: Usage holds usage information
+                properties:
+                  jobsUsing:
+                    description: JobsUsing is the number of jobs currently using the
+                      dataset
+                    format: int32
+                    type: integer
+                  lastUsedBy:
+                    description: LastUsedBy is the name of the last job that used
+                      the dataset
+                    type: string
+                  totalAccesses:
+                    description: TotalAccesses is the total number of accesses
+                    format: int64
+                    type: integer
+                type: object
+              versions:
+                description: Versions is the list of available versions
+                items:
+                  description: DatasetVersionInfo holds version metadata
+                  properties:
+                    changes:
+                      description: Changes describes what changed
+                      type: string
+                    checksum:
+                      description: Checksum is the version checksum
+                      type: string
+                    createdAt:
+                      description: CreatedAt is the version creation time
+                      format: date-time
+                      type: string
+                    size:
+                      description: Size is the version size in bytes
+                      format: int64
+                      type: integer
+                    version:
+                      description: Version is the version string
+                      type: string
+                  required:
+                  - version
+                  type: object
+                type: array
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

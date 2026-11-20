@@ -1,0 +1,69 @@
+apiVersion: v2
+name: gryvia
+description: Gryvia - open GPU orchestration for Kubernetes (operators, API gateway and dashboard)
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+kubeVersion: ">=1.30.0"
+keywords:
+  - gpu
+  - ai
+  - machine-learning
+  - kubernetes
+  - nvidia
+  - rdma
+  - distributed-training
+home: https://github.com/zyvorai/gryvia
+sources:
+  - https://github.com/zyvorai/gryvia
+dependencies:
+  # NVIDIA's own GPU Operator: driver container, container toolkit, device plugin, DCGM exporter, GPU feature
+  # discovery. Disabled unless `nvidia.enabled=true`. Run `helm dependency build helm/gryvia` before installing
+  # from a checkout (published chart packages already contain it).
+  - name: gpu-operator
+    alias: nvidia
+    version: v26.7.1
+    repository: https://helm.ngc.nvidia.com/nvidia
+    condition: nvidia.enabled
+  # NVIDIA Network Operator: DOCA/OFED, SR-IOV and RDMA device plugins, Multus, IPAM.
+  # Off unless nvidiaNetwork.enabled=true. Same NGC repo as the GPU Operator.
+  # Not validated on InfiniBand hardware; see website/docs/guides/NVIDIA_ONE_CLICK.md.
+  - name: network-operator
+    alias: nvidiaNetwork
+    version: 26.7.0
+    repository: https://helm.ngc.nvidia.com/nvidia
+    condition: nvidiaNetwork.enabled
+  # NVIDIA NIM Operator. Off unless nvidiaNim.enabled=true. NGC publishes it as 2.0.1 (no v).
+  # Does not pull models until you apply a NIMService (see examples/nvidia/nim-service.yaml).
+  - name: k8s-nim-operator
+    alias: nvidiaNim
+    version: 2.0.1
+    repository: https://helm.ngc.nvidia.com/nvidia
+    condition: nvidiaNim.enabled
+  # Kueue (kubernetes-sigs/kueue): job queueing, gang admission, quotas, fair sharing and preemption for GryviaAIJobs.
+  # Disabled unless `kueue.enabled=true`; the operators use it only with aiOperator.kueueIntegration and
+  # quotaOperator.kueueIntegration (see docs/kueue-integration.md). Like the NVIDIA chart it must be downloaded
+  # (`helm dependency build helm/gryvia`) before installing from a checkout. The pin is the newest chart version
+  # in registry.k8s.io/kueue/charts when this was written (its CRDs and values were inspected; it has NOT been
+  # run on a cluster until .github/workflows/e2e-kueue.yml passes). Kueue's CRDs are templated by the sub-chart.
+  - name: kueue
+    alias: kueue
+    version: 0.19.6
+    repository: oci://registry.k8s.io/kueue/charts
+    condition: kueue.enabled
+  # SchedMD's Slinky slurm-operator (Controller, NodeSet, RestApi, Token... CRDs under slinky.slurm.net), off unless
+  # slurmOperator.enabled. The Slurm cluster itself (slurm.enabled) is templated by this chart
+  # (templates/slurm-cluster.yaml, mirroring Slinky's slurm chart 1.2.3 defaults) because that chart and this one
+  # cannot both be sub-charts: they define the same template helper (slurm.format-image) with different arguments.
+  # With quotaOperator.slurmIntegration each GryviaTenant gets its own partition (see docs/slurm.md). Pinned to the
+  # newest published chart (1.2.3, Slurm 26.05) after inspecting its values and CRDs; run on kind by
+  # .github/workflows/e2e-slurm.yml (CPU only).
+  - name: slurm-operator
+    alias: slurmOperator
+    version: 1.2.3
+    repository: oci://ghcr.io/slinkyproject/charts
+    condition: slurmOperator.enabled
+maintainers:
+  - name: Gryvia Team
+    email: team@gryvia.io
+icon: https://gryvia.io/logo.png

@@ -1,0 +1,122 @@
+---
+# GryviaAIJob: Distributed LLM training job with checkpointing support
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaAIJob
+metadata:
+  name: llama-70b-finetune
+  namespace: default
+  labels:
+    gryvia.io/team: ml-research
+    gryvia.io/type: training
+    gryvia.io/model: llama-70b
+spec:
+  type: training
+  model: llama-70b
+  gpus: 8
+  gpuType: H100
+  network: rdma
+  storage: vast-fast
+  storageRequest: "500Gi"
+
+  image: nvcr.io/nvidia/pytorch:24.01-py3
+  imagePullPolicy: IfNotPresent
+
+  command:
+    - torchrun
+  args:
+    - --nproc_per_node=8
+    - --nnodes=4
+    - --master_addr=$(MASTER_ADDR)
+    - --master_port=$(MASTER_PORT)
+    - train.py
+    - --model=llama-70b
+    - --checkpoint-dir=/checkpoints
+    - --auto-resume
+    - --save-interval=1000
+
+  env:
+    - name: CHECKPOINT_DIR
+      value: "/checkpoints"
+    - name: RESUME_FROM_CHECKPOINT
+      value: "true"
+
+  distributed:
+    enabled: true
+    framework: pytorch
+    nodes: 4
+    gpusPerNode: 8
+    backend: nccl
+
+  resources:
+    requests:
+      memory: "256Gi"
+      cpu: "32"
+    limits:
+      memory: "512Gi"
+      cpu: "64"
+
+  priority: 80
+  retryLimit: 5
+  timeout: "7d"
+
+  tolerations:
+    - key: "nvidia.com/gpu"
+      operator: "Exists"
+      effect: "NoSchedule"
+
+---
+# GryviaCheckpointGuard: Monitors the above job and manages checkpoints
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaCheckpointGuard
+metadata:
+  name: llama-training-guard
+  namespace: default
+spec:
+  # Match the training job above by its labels
+  jobSelector:
+    matchLabels:
+      gryvia.io/team: ml-research
+      gryvia.io/type: training
+
+  checkpointPolicy:
+    # Take periodic checkpoints every 15 minutes
+    intervalMinutes: 15
+
+    # Trigger emergency checkpoints on critical conditions
+    emergencyCheckpoint:
+      triggers:
+        - GpuHealthDegraded
+        - SpotPreemptionSignal
+        - MemoryPressure
+        - LossDivergence
+        - NvlinkDegraded
+
+    # Replicate checkpoints to S3 for durability
+    replication:
+      backend: s3
+      copies: 3
+      asyncUpload: true
+
+  validation:
+    # Verify checkpoint integrity
+    checksumVerify: true
+    tensorShapeVerify: true
+    loadTest: false
+    # Only keep checkpoints that pass validation
+    retainValidOnly: true
+    # Keep the last 10 valid checkpoints
+    retentionCount: 10
+
+  restore:
+    # Automatically restore from the latest valid checkpoint on restart
+    autoRestore: true
+    # Schedule the restored job near checkpoint storage
+    preferNearStorage: true
+    # Inject these env vars into the restored job pods
+    injectEnvVars:
+      CHECKPOINT_DIR: "/checkpoints"
+      RESUME_FROM_CHECKPOINT: "true"
+
+  monitoring:
+    exportMetrics: true
+    alertOnFailure: true

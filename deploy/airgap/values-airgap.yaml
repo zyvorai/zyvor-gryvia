@@ -1,0 +1,37 @@
+# helm/sovereign-aios in an air gap: every image from the Harbor mirror (scripts/airgap-mirror.sh pushes
+# deploy/airgap/images.txt there as <harbor>/<path without the registry host>), and Kyverno checking the mirrored
+# images against your cosign key. Replace harbor.sovereign.internal with your Harbor host throughout.
+#
+#   helm install sovereign-aios oci://harbor.sovereign.internal/charts/sovereign-aios --version 0.1.0 \
+#     -n gryvia-system --create-namespace -f deploy/airgap/values-airgap.yaml --set-file hardening.kyverno.verifyImages.publicKey=cosign.pub
+global:
+  imageRegistry: harbor.sovereign.internal/zyvorai
+gryvia:
+  aiOperator:
+    agents:
+      image: harbor.sovereign.internal/zyvorai/gryvia-agent-runtime:1.0.0
+  nvidiaDevicePlugin:
+    image:
+      repository: harbor.sovereign.internal/nvidia/k8s-device-plugin
+  dcgmExporter:
+    image:
+      repository: harbor.sovereign.internal/nvidia/k8s/dcgm-exporter
+zyntra:
+  image:
+    repository: harbor.sovereign.internal/zyvorai/zyntra
+netra:
+  image:
+    repository: harbor.sovereign.internal/zyvorai/netra
+  agentImage:
+    repository: harbor.sovereign.internal/zyvorai/netra-agent
+  tls:
+    opensslImage: harbor.sovereign.internal/alpine/openssl:3.3.2
+hardening:
+  kyverno:
+    enabled: true
+    failureAction: Enforce
+    allowedRegistries: [harbor.sovereign.internal/]
+    verifyImages:
+      images: [harbor.sovereign.internal/zyvorai/*]
+      # Keyless verification needs Rekor and the Sigstore roots; the mirror script re-signs with your key instead.
+      mode: key

@@ -1,0 +1,17 @@
+# Managed by Ansible (role rke2_hardened): pull through {{ rke2_registry_mirror }}.
+mirrors:
+{% for r in rke2_registry_mirrored %}
+  {{ r | to_json }}:
+    endpoint: [{{ ('https://' ~ rke2_registry_mirror) | to_json }}]
+{% endfor %}
+configs:
+  {{ rke2_registry_mirror | to_json }}:
+{% if rke2_registry_username %}
+    auth:
+      username: {{ rke2_registry_username | to_json }}
+      password: {{ rke2_registry_password | to_json }}
+{% endif %}
+{% if rke2_registry_ca %}
+    tls:
+      ca_file: /etc/rancher/rke2/registry-ca.crt
+{% endif %}

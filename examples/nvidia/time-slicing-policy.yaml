@@ -1,0 +1,14 @@
+# Apply after `helm install --set nvidia.enabled=true --set nvidiaPlatform.timeSlicing.enabled=true
+#   --set nvidia.devicePlugin.config.name=gryvia-time-slicing`.
+# With gpuOperator.gpuSharing=true the operator labels matching nodes nvidia.com/device-plugin.config=gryvia-time-slicing
+# so the GPU Operator device plugin picks up the ConfigMap rendered by the chart.
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaGPUSharingPolicy
+metadata:
+  name: share-inference
+spec:
+  strategy: time-slicing
+  nodeSelector: {}
+  timeSlicing:
+    enabled: true
+    maxPodsPerGPU: 4

@@ -1,0 +1,74 @@
+name: Kind e2e (AIJob lifecycle)
+
+# Runs real GryviaAIJobs on a kind cluster without GPUs: the run-to-completion batch Job workload,
+# Succeeded / Failed / Rejected / Cancelled phases and the metering record that depends on them.
+# Images are built from the checkout like kind-e2e.yml (scripts/kind-demo.sh with GRYVIA_LOCAL_IMAGES=1).
+# The scenarios live in scripts/e2e-jobs.sh. The sbatch scenario uses the CLI built from the checkout.
+
+on:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'operators/ai-operator/**'
+      - 'operators/quota-operator/**'
+      - 'helm/**'
+      - 'crds/**'
+      - 'scripts/e2e-jobs.sh'
+      - 'scripts/kind-demo.sh'
+      - 'cli/src/commands/sbatch.rs'
+      - 'cli/src/commands/submit.rs'
+      - '.github/workflows/e2e-jobs.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  aijob-lifecycle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7
+      - uses: azure/setup-helm@v5
+      - uses: helm/kind-action@v1
+        with:
+          install_only: true
+      - name: Install Gryvia with locally built images
+        run: GRYVIA_LOCAL_IMAGES=1 ./scripts/kind-demo.sh
+      - name: Enable the admission gate
+        # Without the gate the quota operator rejects a job only if it sees the job still Pending, and the
+        # ai-operator can create the workload first. The gate checks the quota before anything is created.
+        run: |
+          helm upgrade gryvia ./helm/gryvia -n gryvia-system --reuse-values --set aiOperator.admissionGate=true --wait
+      - name: Operators are running
+        run: |
+          kubectl -n gryvia-system rollout status deploy -l app.kubernetes.io/component=ai-operator --timeout=180s
+          kubectl -n gryvia-system rollout status deploy -l app.kubernetes.io/component=quota-operator --timeout=180s
+      - name: CPU-only 2-node job succeeds with distinct ranks and a final usage record
+        run: ./scripts/e2e-jobs.sh success
+      - name: A failing job (retryLimit 0) ends Failed
+        run: ./scripts/e2e-jobs.sh failure
+      - name: A quota-rejected job gets no Job, StatefulSet, Service or PVC
+        run: ./scripts/e2e-jobs.sh reject
+      - name: Cancelling running jobs deletes their Jobs
+        run: ./scripts/e2e-jobs.sh cancel
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: cli
+      - name: Build the CLI
+        run: cargo build --release --locked
+        working-directory: cli
+      - name: gryvia submit --sbatch runs a 2-node Slurm script and an array
+        run: ./scripts/e2e-jobs.sh sbatch
+      - name: Dump state on failure
+        if: failure()
+        run: |
+          kubectl get gryviaaijobs -A -o yaml || true
+          kubectl get jobs,pods,svc,pvc,gryviausagerecords -A || true
+          kubectl -n gryvia-system logs -l app.kubernetes.io/component=ai-operator --tail=200 || true
+          kubectl -n gryvia-system logs -l app.kubernetes.io/component=quota-operator --tail=200 || true

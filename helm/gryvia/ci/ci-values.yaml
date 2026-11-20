@@ -1,0 +1,11 @@
+# Used by `ct install`: installs the chart plumbing (namespace, RBAC, CRDs) without pulling
+# workload images, which are only published on release. The kind demo installs the full stack.
+gpuOperator: {enabled: false}
+aiOperator: {enabled: false}
+quotaOperator: {enabled: false}
+apiGateway: {enabled: false}
+ui: {enabled: false}
+nvidiaDevicePlugin: {enabled: false}
+dcgmExporter: {enabled: false}
+monitoring: {enabled: false}
+namespace: {create: true, name: gryvia-ci}

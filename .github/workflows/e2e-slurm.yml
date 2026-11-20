@@ -1,0 +1,177 @@
+name: Kind e2e (Slurm)
+
+# Runs real Slurm on a kind cluster without GPUs, through the chart's Slinky integration: the slurm-operator
+# sub-chart (slurmOperator.enabled), the chart's Slurm cluster (slurm.enabled: slurmctld and slurmrestd) and the quota
+# operator's --slurm-integration. A GryviaTenant gets its own NodeSet and partition (gryvia-<tenant>); a 2-task batch
+# job submitted with sbatch completes there, and the quota operator records it as a GryviaUsageRecord (kind slurm).
+# Images are built from the checkout like e2e-kueue.yml (scripts/kind-demo.sh with GRYVIA_LOCAL_IMAGES=1).
+#
+# Assumptions that could not be verified before the first run are marked ASSUMPTION.
+
+on:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'operators/quota-operator/**'
+      - 'helm/**'
+      - 'crds/**'
+      - 'scripts/kind-demo.sh'
+      - '.github/workflows/e2e-slurm.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NS: gryvia-system
+  TENANT: hpc
+  PARTITION: gryvia-hpc
+
+jobs:
+  slurm:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v7
+      - uses: azure/setup-helm@v5
+      - uses: helm/kind-action@v1
+        with:
+          install_only: true
+      - name: Install Gryvia with locally built images
+        run: GRYVIA_LOCAL_IMAGES=1 ./scripts/kind-demo.sh
+      - name: Remove the demo tenants
+        # Each tenant would get a slurmd pod; keep the cluster to the one tenant of this test.
+        run: |
+          kubectl delete gryviatenant --all --wait=true --timeout=180s
+          kubectl delete gryviaquota --all --ignore-not-found --wait=true --timeout=60s
+      - name: Install the Slinky slurm-operator (sub-chart) and its CRDs
+        # Same flags as kind-demo.sh. The operator's CRDs must exist before the Slurm cluster is templated, so the
+        # cluster comes in the next upgrade.
+        run: |
+          helm upgrade gryvia ./helm/gryvia --namespace "$NS" --set namespace.create=false \
+            --set nvidiaDevicePlugin.enabled=false --set dcgmExporter.enabled=false --set monitoring.enabled=false \
+            --set global.imageTag=dev --set global.imagePullPolicy=Never \
+            --set slurmOperator.enabled=true \
+            --wait --timeout 600s
+          kubectl get crd controllers.slinky.slurm.net nodesets.slinky.slurm.net restapis.slinky.slurm.net tokens.slinky.slurm.net
+          kubectl -n "$NS" rollout status deploy/slurm-operator --timeout=300s
+          kubectl -n "$NS" rollout status deploy/slurm-operator-webhook --timeout=300s
+      - name: Without the CRDs, slurm.enabled fails with a message instead of a broken install
+        run: |
+          if out="$(helm template rel ./helm/gryvia --set slurm.enabled=true 2>&1)"; then
+            echo "::error::slurm.enabled rendered without the slinky.slurm.net CRDs"; exit 1
+          fi
+          echo "$out" | grep -q 'install with slurmOperator.enabled=true first'
+      - name: Slurm cluster (slurmctld, slurmrestd) and the quota operator's Slurm integration
+        run: |
+          helm upgrade gryvia ./helm/gryvia --namespace "$NS" --set namespace.create=false \
+            --set nvidiaDevicePlugin.enabled=false --set dcgmExporter.enabled=false --set monitoring.enabled=false \
+            --set global.imageTag=dev --set global.imagePullPolicy=Never \
+            --set slurmOperator.enabled=true --set slurm.enabled=true \
+            --set quotaOperator.slurmIntegration=true --set quotaOperator.slurm.accountingInterval=10s \
+            --wait --timeout 600s
+          kubectl -n "$NS" get controller,restapi,token
+          kubectl -n "$NS" rollout status deploy -l app.kubernetes.io/component=quota-operator --timeout=180s
+          kubectl -n "$NS" get deploy -l app.kubernetes.io/component=quota-operator -o jsonpath='{.items[0].spec.template.spec.containers[0].args}'; echo
+          # The slurm-operator names the slurmctld StatefulSet <controller>-controller and the slurmrestd Deployment
+          # <restapi>-restapi (api/v1beta1/*_keys.go of slurm-operator 1.2.3).
+          for _ in $(seq 1 60); do kubectl -n "$NS" get pod slurm-controller-0 >/dev/null 2>&1 && break; sleep 5; done
+          kubectl -n "$NS" wait --for=condition=Ready pod/slurm-controller-0 --timeout=600s
+          for _ in $(seq 1 60); do kubectl -n "$NS" get deploy slurm-restapi >/dev/null 2>&1 && break; sleep 5; done
+          kubectl -n "$NS" rollout status deploy/slurm-restapi --timeout=600s
+          # The Token CR writes the JWT the quota operator sends to slurmrestd.
+          for _ in $(seq 1 60); do kubectl -n "$NS" get secret gryvia-slurm-token >/dev/null 2>&1 && break; sleep 5; done
+          kubectl -n "$NS" get secret gryvia-slurm-token -o jsonpath='{.data.auth-token}' | base64 -d | cut -c1-12; echo '...'
+      - name: A tenant gets its own NodeSet and partition gryvia-hpc
+        run: |
+          cat <<EOF | kubectl apply -f -
+          apiVersion: gryvia.io/v1alpha1
+          kind: GryviaTenant
+          metadata: {name: $TENANT}
+          spec: {displayName: HPC}
+          EOF
+          for _ in $(seq 1 60); do kubectl -n "$NS" get nodeset "$PARTITION" >/dev/null 2>&1 && break; sleep 3; done
+          kubectl -n "$NS" get nodeset "$PARTITION" -o yaml
+          [ "$(kubectl -n "$NS" get nodeset "$PARTITION" -o jsonpath='{.metadata.labels.gryvia\.io/tenant}')" = "$TENANT" ]
+          [ "$(kubectl -n "$NS" get nodeset "$PARTITION" -o jsonpath='{.spec.partition.config}')" = "MaxNodes=1" ]
+          # ASSUMPTION: NodeSet pods in StatefulSet mode are named <nodeset>-<ordinal>, like a StatefulSet's.
+          for _ in $(seq 1 60); do kubectl -n "$NS" get pod "$PARTITION-0" >/dev/null 2>&1 && break; sleep 5; done
+          kubectl -n "$NS" wait --for=condition=Ready "pod/$PARTITION-0" --timeout=600s
+          # ASSUMPTION: the slurmctld image ships the Slurm client commands (sinfo, scontrol, sbatch).
+          ctl() { kubectl -n "$NS" exec slurm-controller-0 -c slurmctld -- "$@"; }
+          for _ in $(seq 1 60); do
+            state="$(ctl sinfo -h -p "$PARTITION" -o '%t' 2>/dev/null | head -1)"
+            case "$state" in idle*|mix*|alloc*) break;; esac
+            sleep 5
+          done
+          ctl sinfo
+          ctl scontrol show partition "$PARTITION"
+          ctl scontrol show partition "$PARTITION" | grep -q 'MaxNodes=1'
+          case "$state" in idle*|mix*|alloc*) echo "ok: partition $PARTITION has a node ($state)";; *) echo "partition node never became idle: $state"; exit 1;; esac
+      - name: sbatch of a 2-task job completes in the tenant partition and is recorded as usage
+        run: |
+          ctl() { kubectl -n "$NS" exec slurm-controller-0 -c slurmctld -- "$@"; }
+          cat > /tmp/job.sh <<'EOF'
+          #!/bin/sh
+          #SBATCH --job-name=e2e-two-tasks
+          #SBATCH --ntasks=2
+          #SBATCH --chdir=/tmp
+          #SBATCH --output=/tmp/e2e-%j.out
+          srun sh -c 'echo "task $SLURM_PROCID of $SLURM_NTASKS on $(hostname)"'
+          EOF
+          kubectl -n "$NS" cp /tmp/job.sh slurm-controller-0:/tmp/job.sh -c slurmctld
+          # ASSUMPTION: root may submit (DisableRootJobs is not set in Slinky's slurm.conf).
+          id="$(ctl sbatch -p "$PARTITION" --parsable /tmp/job.sh | cut -d';' -f1)"
+          echo "job $id"
+          [ -n "$id" ]
+          for _ in $(seq 1 60); do
+            st="$(ctl scontrol show job "$id" -o | grep -o 'JobState=[A-Z_]*' | cut -d= -f2)"
+            case "$st" in COMPLETED|FAILED|CANCELLED|TIMEOUT|NODE_FAIL|OUT_OF_MEMORY) break;; esac
+            sleep 3
+          done
+          ctl scontrol show job "$id"
+          [ "$st" = COMPLETED ] || { echo "job state $st"; exit 1; }
+          out="$(kubectl -n "$NS" exec "$PARTITION-0" -c slurmd -- cat "/tmp/e2e-$id.out")"
+          echo "$out"
+          [ "$(echo "$out" | grep -c '^task [01] of 2 on ')" = 2 ] || { echo "expected two task lines"; exit 1; }
+
+          record() {
+            kubectl -n "tenant-$TENANT" get gryviausagerecords -l gryvia.io/usage-kind=slurm -o json |
+              jq -c --arg id "$id" '.items[] | select(.metadata.annotations["gryvia.io/slurm-job-id"] == $id)'
+          }
+          for _ in $(seq 1 40); do [ -n "$(record)" ] && break; sleep 3; done
+          rec="$(record)"
+          echo "$rec" | jq .
+          [ "$(echo "$rec" | jq -r .spec.kind)" = slurm ]
+          [ "$(echo "$rec" | jq -r .spec.tenant)" = "$TENANT" ]
+          [ "$(echo "$rec" | jq -r .spec.final)" = true ]
+          [ "$(echo "$rec" | jq -r .spec.job)" = "slurm:e2e-two-tasks" ]
+          [ "$(echo "$rec" | jq -r '.metadata.annotations["gryvia.io/slurm-state"]')" = COMPLETED ]
+          [ "$(echo "$rec" | jq -r '.metadata.annotations["gryvia.io/slurm-partition"]')" = "$PARTITION" ]
+          echo "ok: usage record $(echo "$rec" | jq -r .metadata.name)"
+          # Polling again does not create a second record.
+          sleep 25
+          [ "$(kubectl -n "tenant-$TENANT" get gryviausagerecords -l gryvia.io/usage-kind=slurm -o json | jq --arg id "$id" '[.items[] | select(.metadata.annotations["gryvia.io/slurm-job-id"] == $id)] | length')" = 1 ]
+      - name: Deleting the tenant removes its NodeSet
+        run: |
+          kubectl delete gryviatenant "$TENANT" --wait=true --timeout=180s
+          for _ in $(seq 1 40); do kubectl -n "$NS" get nodeset "$PARTITION" >/dev/null 2>&1 || break; sleep 3; done
+          if kubectl -n "$NS" get nodeset "$PARTITION" >/dev/null 2>&1; then echo "NodeSet left behind"; exit 1; fi
+          echo "ok: NodeSet removed"
+      - name: Dump state on failure
+        if: failure()
+        run: |
+          kubectl -n "$NS" get controller,restapi,token,nodeset -o yaml || true
+          kubectl -n "$NS" get pods -o wide || true
+          kubectl get gryviatenants -o yaml || true
+          kubectl get gryviausagerecords -A -o yaml || true
+          kubectl -n "$NS" logs deploy/slurm-operator --tail=300 || true
+          kubectl -n "$NS" logs deploy/slurm-operator-webhook --tail=100 || true
+          kubectl -n "$NS" logs slurm-controller-0 --all-containers --tail=200 || true
+          kubectl -n "$NS" logs deploy/slurm-restapi --all-containers --tail=200 || true
+          kubectl -n "$NS" logs "$PARTITION-0" --all-containers --tail=200 || true
+          kubectl -n "$NS" logs -l app.kubernetes.io/component=quota-operator --tail=300 || true

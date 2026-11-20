@@ -1,0 +1,90 @@
+{{- if .Values.slurm.enabled }}
+{{- if not (.Capabilities.APIVersions.Has "slinky.slurm.net/v1beta1/Controller") }}
+{{- fail "slurm.enabled needs the slinky.slurm.net CRDs on the cluster: install with slurmOperator.enabled=true first, then upgrade with slurm.enabled=true (helm template: add --api-versions slinky.slurm.net/v1beta1/Controller)" }}
+{{- end }}
+{{- $ns := include "gryvia.namespace" . }}
+{{- $name := .Values.slurm.name }}
+{{- /* Keys are generated once and kept across upgrades (the Secrets are immutable). */ -}}
+{{- range $key := list "slurm" "jwt" }}
+{{- $secretName := printf "%s-auth-%s" $name $key }}
+{{- $dataKey := printf "%s.key" $key }}
+{{- $existing := lookup "v1" "Secret" $ns $secretName }}
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ $secretName }}
+  namespace: {{ $ns }}
+  labels:
+    {{- include "gryvia.labels" $ | nindent 4 }}
+    app.kubernetes.io/part-of: slurm
+type: Opaque
+immutable: true
+data:
+  {{- if and $existing $existing.data (index $existing.data $dataKey) }}
+  {{ $dataKey }}: {{ index $existing.data $dataKey }}
+  {{- else }}
+  {{ $dataKey }}: {{ randAscii 1024 | b64enc }}
+  {{- end }}
+{{- end }}
+---
+apiVersion: slinky.slurm.net/v1beta1
+kind: Controller
+metadata:
+  name: {{ $name }}
+  namespace: {{ $ns }}
+  labels:
+    {{- include "gryvia.labels" . | nindent 4 }}
+    app.kubernetes.io/part-of: slurm
+spec:
+  slurmKeyRef:
+    name: {{ $name }}-auth-slurm
+    key: slurm.key
+  jwtKeyRef:
+    name: {{ $name }}-auth-jwt
+    key: jwt.key
+  {{- with .Values.slurm.extraConf }}
+  extraConf: |-
+    {{- . | nindent 4 }}
+  {{- end }}
+  slurmctld:
+    image: {{ .Values.slurm.images.slurmctld }}
+  reconfigure:
+    image: {{ .Values.slurm.images.slurmctld }}
+  logfile:
+    image: {{ .Values.slurm.images.logfile }}
+  template:
+    spec:
+      nodeSelector:
+        kubernetes.io/os: linux
+  persistence:
+    enabled: {{ .Values.slurm.persistence.enabled }}
+    {{- if .Values.slurm.persistence.enabled }}
+    {{- with .Values.slurm.persistence.storageClassName }}
+    storageClassName: {{ . }}
+    {{- end }}
+    accessModes: [ReadWriteOnce]
+    resources:
+      requests:
+        storage: {{ .Values.slurm.persistence.size }}
+    {{- end }}
+---
+apiVersion: slinky.slurm.net/v1beta1
+kind: RestApi
+metadata:
+  name: {{ $name }}
+  namespace: {{ $ns }}
+  labels:
+    {{- include "gryvia.labels" . | nindent 4 }}
+    app.kubernetes.io/part-of: slurm
+spec:
+  controllerRef:
+    name: {{ $name }}
+  replicas: 1
+  slurmrestd:
+    image: {{ .Values.slurm.images.slurmrestd }}
+  template:
+    spec:
+      nodeSelector:
+        kubernetes.io/os: linux
+{{- end }}

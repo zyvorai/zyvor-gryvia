@@ -1,0 +1,177 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  name: ml-training-pipeline
+  namespace: default
+  labels:
+    team: ml-research
+    pipeline-type: training
+spec:
+  entrypoint: training-pipeline
+  serviceAccountName: gryvia-job-runner
+
+  # Workflow parameters
+  arguments:
+    parameters:
+      - name: model-name
+        value: "llama-70b"
+      - name: dataset
+        value: "openwebtext"
+      - name: gpu-type
+        value: "H100"
+      - name: gpu-count
+        value: "8"
+      - name: batch-size
+        value: "4"
+      - name: learning-rate
+        value: "3e-4"
+
+  # Volume templates
+  volumeClaimTemplates:
+    - metadata:
+        name: workspace
+      spec:
+        accessModes: [ "ReadWriteMany" ]
+        storageClassName: vast-sc
+        resources:
+          requests:
+            storage: 100Gi
+
+  templates:
+    # Main pipeline
+    - name: training-pipeline
+      steps:
+        - - name: data-preparation
+            template: prepare-data
+
+        - - name: training
+            template: distributed-training
+
+        - - name: evaluation
+            template: model-evaluation
+
+        - - name: export
+            template: model-export
+
+    # Data preparation step
+    - name: prepare-data
+      resource:
+        action: create
+        manifest: |
+          apiVersion: gryvia.io/v1alpha1
+          kind: GryviaAIJob
+          metadata:
+            name: data-prep-{{workflow.name}}
+            namespace: default
+          spec:
+            type: training
+            gpus: 1
+            gpuType: T4
+            resources:
+              requests:
+                cpu: "16"
+                memory: 32Gi
+            image: nvcr.io/nvidia/pytorch:24.01-py3
+            command:
+              - python
+              - /scripts/prepare_data.py
+              - --dataset={{workflow.parameters.dataset}}
+              - --output=/workspace/processed
+            volumeMounts:
+              - name: workspace
+                mountPath: /workspace
+
+    # Distributed training step
+    - name: distributed-training
+      resource:
+        action: create
+        manifest: |
+          apiVersion: gryvia.io/v1alpha1
+          kind: GryviaAIJob
+          metadata:
+            name: training-{{workflow.name}}
+            namespace: default
+          spec:
+            type: training
+            distributed:
+              framework: pytorch
+              enabled: true
+              nodes: 1
+              gpusPerNode: {{workflow.parameters.gpu-count}}
+            gpus: {{workflow.parameters.gpu-count}}
+            gpuType: {{workflow.parameters.gpu-type}}
+            resources:
+              requests:
+                cpu: "64"
+                memory: 512Gi
+            image: nvcr.io/nvidia/pytorch:24.01-py3
+            command:
+              - torchrun
+              - --nproc_per_node={{workflow.parameters.gpu-count}}
+              - train.py
+              - --model={{workflow.parameters.model-name}}
+              - --data=/workspace/processed
+              - --batch-size={{workflow.parameters.batch-size}}
+              - --lr={{workflow.parameters.learning-rate}}
+              - --checkpoint-dir=/workspace/checkpoints
+            volumeMounts:
+              - name: workspace
+                mountPath: /workspace
+
+    # Model evaluation step
+    - name: model-evaluation
+      resource:
+        action: create
+        manifest: |
+          apiVersion: gryvia.io/v1alpha1
+          kind: GryviaAIJob
+          metadata:
+            name: eval-{{workflow.name}}
+            namespace: default
+          spec:
+            type: training
+            gpus: 1
+            gpuType: A100-80G
+            resources:
+              requests:
+                cpu: "16"
+                memory: 128Gi
+            image: nvcr.io/nvidia/pytorch:24.01-py3
+            command:
+              - python
+              - evaluate.py
+              - --checkpoint=/workspace/checkpoints/best.pt
+              - --test-data=/workspace/test
+              - --output=/workspace/results
+            volumeMounts:
+              - name: workspace
+                mountPath: /workspace
+
+    # Model export step
+    - name: model-export
+      resource:
+        action: create
+        manifest: |
+          apiVersion: gryvia.io/v1alpha1
+          kind: GryviaAIJob
+          metadata:
+            name: export-{{workflow.name}}
+            namespace: default
+          spec:
+            type: training
+            gpus: 1
+            gpuType: T4
+            resources:
+              requests:
+                cpu: "8"
+                memory: 32Gi
+            image: nvcr.io/nvidia/pytorch:24.01-py3
+            command:
+              - python
+              - export.py
+              - --checkpoint=/workspace/checkpoints/best.pt
+              - --format=onnx
+              - --output=/workspace/models/{{workflow.parameters.model-name}}.onnx
+            volumeMounts:
+              - name: workspace
+                mountPath: /workspace

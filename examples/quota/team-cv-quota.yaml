@@ -1,0 +1,33 @@
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaQuota
+metadata:
+  name: team-cv
+spec:
+  team: computer-vision
+  namespaces:
+    - cv-training
+    - cv-prod
+  priority: 70
+
+  gpuQuota:
+    maxGPUs: 24
+    maxGPUsPerJob: 8
+    maxRunningJobs: 8
+    maxQueuedJobs: 15
+    allowedGPUTypes:
+      - A100-80G
+      - L40
+      - A10
+
+  budget:
+    monthlyBudget: 30000.00  # $30k/month
+    alertThreshold: 75.0
+    hardLimit: false         # Allow overages with warnings
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cv-training
+  labels:
+    gryvia.io/team: computer-vision
+    gryvia.io/quota: team-cv

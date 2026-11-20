@@ -1,0 +1,98 @@
+name: Inference serving API validation
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'operators/ai-operator/**'
+      - 'operators/quota-operator/**'
+      - 'operators/gpu-operator/**'
+      - 'operators/storage-operator/**'
+      - 'examples/training/**'
+      - 'scripts/tests/platform-completion-chart.test.sh'
+      - 'scripts/tests/gpu-recovery-chart.test.sh'
+      - 'helm/gryvia/**'
+      - 'crds/**'
+      - 'scripts/tests/inference-serving-chart.test.sh'
+      - '.github/workflows/inference-serving.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  api:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.27'
+      - name: Install envtest and pinned Gateway API schema
+        working-directory: operators/ai-operator
+        run: |
+          assets=$(go run sigs.k8s.io/controller-runtime/tools/setup-envtest@v0.25.1 use -p path 1.34.1)
+          echo "KUBEBUILDER_ASSETS=$assets" >> "$GITHUB_ENV"
+          mkdir -p "$RUNNER_TEMP/gateway-crds"
+          curl --fail --location --retry 3 https://raw.githubusercontent.com/kubernetes-sigs/gateway-api/v1.4.0/config/crd/standard/gateway.networking.k8s.io_httproutes.yaml -o "$RUNNER_TEMP/gateway-crds/httproutes.yaml"
+          echo "c2539410dec72b793ef840f484c19d13b48210074ec801b730e9fce2c5fc825c  $RUNNER_TEMP/gateway-crds/httproutes.yaml" | sha256sum --check
+          echo "GRYVIA_GATEWAY_CRD_DIR=$RUNNER_TEMP/gateway-crds" >> "$GITHUB_ENV"
+      - name: Unit and race checks
+        working-directory: operators/ai-operator
+        run: go test -race ./...
+      - name: Install Prometheus for real query-engine integration
+        run: |
+          curl --fail --location --retry 3 https://github.com/prometheus/prometheus/releases/download/v3.5.0/prometheus-3.5.0.linux-amd64.tar.gz -o "$RUNNER_TEMP/prometheus.tar.gz"
+          echo "e811827af26d822afb09a4f28314f61b618b12cff5369835a67f674d8b46f39a  $RUNNER_TEMP/prometheus.tar.gz" | sha256sum --check
+          tar -xzf "$RUNNER_TEMP/prometheus.tar.gz" -C "$RUNNER_TEMP"
+          echo "GRYVIA_PROMETHEUS_BINARY=$RUNNER_TEMP/prometheus-3.5.0.linux-amd64/prometheus" >> "$GITHUB_ENV"
+      - name: Proxy, live Prometheus scrape, SLO evaluation and rollback
+        working-directory: operators/ai-operator
+        run: go test -race -tags integration ./controllers -run TestProxyPrometheusSLO -count=1 -v
+      - name: Real API schema, defaults and status reconciliation
+        working-directory: operators/ai-operator
+        run: go test -tags integration ./controllers -run TestInferenceServingAPIServer -count=1 -v
+      - uses: azure/setup-helm@v5
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - name: Helm routing configuration
+        run: |
+          pip install pyyaml
+          helm repo add nvidia https://helm.ngc.nvidia.com/nvidia
+          helm dependency build helm/gryvia
+          bash scripts/tests/inference-serving-chart.test.sh
+          bash scripts/tests/platform-completion-chart.test.sh
+          bash scripts/tests/gpu-recovery-chart.test.sh
+      - name: Validate advanced fields against pinned Kueue API schema
+        run: |
+          helm template qualification helm/gryvia --set kueue.enabled=true --include-crds > "$RUNNER_TEMP/kueue-rendered.yaml"
+          python3 - <<'PY'
+          import os, pathlib, yaml
+          folder = pathlib.Path(os.environ['RUNNER_TEMP']) / 'kueue-crds'
+          folder.mkdir()
+          for obj in yaml.safe_load_all((folder.parent / 'kueue-rendered.yaml').read_text()):
+              if obj and obj.get('kind') == 'CustomResourceDefinition' and obj['spec']['group'] == 'kueue.x-k8s.io':
+                  (folder / (obj['metadata']['name'] + '.yaml')).write_text(yaml.safe_dump(obj))
+          PY
+          cd operators/quota-operator
+          GRYVIA_KUEUE_CRD_DIR="$RUNNER_TEMP/kueue-crds" go test -race -tags integration ./controllers -run TestAdvancedKueueSchema -count=1 -v
+      - name: Quota, GPU and storage unit/race checks
+        run: |
+          for operator in quota-operator gpu-operator storage-operator; do
+            (cd "operators/$operator" && go test -race ./... && go vet ./...)
+          done
+  recovery:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - name: Install pinned CPU PyTorch
+        run: pip install torch==2.8.0 --index-url https://download.pytorch.org/whl/cpu
+      - name: Checkpoint integrity and model/optimizer round-trip
+        working-directory: examples/training
+        run: python -m unittest -v test_checkpoint_store test_checkpoint_worker

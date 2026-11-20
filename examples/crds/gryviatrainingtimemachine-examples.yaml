@@ -1,0 +1,86 @@
+# Example: Time Machine for LLM fine-tuning job
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaTrainingTimeMachine
+metadata:
+  name: llama-finetune-timemachine
+  namespace: ml-team
+spec:
+  sourceJob: llama-70b-finetune
+
+  timeline:
+    enabled: true
+    indexCheckpoints: true
+    metadataPerCheckpoint:
+      - name: loss
+        source: metric
+      - name: val_loss
+        source: metric
+      - name: learning_rate
+        source: metric
+
+  retention:
+    keepAll: false
+    keepEveryNth: 5
+    keepBest: 3
+    keepMilestones:
+      - 100
+      - 500
+      - 1000
+    maxStorageGi: 500
+
+  forks:
+    - name: lower-lr-from-best
+      fromCheckpoint:
+        metric:
+          name: val_loss
+          selector: min
+      overrides:
+        env:
+          - name: LEARNING_RATE
+            value: "1e-5"
+          - name: WARMUP_STEPS
+            value: "0"
+        args:
+          - "--resume-from-checkpoint"
+
+    - name: longer-training-from-epoch-10
+      fromCheckpoint:
+        epoch: 10
+      overrides:
+        env:
+          - name: MAX_EPOCHS
+            value: "50"
+      newJobName: llama-70b-extended
+---
+# Example: Time Machine with step-based fork
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaTrainingTimeMachine
+metadata:
+  name: resnet-experiment-timemachine
+  namespace: cv-team
+spec:
+  sourceJob: resnet50-imagenet-training
+
+  timeline:
+    enabled: true
+    indexCheckpoints: true
+    metadataPerCheckpoint:
+      - name: train_loss
+        source: metric
+      - name: val_accuracy
+        source: metric
+
+  retention:
+    keepBest: 5
+    maxStorageGi: 100
+
+  forks:
+    - name: augmentation-experiment
+      fromCheckpoint:
+        step: 50000
+      overrides:
+        env:
+          - name: AUGMENTATION
+            value: "heavy"
+          - name: LEARNING_RATE
+            value: "5e-4"

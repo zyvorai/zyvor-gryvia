@@ -1,0 +1,67 @@
+name: eBPF programs
+
+# Builds every program in ebpf/ natively on x86_64 and arm64 runners and loads each object through that
+# runner's kernel verifier. Loading only, except the XDP chain, which runs with BPF_PROG_TEST_RUN and on lo.
+on:
+  pull_request:
+    paths:
+      - 'ebpf/**'
+      - 'collector/**'
+      - '.github/workflows/ebpf.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ebpf-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-verify:
+    name: Build and verifier-load (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {arch: x86_64, runner: ubuntu-24.04}
+          - {arch: arm64, runner: ubuntu-24.04-arm}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: collector/go.mod
+      - name: Install toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends clang llvm libbpf-dev linux-libc-dev make
+      - name: Build
+        run: |
+          uname -m
+          make -C ebpf
+          test "$(ls ebpf/*.o | wc -l)" = "$(ls ebpf/*.c | wc -l)"
+      - name: Load every object through the verifier
+        # collector/cmd/verifyobj uses the same cilium/ebpf loader as the collector; no bpftool needed.
+        run: |
+          uname -r
+          test -e /sys/kernel/btf/vmlinux
+          go build -o "$RUNNER_TEMP/verifyobj" ./cmd/verifyobj
+          sudo "$RUNNER_TEMP/verifyobj" ../ebpf
+        working-directory: collector
+      - name: Run the XDP chain (BPF_PROG_TEST_RUN)
+        # xdp_mux plus the five XDP features, loaded as one chain: run with BPF_PROG_TEST_RUN on a crafted RoCEv2 frame, and attached to lo through the collector's Manager (-xdp-mux) with real UDP packets.
+        run: |
+          go test -c -tags bpfroot -o "$RUNNER_TEMP/loader.test" ./pkg/loader
+          sudo env GRYVIA_EBPF_DIR="$PWD/../ebpf" "$RUNNER_TEMP/loader.test" -test.run 'TestXDP|TestManager' -test.v
+        working-directory: collector
+  collector:
+    name: Collector tests
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: collector/go.mod
+      - run: go vet ./... && go test ./...
+        working-directory: collector

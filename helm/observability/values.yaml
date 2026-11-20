@@ -1,0 +1,91 @@
+# Observability stack configuration
+
+prometheus:
+  enabled: true
+
+grafana:
+  enabled: true
+  # adminPassword must be set explicitly via --set or an existing secret
+  # adminPassword: ""
+  # existingSecret: my-grafana-secret
+  dashboardProviders:
+    dashboardproviders.yaml:
+      apiVersion: 1
+      providers:
+        - name: 'gryvia'
+          orgId: 1
+          folder: 'Gryvia'
+          type: file
+          disableDeletion: false
+          editable: true
+          options:
+            path: /var/lib/grafana/dashboards/gryvia
+
+kube-prometheus-stack:
+  prometheus:
+    prometheusSpec:
+      retention: 30d
+      storageSpec:
+        volumeClaimTemplate:
+          spec:
+            accessModes: ["ReadWriteOnce"]
+            resources:
+              requests:
+                storage: 100Gi
+      additionalScrapeConfigs:
+        # DCGM Exporter scraping
+        - job_name: 'dcgm-exporter'
+          kubernetes_sd_configs:
+            - role: endpoints
+              namespaces:
+                names:
+                  - gryvia-system
+          relabel_configs:
+            - source_labels: [__meta_kubernetes_service_name]
+              action: keep
+              regex: dcgm-exporter
+
+  grafana:
+    enabled: true
+    # adminPassword must be set via --set grafana.adminPassword=<value>
+    # existingSecret: my-grafana-secret
+    dashboardProviders:
+      dashboardproviders.yaml:
+        apiVersion: 1
+        providers:
+          - name: 'gryvia'
+            orgId: 1
+            folder: 'Gryvia'
+            type: file
+            disableDeletion: false
+            editable: true
+            options:
+              path: /var/lib/grafana/dashboards/gryvia
+    dashboards:
+      gryvia:
+        gpu-overview:
+          gnetId: 12239
+          revision: 1
+          datasource: Prometheus
+
+  alertmanager:
+    enabled: true
+    config:
+      global:
+        resolve_timeout: 5m
+      route:
+        group_by: ['alertname', 'cluster']
+        group_wait: 10s
+        group_interval: 10s
+        repeat_interval: 12h
+        receiver: 'default'
+      receivers:
+        - name: 'default'
+          # Configure at least one receiver (email, Slack, PagerDuty, etc.)
+          # Example:
+          # slack_configs:
+          #   - api_url: '<webhook-url>'
+          #     channel: '#gryvia-alerts'
+          webhook_configs:
+            - url: 'http://alertmanager-webhook.gryvia-system.svc:9093/api/v1/alerts'
+              send_resolved: true

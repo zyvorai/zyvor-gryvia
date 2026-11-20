@@ -1,0 +1,13 @@
+# Requires `--set nvidia.mig.strategy=mixed --set nvidia.migManager.enabled=true`.
+# Profile name must be a GPU Operator mig-parted profile (for example all-1g.10gb).
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaGPUSharingPolicy
+metadata:
+  name: mig-small
+spec:
+  strategy: mig
+  mig:
+    enabled: true
+    profiles:
+      - name: all-1g.10gb
+        count: 7

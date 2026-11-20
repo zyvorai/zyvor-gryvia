@@ -1,0 +1,71 @@
+# GryviaBudget - Monthly GPU compute budget with alert thresholds
+# Defines a $50,000/month budget for the ML research team with graduated
+# alerts at 50%, 80%, and 95% consumption, and hard enforcement at the limit.
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaBudget
+metadata:
+  name: ml-research-monthly
+spec:
+  # Who this budget applies to
+  scope:
+    type: team
+    name: ml-research
+
+  # Budget period
+  period:
+    type: monthly
+
+  # Cost and resource limits
+  limits:
+    costUSD: 50000              # $50,000/month hard limit
+    gpuHours: 10000             # 10,000 GPU-hours per month
+    gpuTypeHours:
+      H100: 5000                # Max 5,000 H100-hours (most expensive)
+      A100: 8000                # Max 8,000 A100-hours
+    maxConcurrentJobs: 20       # No more than 20 running jobs at once
+    maxConcurrentGPUs: 64       # Max 64 GPUs allocated at any time
+
+  # Graduated alert thresholds with escalating actions
+  alerts:
+    # 50% consumed - informational notification
+    - threshold: 50
+      actions:
+        - notify
+      recipients:
+        - "ml-research@company.com"
+
+    # 80% consumed - warning with Slack escalation
+    - threshold: 80
+      actions:
+        - notify
+        - slack
+      recipients:
+        - "ml-research@company.com"
+        - "alice@company.com"
+
+    # 95% consumed - critical alert, start throttling new jobs
+    - threshold: 95
+      actions:
+        - notify
+        - slack
+        - throttle
+      recipients:
+        - "ml-research@company.com"
+        - "alice@company.com"
+        - "platform-team@company.com"
+
+  # Enforcement policy when budget is exceeded
+  enforcement:
+    enabled: true
+    action: block               # Block new job submissions (warn, block, throttle)
+    gracePeriod: "1h"           # Allow 1 hour grace period for running jobs
+
+  # Unused budget rollover policy
+  rollover:
+    enabled: true
+    maxRolloverPercent: 20      # Roll over up to 20% of unused budget
+
+  # Allow high-priority jobs to exceed the budget
+  priority:
+    allowOverride: true
+    overrideLimitPercent: 10    # High-priority can exceed budget by up to 10%

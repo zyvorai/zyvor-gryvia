@@ -1,0 +1,174 @@
+# GryviaGPUSharingPolicy examples (node labels for NVIDIA GPU Operator).
+# For schedule-time half-GPU packing without these CRDs, use KAI:
+#   gryvia submit --gpu 0.5 ...   # → gpu-fraction annotation (scripts/e2e-kai.sh)
+# strategy: fractional below is soft / label-oriented — not CUDA NvFractions.
+# Example: Time-Slicing for V100 GPUs
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaGPUSharingPolicy
+metadata:
+  name: v100-time-slicing
+spec:
+  nodeSelector:
+    gryvia.io/gpu-type: V100
+
+  strategy: time-slicing
+
+  timeSlicing:
+    enabled: true
+    maxPodsPerGPU: 4  # 4 pods can share each GPU
+    sliceDuration: 100ms
+    memoryLimitPercent: 25  # Each pod gets 25% memory
+    enforcement: soft
+
+  qos:
+    guaranteedMemory: true
+    guaranteedCompute: false
+    isolationLevel: memory
+---
+# Example: Fractional T4 GPUs
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaGPUSharingPolicy
+metadata:
+  name: t4-fractional
+spec:
+  nodeSelector:
+    gryvia.io/gpu-type: T4
+
+  strategy: fractional
+
+  fractionalGPU:
+    enabled: true
+    granularity: "1/8"  # Support 1/8, 1/4, 1/2, 1 GPU
+    oversubscription:
+      enabled: true
+      maxRatio: 1.25  # Allow 125% allocation
+
+  qos:
+    guaranteedMemory: true
+    isolationLevel: memory
+---
+# Example: MIG Profiles for A100
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaGPUSharingPolicy
+metadata:
+  name: a100-mig-mixed
+spec:
+  nodeSelector:
+    gryvia.io/gpu-type: A100-80G
+
+  strategy: mig
+
+  mig:
+    enabled: true
+    profiles:
+      - name: 1g.10gb
+        count: 4  # 4x 1g.10gb per GPU
+      - name: 3g.40gb
+        count: 2  # 2x 3g.40gb per GPU
+      # Total: 6 instances per GPU (4+2)
+---
+# Example: Priority-Based Sharing
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaGPUSharingPolicy
+metadata:
+  name: priority-based-sharing
+spec:
+  nodeSelector:
+    gryvia.io/node-pool: shared
+
+  strategy: time-slicing
+
+  timeSlicing:
+    enabled: true
+    maxPodsPerGPU: 8
+
+  priority:
+    enabled: true
+    highPriorityShare: 60  # High priority gets 60% of GPU time
+    preemptLowPriority: true
+---
+# Example: Job Requesting Fractional GPU
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaAIJob
+metadata:
+  name: inference-fractional
+spec:
+  type: inference
+
+  # One GPU slot. On the shared node pool below, the sharing policy (MIG /
+  # time-slicing) turns each slot into a fraction of a physical GPU.
+  gpus: 1
+  nodeSelector:
+    gryvia.io/node-pool: shared
+  resources:
+    requests:
+      memory: 8Gi
+      cpu: "4"
+
+  image: nvcr.io/nvidia/pytorch:24.01-py3
+  command: ["python", "inference.py"]
+---
+# Example: Job with Time-Sliced GPU
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaAIJob
+metadata:
+  name: dev-environment
+spec:
+  type: training
+
+  # One time-sliced slot from the shared GPU pool
+  gpus: 1
+  nodeSelector:
+    gryvia.io/node-pool: shared
+  resources:
+    requests:
+      memory: 16Gi
+      cpu: "8"
+
+  image: jupyter/tensorflow-notebook:2024.10.0
+---
+# GPU Sharing Status Example
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaGPUSharingPolicy
+metadata:
+  name: t4-fractional
+status:
+  affectedNodes:
+    - gpu-node-10
+    - gpu-node-11
+    - gpu-node-12
+
+  totalGPUs: 12  # 4 GPUs per node × 3 nodes
+
+  effectiveGPUs: 96  # 12 × 8 (1/8 granularity)
+
+  currentAllocations:
+    physical: 12
+    fractional: 45  # 45 fractional allocations active
+    utilization: 0.625  # 62.5% average utilization
+---
+# Multi-Tenant Sharing Example
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaGPUSharingPolicy
+metadata:
+  name: multi-tenant-sharing
+spec:
+  strategy: fractional
+
+  fractionalGPU:
+    enabled: true
+    granularity: "1/4"
+
+  qos:
+    guaranteedMemory: true
+    guaranteedCompute: false
+    isolationLevel: full  # Full isolation between tenants
+
+  # Per-tenant quotas
+  tenantQuotas:
+    - tenant: ml-research
+      maxFractionalGPUs: 32
+      maxMemoryGB: 256
+    - tenant: dev-team
+      maxFractionalGPUs: 16
+      maxMemoryGB: 128

@@ -1,0 +1,41 @@
+{{- /* A NetworkPolicy does not apply to hostNetwork pods, so this is rendered only when the collector has its own pod IP. */ -}}
+{{- if and .Values.ebpf.enabled .Values.ebpf.security.networkPolicy.enabled (not .Values.collector.hostNetwork) }}
+{{- $np := .Values.ebpf.security.networkPolicy }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "network-intelligence.fullname" . }}-collector
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "network-intelligence.labels" . | nindent 4 }}
+    app.kubernetes.io/component: collector
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "network-intelligence.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: collector
+  # Ingress only: the collector's outbound calls (API server) are not restricted here.
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ $np.gateway.namespace | quote }}
+          {{- with $np.gateway.podLabels }}
+          podSelector:
+            matchLabels:
+              {{- toYaml . | nindent 14 }}
+          {{- end }}
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ $np.prometheus.namespace | quote }}
+          {{- with $np.prometheus.podLabels }}
+          podSelector:
+            matchLabels:
+              {{- toYaml . | nindent 14 }}
+          {{- end }}
+      ports:
+        - protocol: TCP
+          port: 9090
+{{- end }}

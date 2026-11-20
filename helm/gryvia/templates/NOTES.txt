@@ -1,0 +1,27 @@
+Gryvia {{ .Chart.AppVersion }} is installed in namespace {{ include "gryvia.namespace" . }}.
+
+Open the dashboard:
+{{- if eq .Values.ui.service.type "NodePort" }}
+  https://<node-ip>:{{ .Values.ui.service.nodePort | default "<nodePort>" }}
+{{- else if .Values.ui.ingress.enabled }}
+  https://{{ .Values.ui.ingress.host }}
+{{- else }}
+  kubectl -n {{ include "gryvia.namespace" . }} port-forward svc/gryvia-ui 8443:443
+  then browse to https://localhost:8443
+{{- end }}
+{{- if eq .Values.tls.mode "selfSigned" }}
+  (self-signed certificate: accept the browser warning once)
+{{- end }}
+
+Sign in as: admin
+{{- if .Values.auth.existingSecret }}
+  password: the GRYVIA_API_KEY value in Secret {{ .Values.auth.existingSecret }}
+{{- else if not .Values.auth.apiKey }}
+  password: kubectl -n {{ include "gryvia.namespace" . }} get secret gryvia-api-key -o jsonpath='{.data.GRYVIA_API_KEY}' | base64 -d
+{{- else if eq .Values.auth.apiKey "Admin@321" }}
+  password: Admin@321
+WARNING: this is the well-known lab key. Set your own before exposing Gryvia to anyone else:
+  helm upgrade gryvia <chart> -n {{ include "gryvia.namespace" . }} --reuse-values --set auth.apiKey='<long random secret>'
+{{- else }}
+  password: the auth.apiKey you set
+{{- end }}

@@ -1,0 +1,96 @@
+# Example: Monthly Chargeback Configuration
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaChargeback
+metadata:
+  name: monthly-chargeback
+spec:
+  period:
+    type: monthly
+    timezone: America/Los_Angeles
+
+  allocationModel:
+    method: actual-usage
+    includePlatformCosts: true
+    platformOverhead: 15
+
+  pricing:
+    currency: USD
+
+    gpuRates:
+      H100:
+        hourlyRate: 32.00
+        monthlyReserved: 18000  # ~25% discount
+        spotDiscount: 40
+      A100-80G:
+        hourlyRate: 24.00
+        monthlyReserved: 14400
+        spotDiscount: 40
+      A100-40G:
+        hourlyRate: 18.00
+        monthlyReserved: 11000
+        spotDiscount: 40
+      V100:
+        hourlyRate: 16.00
+        monthlyReserved: 9600
+        spotDiscount: 45
+      T4:
+        hourlyRate: 8.00
+        monthlyReserved: 4800
+        spotDiscount: 50
+
+    storage:
+      standard: 0.10  # per GB/month
+      performance: 0.25
+      archive: 0.02
+
+    network:
+      egressPerGB: 0.05
+      ingressPerGB: 0
+
+  costCenters:
+    - id: cc-ml-research
+      name: ML Research Team
+      description: Machine Learning R&D
+      teams: [ml-research, cv-team]
+      budget:
+        monthly: 75000
+        quarterly: 225000
+        annual: 900000
+      billingContact:
+        name: Alice Johnson
+        email: alice@company.com
+        department: AI Research
+
+    - id: cc-product-ml
+      name: Product ML Team
+      description: Production ML Systems
+      teams: [product-ml, nlp-team]
+      budget:
+        monthly: 125000
+        quarterly: 375000
+        annual: 1500000
+      billingContact:
+        name: Bob Smith
+        email: bob@company.com
+        department: Engineering
+
+    - id: cc-data-science
+      name: Data Science Team
+      description: Analytics and Data Science
+      teams: [data-science]
+      budget:
+        monthly: 50000
+        quarterly: 150000
+        annual: 600000
+      billingContact:
+        name: Carol Davis
+        email: carol@company.com
+        department: Analytics
+
+  reports:
+    enabled: true
+    frequency: monthly
+    formats: [pdf, csv, excel]
+    includeDetails: true
+
+  mode: chargeback

@@ -1,0 +1,203 @@
+---
+# GryviaTrainingProfiler Example
+# Automatically profiles all training jobs and generates GPU efficiency recommendations.
+#
+# Usage:
+#   kubectl apply -f profiler-example.yaml
+#
+# Check profiling status:
+#   kubectl get gryviatrainingprofilers
+#   kubectl describe gryviatrainingprofiler gpu-efficiency-profiler
+#
+# View events for recommendations:
+#   kubectl get events --field-selector reason=ProfilerBatchSize
+#   kubectl get events --field-selector reason=ProfilerMixedPrecision
+#   kubectl get events --field-selector reason=ProfilingComplete
+
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaTrainingProfiler
+metadata:
+  name: gpu-efficiency-profiler
+  namespace: default
+spec:
+  # Profile all training jobs automatically
+  target:
+    type: auto
+    jobSelector:
+      gryvia.io/type: training
+    autoProfile:
+      warmupSteps: 100     # Skip initial 100 steps (model warmup)
+      profileSteps: 50     # Profile for 50 steps
+      cooldownMinutes: 30  # Wait 30 min between profiling same job
+
+  # Collect all available metrics
+  metrics:
+    gpuCompute:
+      smUtilization: true
+      tensorCoreUtilization: true
+      flopsEfficiency: true
+    gpuMemory:
+      memoryBandwidthUtilization: true
+      peakMemoryUsage: true
+    dataPipeline:
+      ioWaitRatio: true
+      dataloaderThroughput: true
+    communication:
+      ncclBandwidth: true
+      allReduceTime: true
+      computeCommOverlap: true
+
+  # Enable all analysis categories
+  analysis:
+    compareBaseline: true
+    baselineSource: builtin
+    recommendations:
+      batchSize: true
+      dataLoading: true
+      mixedPrecision: true
+      compilationOptimization: true
+      distributedStrategy: true
+      gpuTypeRecommendation: true
+    severityThreshold: warning
+
+  # Store results everywhere
+  output:
+    storeInJobStatus: true
+    emitEvents: true
+    prometheusMetrics: true
+
+---
+# Example: Profile a specific job
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaTrainingProfiler
+metadata:
+  name: llm-job-profiler
+  namespace: default
+spec:
+  target:
+    type: job-ref
+    jobRef: llama-70b-training
+    autoProfile:
+      warmupSteps: 200
+      profileSteps: 100
+      cooldownMinutes: 60
+
+  metrics:
+    gpuCompute:
+      smUtilization: true
+      tensorCoreUtilization: true
+      flopsEfficiency: true
+    gpuMemory:
+      memoryBandwidthUtilization: true
+      peakMemoryUsage: true
+    communication:
+      ncclBandwidth: true
+      allReduceTime: true
+      computeCommOverlap: true
+
+  analysis:
+    compareBaseline: true
+    baselineSource: builtin
+    recommendations:
+      batchSize: true
+      mixedPrecision: true
+      distributedStrategy: true
+      gpuTypeRecommendation: true
+    severityThreshold: info  # Show all recommendations
+
+  output:
+    storeInJobStatus: true
+    emitEvents: true
+    prometheusMetrics: true
+
+---
+# Example: On-demand profiling for debugging
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaTrainingProfiler
+metadata:
+  name: debug-profiler
+  namespace: default
+spec:
+  target:
+    type: on-demand
+    jobSelector:
+      team: ml-research
+    autoProfile:
+      warmupSteps: 50
+      profileSteps: 25
+      cooldownMinutes: 5  # Short cooldown for debugging
+
+  metrics:
+    gpuCompute:
+      smUtilization: true
+      tensorCoreUtilization: true
+      flopsEfficiency: true
+    gpuMemory:
+      memoryBandwidthUtilization: true
+      peakMemoryUsage: true
+    dataPipeline:
+      ioWaitRatio: true
+      dataloaderThroughput: true
+
+  analysis:
+    compareBaseline: true
+    baselineSource: builtin
+    recommendations:
+      batchSize: true
+      dataLoading: true
+      mixedPrecision: true
+      compilationOptimization: true
+    severityThreshold: info
+
+  output:
+    storeInJobStatus: true
+    emitEvents: true
+    prometheusMetrics: false
+
+---
+# Example training job that would be profiled
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaAIJob
+metadata:
+  name: resnet50-training-profiled
+  namespace: default
+  labels:
+    gryvia.io/type: training
+    team: ml-research
+spec:
+  type: training
+  model: resnet50
+  gpus: 4
+  gpuType: A100
+  network: standard
+  storage: vast-fast
+
+  image: nvcr.io/nvidia/pytorch:24.01-py3
+  imagePullPolicy: IfNotPresent
+
+  command:
+    - python
+    - train.py
+  args:
+    - --model=resnet50
+    - --batch-size=256
+    - --epochs=90
+    - --data=/data/imagenet
+
+  distributed:
+    enabled: true
+    framework: pytorch
+    nodes: 2
+    gpusPerNode: 4
+    backend: nccl
+
+  resources:
+    requests:
+      memory: "64Gi"
+      cpu: "16"
+    limits:
+      memory: "128Gi"
+      cpu: "32"
+
+  priority: 50
+  retryLimit: 3

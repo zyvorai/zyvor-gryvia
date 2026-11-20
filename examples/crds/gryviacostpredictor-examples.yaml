@@ -1,0 +1,61 @@
+# Example: Cost Predictor
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaCostPredictor
+metadata:
+  name: default-predictor
+spec:
+  historicalData:
+    lookbackDays: 90
+    minimumSamples: 10
+    similarityFactors:
+      - gpuType
+      - gpuCount
+      - modelType
+      - datasetSize
+
+  models:
+    trainingTime:
+      method: weighted-average
+      features:
+        - gpuCount
+        - modelSize
+        - datasetSize
+        - batchSize
+    costEstimation:
+      includeStorageCost: true
+      includeNetworkCost: false
+      currency: USD
+    queueTime:
+      method: exponential-smoothing
+      includePreemptionRisk: true
+
+  alternatives:
+    enabled: true
+    strategies:
+      - name: cost-optimized
+        constraint: minimize-cost
+      - name: speed-optimized
+        constraint: minimize-time
+      - name: balanced
+        constraint: balance
+    gpuTypesToConsider:
+      - H100
+      - A100-80G
+      - A100-40G
+      - L40
+      - V100
+    includeSpotEstimates: true
+
+  integration:
+    dryRunMode: false
+    webhookAdmission: false
+    injectEstimateAnnotation: true
+
+  pricing:
+    perGpuHour:
+      H100: 8.00
+      A100-80G: 4.00
+      A100-40G: 3.00
+      L40: 2.50
+      V100: 2.00
+      T4: 0.75

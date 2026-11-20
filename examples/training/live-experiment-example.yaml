@@ -1,0 +1,170 @@
+---
+# Example: Live Experiment with Hyperparameter Sweep
+#
+# This example creates three training jobs with different learning rates and
+# a GryviaLiveExperiment that compares them in real time with early stopping.
+#
+# Usage:
+#   kubectl apply -f live-experiment-example.yaml
+#   kubectl get gryvialiveexperiment lr-sweep -w
+#
+
+# Job 1: Learning rate 0.001
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaAIJob
+metadata:
+  name: resnet-lr-001
+  namespace: ml-team
+spec:
+  type: training
+  model: resnet-50
+  gpus: 4
+  gpuType: A100
+  image: nvcr.io/nvidia/pytorch:24.01-py3
+  command:
+    - python
+    - train.py
+    - --model=resnet50
+    - --lr=0.001
+    - --epochs=100
+    - --batch-size=256
+  env:
+    - name: EXPERIMENT_NAME
+      value: "lr-sweep-001"
+
+---
+# Job 2: Learning rate 0.01
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaAIJob
+metadata:
+  name: resnet-lr-01
+  namespace: ml-team
+spec:
+  type: training
+  model: resnet-50
+  gpus: 4
+  gpuType: A100
+  image: nvcr.io/nvidia/pytorch:24.01-py3
+  command:
+    - python
+    - train.py
+    - --model=resnet50
+    - --lr=0.01
+    - --epochs=100
+    - --batch-size=256
+  env:
+    - name: EXPERIMENT_NAME
+      value: "lr-sweep-01"
+
+---
+# Job 3: Learning rate 0.1
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaAIJob
+metadata:
+  name: resnet-lr-1
+  namespace: ml-team
+spec:
+  type: training
+  model: resnet-50
+  gpus: 4
+  gpuType: A100
+  image: nvcr.io/nvidia/pytorch:24.01-py3
+  command:
+    - python
+    - train.py
+    - --model=resnet50
+    - --lr=0.1
+    - --epochs=100
+    - --batch-size=256
+  env:
+    - name: EXPERIMENT_NAME
+      value: "lr-sweep-1"
+
+---
+# Live Experiment: Compare all three jobs
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaLiveExperiment
+metadata:
+  name: lr-sweep
+  namespace: ml-team
+spec:
+  description: "Learning rate sweep for ResNet-50 on ImageNet"
+
+  jobs:
+    - name: lr-0.001
+      jobRef: resnet-lr-001
+    - name: lr-0.01
+      jobRef: resnet-lr-01
+    - name: lr-0.1
+      jobRef: resnet-lr-1
+
+  comparison:
+    primaryMetric: loss
+    direction: minimize
+    secondaryMetrics:
+      - name: accuracy
+        weight: 0.3
+    metricSource:
+      type: log-pattern
+      patterns:
+        loss: 'loss[=:]\s*([\d.]+)'
+        accuracy: 'accuracy[=:]\s*([\d.]+)'
+        epoch: 'epoch[=:]\s*(\d+)'
+
+  strategy:
+    comparisonPoints:
+      - type: epoch
+        values: [5, 10, 25, 50, 75]
+
+    earlyTermination:
+      enabled: true
+      method: median
+      minRunFraction: 0.25
+      confidenceLevel: 0.95
+      graceEpochs: 5
+
+    anomalyDetection:
+      lossPlateauDetection: true
+      lossDivergenceDetection: true
+      gradientExplosionDetection: true
+
+    intervention:
+      enabled: true
+      actions:
+        - terminate
+        - notify
+
+  notifications:
+    realTimeLeaderboard: true
+    onNewLeader: true
+    onTermination: true
+    channel: "slack://#ml-experiments"
+
+---
+# Expected status after running for a while:
+#
+# kubectl get fle lr-sweep
+# NAME       PHASE     LEADER    GPUHOURSSAVED   COSTSAVED   AGE
+# lr-sweep   Running   lr-0.01   12.5            43.75       2h
+#
+# kubectl get fle lr-sweep -o yaml
+# status:
+#   phase: Running
+#   startTime: "2024-01-21T10:00:00Z"
+#   leaderboard:
+#     - rank: 1
+#       job: lr-0.01
+#       primaryMetricValue: 0.152
+#       status: Running
+#     - rank: 2
+#       job: lr-0.001
+#       primaryMetricValue: 0.287
+#       status: Running
+#     - rank: 3
+#       job: lr-0.1
+#       primaryMetricValue: 1.543
+#       status: TerminatedEarly
+#       reason: "loss value 1.5430 exceeds median threshold 0.2200"
+#   gpuHoursSaved: 12.5
+#   costSaved: 43.75
+#   anomaliesDetected: 1

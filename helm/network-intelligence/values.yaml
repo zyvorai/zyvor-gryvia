@@ -1,0 +1,319 @@
+# Default values for gryvia-network-intelligence
+
+# Operator configuration
+operator:
+  image:
+    repository: ghcr.io/zyvorai/gryvia-network-intelligence-operator
+    # Defaults to the chart appVersion.
+    tag: ""
+    pullPolicy: IfNotPresent
+  replicas: 1
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+  nodeSelector: {}
+  tolerations: []
+  # Where the operator's controllers read their data (docs/network-intelligence-sources.md). Off by default:
+  # nothing below is rendered and the operator starts with its built-in defaults (it looks for collector pods in
+  # its own namespace and sends unsigned requests; objects then say SourceAvailable=False when nothing answers).
+  # When enabled, the chart also grants the operator the RBAC its controllers need (its own ten kinds, read of
+  # GryviaFabricSignal / GryviaNetworkUsageRecord / GryviaNetworkRate, CiliumNetworkPolicy management). NOT yet
+  # run on a cluster; the e2e workflow .github/workflows/e2e-netintel.yml proves the operator side with a fake collector.
+  sources:
+    enabled: false
+    collector:
+      # Namespace of the collector pods; empty means the release namespace (namespace.name).
+      namespace: ""
+      port: 9090
+      # Secret in the release namespace holding the collector API token (the one behind
+      # ebpf.security.apiTokenSecret); mounted and read on every request, requests are HMAC-signed with it.
+      # Empty defaults to ebpf.security.apiTokenSecret; if both are empty requests are unsigned.
+      tokenSecret: ""
+      tokenKey: token
+      # https to the collectors. caSecret holds the CA bundle that signed the collector certificate (key caKey);
+      # empty with tls=true uses the system trust store. serverName is the certificate name to verify (collectors
+      # are reached by pod IP, so the certificate must carry it; the default matches ebpf.security.tls.certManager.dnsNames).
+      tls: false
+      caSecret: ""
+      caKey: ca.crt
+      serverName: gryvia-collector
+      # mTLS client certificate (Secret with tls.crt/tls.key) for collectors run with ebpf.security.tls.clientCA.
+      clientCertSecret: ""
+      timeout: 5s
+    # Netra flow history for GryviaTraceSession and GryviaFlowPolicy.status.matchedFlows (env GRYVIA_NETRA_URL/TOKEN).
+    netra:
+      url: ""
+      # Secret (release namespace) with the bearer token; empty sends none.
+      tokenSecret: ""
+      tokenKey: token
+      # Secret with a CA bundle (key caKey) for an https Netra with a private CA.
+      caSecret: ""
+      caKey: ca.crt
+
+# eBPF Collector configuration
+collector:
+  image:
+    repository: ghcr.io/zyvorai/gryvia-ebpf-collector
+    tag: ""
+    pullPolicy: IfNotPresent
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+  # Default true (unchanged). The collector needs hostPID and host paths for eBPF but, by code reading, hostNetwork
+  # only for the programs attached to a HOST network interface (XDP/TCX: packet_filter, dns_tracker, cost tracker,
+  # trace correlator, roce_cnp, pfc_pause): the loader resolves ebpf.interface with net.InterfaceByName inside the
+  # pod's own network namespace. Kprobes, tracepoints, sockops/sk_msg (cgroup) and uprobes do not depend on it.
+  # Set false ONLY with ebpf.interface empty (the chart refuses otherwise); then port 9090 is served on the pod IP
+  # instead of the node IP and ebpf.security.networkPolicy can restrict who may reach it. Not yet run on a cluster.
+  # See docs/collector-security.md.
+  hostNetwork: true
+  nodeSelector: {}
+  tolerations:
+    - operator: Exists
+
+# eBPF collector (per-node DaemonSet, image gryvia-ebpf-collector). Off by default. The programs are CO-RE and
+# need a node kernel with BTF (/sys/kernel/btf/vmlinux); tcx programs need Linux 6.6+. Verified on Linux 7.0 x86_64
+# only (arm64 compiles but is unloaded); NCCL/CUDA/RDMA programs have not run on GPU or RDMA hardware.
+# Alternatively read flows from Netra (see apiGateway.netra in the gryvia chart).
+ebpf:
+  enabled: false
+  # A Secret in the network-intelligence namespace containing a random >=32 character token.
+  # Leave empty to disable the diagnostic HTTP endpoint.
+  flightTokenSecret: ""
+  flightTokenKey: token
+  # Attach the XDP/TCX programs (packet filter, DNS tracker, cost tracker, trace correlator) to this interface.
+  # Empty leaves them unattached.
+  interface: ""
+  # cgroup v2 path for the sockops/sk_msg programs (for example /host/sys/fs/cgroup). Empty leaves them unattached.
+  cgroupPath: ""
+  # Publish the folded fabric signals of attributed jobs into the status of an EXISTING GryviaFabricSignal
+  # (spec.jobRef = job name) every 30 s (flag -publish-fabric-status). Off by default. When on, the collector
+  # ClusterRole additionally gets list on gryviafabricsignals and patch on gryviafabricsignals/status; it creates
+  # nothing. Jobs are attributed through the Flight Recorder's pod resolver (needs NODE_NAME, set by this chart).
+  publishFabricStatus: false
+  # With publishFabricStatus: write this node's measurements as its own entry in status.nodes[] (server-side apply,
+  # field manager gryvia-collector-<node>, ttl 5 min) instead of merge-patching the top-level status, so collectors
+  # of one job's nodes stop overwriting each other. Needs the ai-operator with aiOperator.mergeFabricSignals (in the
+  # gryvia chart) to fold the entries into the top-level status; without it only status.nodes[] is filled.
+  # No extra RBAC. Off by default (flag -fabric-status-per-node). See docs/fabric-status.md.
+  fabricStatusPerNode: false
+  # Publish this node's fabric health (worst scoreDelta + top reasons, ttl 5 min) into the cluster-scoped
+  # GryviaNodeFabric named after the node, every 30 s (flag -publish-node-fabric). Off by default. When on, the
+  # collector ClusterRole additionally gets create and patch on gryvianodefabrics (Kubernetes RBAC cannot limit
+  # create to one name; the collector only writes the object named after its own NODE_NAME). Read by the
+  # ai-operator only when its fabric-aware scheduling is on (see docs/fabric-scheduling.md).
+  publishNodeFabric: false
+  # Attribute the bytes counted by cost_tracker (needs `interface`) to tenants and peer/zone classes
+  # (flag -attribute-network; docs/network-cost-attribution.md). Off by default. Reads only; no extra RBAC
+  # (pods, nodes, namespaces are already readable by the collector role).
+  attributeNetwork: false
+  # Also write per-tenant egress as GryviaNetworkUsageRecord objects into tenant-<name> namespaces every 60 s
+  # (flag -publish-network-usage). Needs attributeNetwork. Off by default. When on, the collector ClusterRole
+  # additionally gets get/create/patch on gryvianetworkusagerecords.
+  publishNetworkUsage: false
+  # Unified bottleneck diagnosis (GET /api/v1/flight/diagnosis, served whenever flightTokenSecret is set).
+  # Off by default: without cgroupSignals the CPU-throttling, memory and pressure signals are reported as
+  # "unavailable" (never as healthy). cgroupSignals reads cpu.stat, memory.events and *.pressure of the job's pods
+  # from the host cgroup mount this chart already provides (/host/sys/fs/cgroup, read-only, userspace only).
+  diagnosis:
+    cgroupSignals: false
+    # Overrides of the rule thresholds (docs/flight-diagnosis.md), for example {tcpRetransmits: {warn: 50, crit: 500}}.
+    # Empty keeps the defaults. Unknown keys make the collector refuse to start.
+    thresholds: {}
+  # Persistent incident history (-flight-store-dir): append-only JSON-lines segments of per-job incidents and metric
+  # samples, kept for retention and bounded by maxBytes. Off by default. The collector must also have flightTokenSecret
+  # set for the incidents/compare API to be reachable. emptyDir keeps history across collector restarts but not across
+  # pod or node replacement; hostPath keeps it across pod replacement on the same node.
+  flightStore:
+    enabled: false
+    volume: emptyDir          # emptyDir | hostPath
+    hostPath: /var/lib/gryvia/flight
+    sizeLimit: 128Mi          # emptyDir only; keep it above maxBytes
+    retention: 24h
+    maxBytes: 67108864
+    fsync: interval           # always | interval | none
+    incidentMinDuration: 60s
+  # Serving-engine latency (time to first token, inter-token latency, engine queue time). Kernel probes cannot see
+  # tokens, so the collector reads the engines' OWN Prometheus endpoints (vLLM, NVIDIA Triton, HuggingFace TGI) with
+  # read-only HTTP GETs. Off by default: with no targets and discover=false nothing is scraped and no flag is passed.
+  # Figures appear on the collector's /metrics (gryvia_inference_*) and, with publishFabricStatus, in the status of
+  # the job's GryviaFabricSignal. See docs/inference-latency.md.
+  inferMetrics:
+    # Static targets, one string each: "name=vllm,url=http://10.0.0.5:8000/metrics" with optional
+    # ",engine=vllm|triton|tgi" (default: detected) and ",namespace=NS,job=JOB" (attributes the figures to a job).
+    # The collector has hostNetwork by default, so 127.0.0.1 is the node; use pod IPs or Service DNS names.
+    targets: []
+    # Also scrape http://<podIP>:<port>/metrics of pods ON THIS NODE that carry a gryvia.io/job label and declare one of
+    # `ports` as a containerPort. Uses the pod-list permission the collector already has; needs NODE_NAME (set here).
+    discover: false
+    ports: "8000,8002,8080"
+    interval: 15s
+  # Correlate W3C traceparent headers (plaintext HTTP/1.x, IPv4, requests to gryvia.io/job pods) with the Flight
+  # Recorder timeline and serve GET /api/v1/flight/trace (HMAC-protected). Needs ebpf.interface and
+  # ebpf.flightTokenSecret. TLS-terminated traffic is invisible to it. Off by default.
+  traceCorrelation: false
+  # quota_pace is the only eBPF program that changes anything: it lowers SO_MAX_PACING_RATE of new outbound TCP
+  # connections of cgroups that hold a lease. Everything here is off by default and needs cgroupPath.
+  quotaPace:
+    # Attach quota_pace (-quota-pace). Alone it paces nothing: the pace map stays empty.
+    enabled: false
+    # MUTATING. Also run the GryviaQuota reconcile (-quota-pace-sync): every 30 s, pods on the node in the
+    # namespaces of a GryviaQuota with spec.network.maxEgressMbps get a 2-minute pace lease (renewed while the
+    # quota holds; API errors change nothing and leases expire = fail open). Never touches kube-system,
+    # gryvia-system, kube-public, kube-node-lease or this release's namespace. Adds list on gryviaquotas to
+    # the collector ClusterRole.
+    sync: false
+    # Log what sync would grant or revoke and write nothing (-quota-pace-dry-run). Try this first.
+    dryRun: false
+  # Security of the collector HTTP listener (port 9090: /metrics and /api/v1/*). Everything here is off by default,
+  # which keeps today's behaviour (plain HTTP, unauthenticated except the flight endpoint; the collector logs a
+  # warning at start). See docs/collector-security.md.
+  security:
+    # Refuse to start (-require-auth) unless a credential mechanism below is configured. Recommended.
+    requireAuth: false
+    # Acknowledge an unauthenticated listener explicitly (-insecure-listener). Contradicts everything else here.
+    insecureListener: false
+    # Secrets in the collector namespace holding a random >=32 character token under the given key.
+    # apiToken: every /api/v1/* request (except /api/v1/flight/diagnose, which keeps flightTokenSecret) must be
+    #   HMAC-signed with it (-api-token-file). The gateway signs with GRYVIA_COLLECTOR_TOKEN (gryvia chart
+    #   apiGateway.collector.tokenSecret).
+    # metricsToken: bearer token that opens /metrics only (-metrics-token-file), for Prometheus.
+    apiTokenSecret: ""
+    apiTokenKey: token
+    metricsTokenSecret: ""
+    metricsTokenKey: token
+    tls:
+      # Serve TLS >= 1.2 (-tls-cert-file/-tls-key-file; rotated files are picked up without a restart).
+      enabled: false
+      # Existing Secret with tls.crt and tls.key (and ca.crt when clientCA is true). Defaults to
+      # <fullname>-collector-tls, which certManager creates when enabled.
+      secretName: ""
+      # mTLS (-tls-client-ca-file=ca.crt of the Secret): every client, including Prometheus and the gateway,
+      # must present a certificate signed by that CA.
+      clientCA: false
+      # Create a cert-manager Certificate for the server (same pattern as the gryvia chart's tls.mode=certManager).
+      certManager:
+        enabled: false
+        issuerName: ""
+        issuerKind: ClusterIssuer
+        # Names in the certificate. Clients reach collectors by pod IP, so they verify one of these names
+        # (gateway: GRYVIA_COLLECTOR_SERVER_NAME / apiGateway.collector.serverName).
+        dnsNames:
+          - gryvia-collector
+    # How the collector ServiceMonitor scrapes a secured listener (used when tls.enabled).
+    serviceMonitor:
+      # Name to verify in the collector certificate (Prometheus scrapes pod IPs).
+      serverName: gryvia-collector
+      # Secret (in the ServiceMonitor's namespace) with the CA that signed the collector certificate.
+      caSecret: {name: "", key: ca.crt}
+      # mTLS: Secret (ServiceMonitor namespace) with the Prometheus client certificate and key.
+      clientCertSecret: {name: "", certKey: tls.crt, keyKey: tls.key}
+    # Rendered only when collector.hostNetwork=false (a NetworkPolicy does not apply to hostNetwork pods): limit
+    # ingress to port 9090 to the listed peers. Empty selectors mean "any pod in that namespace".
+    networkPolicy:
+      enabled: false
+      gateway:
+        namespace: gryvia-system
+        podLabels: {}
+      prometheus:
+        namespace: monitoring
+        podLabels: {}
+  # Paths of libnccl.so / libcudart.so for the GPU uprobes. Empty tries to discover them from running processes.
+  ncclLib: ""
+  cudaLib: ""
+  # Attach xdp_mux as the interface's only XDP program and chain the XDP features (roce_cnp, pfc_pause, dns_tracker,
+  # packet_filter, roce_ecn) behind it, so they all run on one interface (flag -xdp-mux; without it only one XDP
+  # program can attach per interface). Needs ebpf.interface. Off by default. Verified with BPF_PROG_TEST_RUN and
+  # on the loopback interface in CI; UNVERIFIED on a NIC. See ebpf/README.md.
+  xdpMux: false
+  # Opt-in eBPF programs to attach (flag -enable-programs). The programs that nothing acts on are skipped by default: nccl_transport, p2p_fallback, capture_gate, gpu_oom, graph_stall,
+  # gdr_fail, infer_ttft, weight_mmap, gpu_dev and ucx_complete. List the ones to attach, or ["all"]. An unknown name
+  # stops the collector at start. Enabled, their signals are only counted and exported as metrics (capture_gate and the transport/device maps are still never written); see ebpf/README.md.
+  enablePrograms: []
+  # RDMA NIC hardware counters from /sys/class/infiniband (flag -nic-counters): retry/error/CNP/pause rates
+  # folded into the fabric status and exported as gryvia_nic_counter_rate. Off by default; a node without RDMA
+  # devices is skipped. UNVERIFIED on real RDMA hardware. See docs/nccl-rdma-gpu-correlation.md.
+  nicCounters: false
+  # Attach the libibverbs control-path uprobes (flag -ibverbs-probes): QP created/destroyed and registered-memory
+  # counters. Off by default. The data path (post_send/poll_cq) has no exported symbol and is NOT covered.
+  ibverbsProbes: false
+  # Correlate DCGM GPU activity (from the node's dcgm-exporter) with NCCL call windows (flag -dcgm-correlate).
+  # Off by default; informational only. UNVERIFIED on real GPU hardware. The default URL is only reachable with
+  # collector.hostNetwork=true; run dcgm-exporter with a short --collect-interval (1000 ms) or coverage stays low.
+  dcgm:
+    enabled: false
+    url: "http://127.0.0.1:9400/metrics"
+    interval: 1s
+    idleThreshold: 0.1
+
+# Prometheus monitoring
+prometheus:
+  enabled: true
+  serviceMonitor:
+    enabled: true
+    interval: 15s
+    namespace: ""
+    additionalLabels: {}
+  # Optional, OFF by default: also install the Gryvia alert rules (PrometheusRule, needs the Prometheus Operator CRD) and the
+  # Grafana dashboards ConfigMap (label grafana_dashboard: "1"), from monitoring-assets/ (a copy of monitoring/ kept in sync by
+  # scripts/sync-monitoring-assets.sh). Enable them in ONE chart only: the gryvia chart's monitoring.* installs the same assets.
+  rules:
+    enabled: false
+  dashboards:
+    enabled: false
+
+# Namespace configuration
+namespace:
+  create: true
+  name: gryvia-network
+
+# RBAC configuration
+rbac:
+  create: true
+
+# Service Account configuration
+serviceAccount:
+  create: true
+  operator:
+    name: network-intelligence-operator
+    annotations: {}
+  collector:
+    name: ebpf-collector
+    annotations: {}
+
+# High availability
+ha:
+  leaderElection: true
+
+# Container-level security context for the operator
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
+  runAsUser: 65532
+  capabilities:
+    drop:
+      - ALL
+
+# Pod-level security context for the operator
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  fsGroup: 65532
+  seccompProfile:
+    type: RuntimeDefault
+
+# Name overrides
+nameOverride: ""
+fullnameOverride: ""
+
+# Image pull secrets
+imagePullSecrets: []

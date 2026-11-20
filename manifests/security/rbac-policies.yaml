@@ -1,0 +1,158 @@
+---
+# Team Admin Role - Full access to team resources
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: gryvia:team-admin
+rules:
+# Full access to GryviaAIJobs
+- apiGroups: ["gryvia.io"]
+  resources: ["gryviaaijobs"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+# Read access to quotas
+- apiGroups: ["gryvia.io"]
+  resources: ["gryviaquotas"]
+  verbs: ["get", "list", "watch"]
+# Read access to nodes
+- apiGroups: ["gryvia.io"]
+  resources: ["gryviagpunodes"]
+  verbs: ["get", "list", "watch"]
+# Pod logs access
+- apiGroups: [""]
+  resources: ["pods", "pods/log"]
+  verbs: ["get", "list", "watch"]
+# PVC management
+- apiGroups: [""]
+  resources: ["persistentvolumeclaims"]
+  verbs: ["get", "list", "create", "delete"]
+---
+# Team User Role - Submit and manage own jobs
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: gryvia:team-user
+rules:
+# Create and manage own jobs
+- apiGroups: ["gryvia.io"]
+  resources: ["gryviaaijobs"]
+  verbs: ["get", "list", "watch", "create", "delete"]
+# Read quotas
+- apiGroups: ["gryvia.io"]
+  resources: ["gryviaquotas"]
+  verbs: ["get", "list", "watch"]
+# Read nodes
+- apiGroups: ["gryvia.io"]
+  resources: ["gryviagpunodes"]
+  verbs: ["get", "list", "watch"]
+# View own pods
+- apiGroups: [""]
+  resources: ["pods", "pods/log"]
+  verbs: ["get", "list", "watch"]
+---
+# Team Viewer Role - Read-only access
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: gryvia:team-viewer
+rules:
+# Read jobs
+- apiGroups: ["gryvia.io"]
+  resources: ["gryviaaijobs"]
+  verbs: ["get", "list", "watch"]
+# Read quotas
+- apiGroups: ["gryvia.io"]
+  resources: ["gryviaquotas"]
+  verbs: ["get", "list", "watch"]
+# Read nodes
+- apiGroups: ["gryvia.io"]
+  resources: ["gryviagpunodes"]
+  verbs: ["get", "list", "watch"]
+# Read pods
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["get", "list", "watch"]
+---
+# Platform Admin Role - Full cluster management
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: gryvia:platform-admin
+rules:
+# Full access to all Gryvia resources
+- apiGroups: ["gryvia.io"]
+  resources: ["gryviaaijobs", "gryviaquotas", "gryviagpunodes", "gryviastorages", "gryvianetworks"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: ["gryvia.io"]
+  resources: ["gryviaaijobs/status", "gryviaquotas/status", "gryviagpunodes/status", "gryviastorages/status", "gryvianetworks/status"]
+  verbs: ["get", "update", "patch"]
+# Manage nodes
+- apiGroups: [""]
+  resources: ["nodes"]
+  verbs: ["get", "list", "watch", "update", "patch"]
+# Manage pods (no exec for safety)
+- apiGroups: [""]
+  resources: ["pods", "pods/log"]
+  verbs: ["get", "list", "watch", "delete"]
+# Manage storage
+- apiGroups: [""]
+  resources: ["persistentvolumes", "persistentvolumeclaims"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: ["storage.k8s.io"]
+  resources: ["storageclasses"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+# Read RBAC (no write to prevent privilege escalation)
+- apiGroups: ["rbac.authorization.k8s.io"]
+  resources: ["roles", "rolebindings", "clusterroles", "clusterrolebindings"]
+  verbs: ["get", "list", "watch"]
+---
+# Example: Bind team-admin role to ml-research team
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ml-research-admins
+  namespace: default
+subjects:
+- kind: Group
+  name: ml-research-admins
+  apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: ClusterRole
+  name: gryvia:team-admin
+  apiGroup: rbac.authorization.k8s.io
+---
+# Example: Bind team-user role to ml-research users
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ml-research-users
+  namespace: default
+subjects:
+- kind: Group
+  name: ml-research-users
+  apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: ClusterRole
+  name: gryvia:team-user
+  apiGroup: rbac.authorization.k8s.io
+---
+# ServiceAccount for GPU jobs
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: gryvia-job-runner
+  namespace: default
+---
+# RoleBinding for job runner
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: gryvia-job-runner
+  namespace: default
+subjects:
+- kind: ServiceAccount
+  name: gryvia-job-runner
+  namespace: default
+roleRef:
+  kind: ClusterRole
+  name: gryvia:team-user
+  apiGroup: rbac.authorization.k8s.io

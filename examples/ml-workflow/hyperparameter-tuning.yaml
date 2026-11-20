@@ -1,0 +1,55 @@
+# GryviaAutoTuner - Bayesian hyperparameter optimization for ResNet training
+# Runs up to 50 trials (4 in parallel) using Bayesian search to find optimal
+# learning rate, batch size, and optimizer for maximizing validation accuracy.
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaAutoTuner
+metadata:
+  name: resnet-hpo
+  namespace: ml-team
+spec:
+  # Bayesian optimization converges faster than grid/random for continuous params
+  searchAlgorithm: bayesian
+
+  # Optimize for validation accuracy (maximize)
+  objective:
+    metricName: val_accuracy
+    direction: maximize
+
+  # Run at most 50 trials, 4 at a time
+  maxTrials: 50
+  parallelism: 4
+
+  # Stop early if no improvement after 10 consecutive rounds
+  earlyStoppingRounds: 10
+
+  # Define the hyperparameter search space
+  parameterSpace:
+    - name: learning_rate
+      type: float
+      min: 0.0001
+      max: 0.1
+      # Log scale spreads samples evenly across orders of magnitude
+      scale: log
+
+    - name: batch_size
+      type: int
+      values: ["32", "64", "128", "256"]
+
+    - name: optimizer
+      type: categorical
+      values: ["adam", "sgd", "adamw"]
+
+  # Each trial runs this GryviaAIJob spec
+  jobTemplate:
+    type: training
+    model: resnet50
+    image: training/resnet:latest
+    gpus: 1
+    gpuType: A100
+    resources:
+      requests:
+        memory: "16Gi"
+        cpu: "4"
+      limits:
+        memory: "32Gi"
+        cpu: "8"

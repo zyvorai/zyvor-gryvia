@@ -1,0 +1,22 @@
+{{- if and .Values.slurm.enabled .Values.quotaOperator.enabled .Values.quotaOperator.slurmIntegration .Values.quotaOperator.slurm.tokenSecret }}
+{{- $slurm := .Values.quotaOperator.slurm }}
+# A JWT for the quota operator's slurmrestd calls (finished jobs into GryviaUsageRecords), written by the
+# slurm-operator into the Secret quotaOperator.slurm.tokenSecret and rotated before it expires. User slurm is
+# Slurm's SlurmUser in Slinky's slurm.conf, so it can list every job.
+apiVersion: slinky.slurm.net/v1beta1
+kind: Token
+metadata:
+  name: gryvia-accounting
+  namespace: {{ include "gryvia.namespace" . }}
+  labels:
+    {{- include "gryvia.labels" . | nindent 4 }}
+spec:
+  username: slurm
+  jwtKeyRef:
+    name: {{ printf "%s-auth-jwt" .Values.slurm.name }}
+    key: jwt.key
+  secretRef:
+    name: {{ $slurm.tokenSecret }}
+    key: {{ $slurm.tokenKey }}
+  refresh: true
+{{- end }}

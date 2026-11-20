@@ -1,0 +1,106 @@
+---
+# Cost Predictor: Predicts costs, training time, and queue wait for AI jobs
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaCostPredictor
+metadata:
+  name: default-predictor
+spec:
+  # Historical data settings
+  historicalData:
+    lookbackDays: 90
+    minimumSamples: 10
+    similarityFactors:
+      - gpuType
+      - gpuCount
+      - modelType
+      - datasetSize
+
+  # Prediction model configuration
+  models:
+    trainingTime:
+      method: weighted-average
+      features:
+        - gpuCount
+        - modelSize
+        - datasetSize
+        - batchSize
+    costEstimation:
+      includeStorageCost: true
+      includeNetworkCost: false
+      currency: USD
+    queueTime:
+      method: exponential-smoothing
+      includePreemptionRisk: true
+
+  # Alternative GPU configuration recommendations
+  alternatives:
+    enabled: true
+    strategies:
+      - name: cost-optimized
+        constraint: minimize-cost
+      - name: speed-optimized
+        constraint: minimize-time
+      - name: balanced
+        constraint: balance
+    gpuTypesToConsider:
+      - H100
+      - A100-80G
+      - A100-40G
+      - L40
+      - V100
+    includeSpotEstimates: true
+
+  # Integration settings
+  integration:
+    dryRunMode: false
+    webhookAdmission: false
+    injectEstimateAnnotation: true
+
+  # GPU pricing (per hour, USD)
+  pricing:
+    perGpuHour:
+      H100: 8.00
+      A100-80G: 4.00
+      A100-40G: 3.00
+      L40: 2.50
+      V100: 2.00
+      T4: 0.75
+
+---
+# Example: Submit a dry-run job to get a cost estimate without running it
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaAIJob
+metadata:
+  name: llm-training-cost-check
+  namespace: ml-training
+  annotations:
+    gryvia.io/dry-run: "true"
+spec:
+  type: training
+  model: llama-70b
+  gpus: 8
+  gpuType: H100
+  network: rdma
+  storage: lustre-fast
+  storageRequest: "500Gi"
+  image: registry.company.com/training:v1.0
+  command:
+    - torchrun
+  args:
+    - --nproc_per_node=8
+    - train.py
+  priority: 75
+
+# After the predictor processes this job, check annotations:
+#
+#   kubectl get gryviaaijob llm-training-cost-check -n ml-training \
+#     -o jsonpath='{.metadata.annotations}' | jq
+#
+# Expected annotations:
+#   gryvia.io/estimated-cost: "384.00"
+#   gryvia.io/estimated-duration: "6h0m0s"
+#   gryvia.io/estimated-queue-wait: "8m30s"
+#   gryvia.io/cost-confidence: "0.72"
+#   gryvia.io/alternative-gpu: "A100-80G"
+#   gryvia.io/alternative-cost: "192.00"
+#   gryvia.io/potential-savings: "192.00"

@@ -1,0 +1,25 @@
+{{- if and .Values.ebpf.enabled .Values.ebpf.security.tls.enabled .Values.ebpf.security.tls.certManager.enabled }}
+{{- $tls := .Values.ebpf.security.tls }}
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ include "network-intelligence.collectorTLSSecret" . }}
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "network-intelligence.labels" . | nindent 4 }}
+    app.kubernetes.io/component: collector
+spec:
+  secretName: {{ include "network-intelligence.collectorTLSSecret" . }}
+  commonName: gryvia-collector
+  dnsNames:
+    {{- range $tls.certManager.dnsNames }}
+    - {{ . | quote }}
+    {{- end }}
+  usages:
+    - digital signature
+    - key encipherment
+    - server auth
+  issuerRef:
+    name: {{ required "ebpf.security.tls.certManager.issuerName is required when certManager.enabled" $tls.certManager.issuerName }}
+    kind: {{ $tls.certManager.issuerKind }}
+{{- end }}

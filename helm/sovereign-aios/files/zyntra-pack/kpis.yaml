@@ -1,0 +1,115 @@
+# KPIs read from the Gryvia API gateway (ZYNTRA_GRAVIA_URL, ZYNTRA_GRAVIA_TOKEN). The declared values are what
+# Zyntra shows until the first refresh, or when the gateway cannot be reached.
+name: sovereign-aios
+
+kpis:
+  - id: gpu_utilization
+    name: GPU utilization
+    unit: "%"
+    owner: ml-platform
+    value: 0
+    target: 60
+    direction: higher
+    min: 0
+    max: 100
+    freshness: { maxAge: 5m }
+    source: { kind: gravia, path: /api/cluster/stats, field: utilizationPercent }
+  - id: gryvia_pending_jobs
+    name: Pending GPU jobs
+    owner: ml-platform
+    value: 0
+    target: 2
+    direction: lower
+    min: 0
+    freshness: { maxAge: 5m }
+    source: { kind: gravia, path: /api/cluster/stats, field: pendingJobs }
+  - id: gryvia_running_jobs
+    name: Running GPU jobs
+    owner: ml-platform
+    value: 0
+    min: 0
+    source: { kind: gravia, path: /api/cluster/stats, field: runningJobs }
+  - id: gryvia_available_gpus
+    name: Available GPUs
+    owner: ml-platform
+    value: 0
+    direction: higher
+    min: 0
+    source: { kind: gravia, path: /api/cluster/stats, field: availableGPUs }
+  - id: gpu_cost_total
+    name: GPU spend (all time)
+    unit: USD
+    owner: finops
+    value: 0
+    source: { kind: gravia, path: /api/metrics/costs, field: totalCost }
+  # Netra (ZYNTRA_NETRA_URL, ZYNTRA_NETRA_TOKEN): the network under the GPU fabric.
+  - id: ebpf_health_score
+    name: eBPF datapath health
+    unit: score
+    owner: network
+    value: 90
+    target: 80
+    direction: higher
+    min: 0
+    max: 100
+    source: { kind: netra, path: /api/v1/ebpf/health, field: summary.healthScore }
+  - id: kernel_drops_per_s
+    name: Kernel packet drops
+    unit: /s
+    owner: network
+    value: 0
+    target: 10
+    direction: lower
+    min: 0
+    source: { kind: metrics, endpoint: netra, metric: netra_kernel_skb_drops, agg: sum, rate: true }
+  - id: gpu_queue_wait_min
+    name: GPU queue wait
+    unit: min
+    owner: ml-serving
+    value: 0
+    target: 10
+    direction: lower
+    min: 0
+
+constraints:
+  - { kpi: gryvia_available_gpus, mustNotWorsen: true, why: never trade away free GPUs for a KPI win }
+
+edges:
+  - { from: gryvia_pending_jobs, to: gpu_queue_wait_min, weight: 0.6, why: queue depth drives wait time }
+  - { from: gpu_utilization, to: gpu_queue_wait_min, weight: -0.3, why: packing more work per GPU drains the queue }
+
+actions:
+  - id: raise-inference-priority
+    name: Raise inference priority in Gryvia
+    description: Create a GryviaPriority class that lets inference preempt batch jobs, with a 10 minute queue SLA.
+    adapter: gravia
+    risk: medium
+    effects:
+      - { kpi: gpu_queue_wait_min, change: -0.35, uncertainty: 0.3, delay: 5m }
+      - { kpi: gryvia_pending_jobs, change: -0.2, uncertainty: 0.5, delay: 5m }
+    execute:
+      template: gravia.priority
+      params: { name: zyntra-inference-critical, value: "900000", maxQueueTimeMinutes: "10" }
+    outcome:
+      window: 20m
+      samples: 3
+      successCriteria:
+        - { kpi: gpu_queue_wait_min, op: met }
+      guardrails: [gryvia_available_gpus]
+      tolerance: 0.05
+  - id: enable-mig-sharing
+    name: Enable MIG GPU sharing
+    description: Partition datacenter GPUs into 1g.10gb slices so small inference jobs share a card.
+    adapter: gravia
+    risk: medium
+    effects:
+      - { kpi: gpu_utilization, change: 0.4, saturation: 0.3 }
+      - { kpi: gpu_queue_wait_min, change: -0.25, uncertainty: 0.4, delay: 10m }
+    execute:
+      template: gravia.gpu-sharing
+      params: { name: zyntra-mig-inference, profile: 1g.10gb, count: "4", nodeSelector.gryvia.io/gpu-class: datacenter }
+    rollback:
+      template: gravia.gpu-sharing-delete
+      params: { name: zyntra-mig-inference }
+    policy:
+      approvals: 2

@@ -1,0 +1,27 @@
+# Values for the falcosecurity/falco chart that load the Sovereign AI OS rules rendered by helm/sovereign-aios
+# (hardening.falco.enabled=true writes the ConfigMap sovereign-aios-falco-rules into Falco's namespace).
+#
+#   helm install falco falcosecurity/falco --version 9.2.0 -n falco --create-namespace -f deploy/hardening/falco-values.yaml
+#
+# falcoctl is off: Falco runs the rules in its image plus these, and fetches nothing from the internet. Update rules
+# by upgrading the chart (or mirror the rules artifact and turn falcoctl back on).
+driver:
+  kind: modern_ebpf
+falcoctl:
+  artifact:
+    install: {enabled: false}
+    follow: {enabled: false}
+falco:
+  rules_files:
+    - /etc/falco/falco_rules.yaml
+    - /etc/falco/rules.d
+  json_output: true
+mounts:
+  volumes:
+    - name: sovereign-aios-rules
+      configMap:
+        name: sovereign-aios-falco-rules
+  volumeMounts:
+    - name: sovereign-aios-rules
+      mountPath: /etc/falco/rules.d
+      readOnly: true

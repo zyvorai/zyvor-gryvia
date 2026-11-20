@@ -1,0 +1,217 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.22.0
+  name: gryviainferenceinsights.gryvia.io
+spec:
+  group: gryvia.io
+  names:
+    kind: GryviaInferenceInsight
+    listKind: GryviaInferenceInsightList
+    plural: gryviainferenceinsights
+    singular: gryviainferenceinsight
+  scope: Namespaced
+  versions:
+  - name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: GryviaInferenceInsight is the Schema for the gryviainferenceinsights
+          API
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: GryviaInferenceInsightSpec defines the desired state of GryviaInferenceInsight
+            properties:
+              analysisWindow:
+                description: AnalysisWindow is the time window for analysis (e.g.,
+                  "5m", "1h")
+                type: string
+              targetService:
+                description: TargetService is the name of the GryviaInferenceService
+                  to analyze
+                type: string
+            type: object
+          status:
+            description: GryviaInferenceInsightStatus defines the observed state of
+              GryviaInferenceInsight
+            properties:
+              bottleneck:
+                description: Bottleneck identifies the phase with the highest latency
+                  contribution
+                type: string
+              conditions:
+                description: |-
+                  Conditions report whether the data sources behind this status are reachable. The condition
+                  SourceAvailable is False (with a reason and message) when the collector, Netra or the kube
+                  objects this status is derived from are not available, so an empty status is never read as
+                  "nothing happened".
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              e2eP99ms:
+                description: E2EP99Ms is the p99 end-to-end latency in milliseconds
+                  inside the engine (unset = not measured)
+                type: number
+              engine:
+                description: Engine names the serving engine whose own metrics fill
+                  the fields below (vllm, triton, tgi, mixed)
+                type: string
+              inferWaitP99ms:
+                description: InferWaitP99Ms is the p99 network wait in milliseconds
+                  from accept to first read on inference ports (eBPF)
+                type: number
+              itlP99ms:
+                description: ITLP99Ms is the p99 inter-token latency in milliseconds
+                  (unset = not measured)
+                type: number
+              kvCacheUsage:
+                description: KVCacheUsage is the KV cache usage in [0,1] (worst replica)
+                type: number
+              lastAnalysis:
+                description: LastAnalysis is the timestamp of the last analysis
+                format: date-time
+                type: string
+              latencyBreakdown:
+                description: LatencyBreakdown provides per-phase latency measurements
+                properties:
+                  dnsNs:
+                    description: DNSNs is the DNS resolution latency in nanoseconds
+                    format: int64
+                    type: integer
+                  gpuExecNs:
+                    description: GPUExecNs is the GPU execution latency in nanoseconds
+                    format: int64
+                    type: integer
+                  gpuQueueNs:
+                    description: GPUQueueNs is the GPU queue waiting latency in nanoseconds
+                    format: int64
+                    type: integer
+                  postprocessNs:
+                    description: PostprocessNs is the post-processing latency in nanoseconds
+                    format: int64
+                    type: integer
+                  tcpConnectNs:
+                    description: TCPConnectNs is the TCP connection establishment
+                      latency in nanoseconds
+                    format: int64
+                    type: integer
+                  tlsHandshakeNs:
+                    description: TLSHandshakeNs is the TLS handshake latency in nanoseconds
+                    format: int64
+                    type: integer
+                  totalNs:
+                    description: TotalNs is the total end-to-end latency in nanoseconds
+                    format: int64
+                    type: integer
+                type: object
+              p50TotalNs:
+                description: P50TotalNs is the 50th percentile total latency in nanoseconds
+                format: int64
+                type: integer
+              p95TotalNs:
+                description: P95TotalNs is the 95th percentile total latency in nanoseconds
+                format: int64
+                type: integer
+              p99TotalNs:
+                description: P99TotalNs is the 99th percentile total latency in nanoseconds
+                format: int64
+                type: integer
+              phase:
+                description: Phase is the current analysis phase
+                type: string
+              queueTimeP99ms:
+                description: QueueTimeP99Ms is the p99 time in milliseconds a request
+                  waited in the engine queue (unset = not measured)
+                type: number
+              requestsWaiting:
+                description: RequestsWaiting is the number of requests queued in the
+                  engine
+                format: int64
+                type: integer
+              signalRef:
+                description: SignalRef is the GryviaFabricSignal the figures below
+                  were read from
+                type: string
+              ttftP99ms:
+                description: TTFTP99Ms is the p99 time to first token in milliseconds
+                  (unset = not measured)
+                type: number
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

@@ -1,0 +1,145 @@
+# Training Time Machine - Example
+#
+# This example shows how to set up a time machine for a training job,
+# configure checkpoint retention, and fork new experiments from checkpoints.
+#
+# Apply with:
+#   kubectl apply -f timemachine-example.yaml
+#
+---
+# Step 1: Create the source training job
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaAIJob
+metadata:
+  name: resnet50-baseline
+  namespace: default
+  labels:
+    gryvia.io/model: resnet50
+    gryvia.io/team: cv-research
+spec:
+  type: training
+  model: resnet50
+  gpus: 4
+  gpuType: A100
+  network: rdma
+  storage: vast-fast
+
+  image: nvcr.io/nvidia/pytorch:24.01-py3
+  imagePullPolicy: IfNotPresent
+
+  command:
+    - python
+    - train.py
+  args:
+    - "--model=resnet50"
+    - "--dataset=imagenet"
+    - "--batch-size=256"
+    - "--epochs=90"
+    - "--lr=0.1"
+    - "--checkpoint-dir=/data/checkpoints"
+    - "--checkpoint-interval=1000"
+
+  env:
+    - name: WANDB_PROJECT
+      value: "resnet50-experiments"
+
+  distributed:
+    enabled: true
+    framework: pytorch
+    nodes: 2
+    gpusPerNode: 2
+    backend: nccl
+
+  resources:
+    requests:
+      memory: "64Gi"
+      cpu: "16"
+    limits:
+      memory: "128Gi"
+      cpu: "32"
+
+  priority: 50
+  retryLimit: 3
+
+---
+# Step 2: Create the time machine to track checkpoints and enable forking
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaTrainingTimeMachine
+metadata:
+  name: resnet50-timemachine
+  namespace: default
+spec:
+  # Reference to the source training job
+  sourceJob: resnet50-baseline
+
+  # Timeline: index all checkpoints with metrics
+  timeline:
+    enabled: true
+    indexCheckpoints: true
+    metadataPerCheckpoint:
+      - name: train_loss
+        source: metric
+      - name: val_accuracy
+        source: metric
+      - name: learning_rate
+        source: metric
+
+  # Retention: keep milestones and best checkpoints, limit storage
+  retention:
+    keepAll: false
+    keepEveryNth: 10          # Keep every 10th checkpoint
+    keepBest: 5               # Keep the 5 best by primary metric
+    keepMilestones:           # Always keep these specific steps
+      - 1000                  # After warmup
+      - 10000                 # Early training
+      - 50000                 # Mid training
+    maxStorageGi: 200         # Max 200 GiB for checkpoints
+
+  # Forks: create experiments from checkpoints
+  forks:
+    # Fork 1: Try a lower learning rate from the best checkpoint
+    - name: lower-lr-from-best
+      fromCheckpoint:
+        metric:
+          name: val_accuracy
+          selector: max       # Fork from checkpoint with highest val_accuracy
+      overrides:
+        env:
+          - name: LEARNING_RATE
+            value: "0.01"     # 10x lower than original
+          - name: WARMUP_STEPS
+            value: "0"        # No warmup needed when resuming
+          - name: WANDB_RUN_NAME
+            value: "resnet50-lower-lr-fork"
+        args:
+          - "--resume-from-checkpoint"
+
+    # Fork 2: Try heavier augmentation from step 10000
+    - name: heavy-augment-step-10k
+      fromCheckpoint:
+        step: 10000
+      overrides:
+        env:
+          - name: AUGMENTATION
+            value: "heavy"
+          - name: MIXUP_ALPHA
+            value: "0.2"
+          - name: CUTMIX_ALPHA
+            value: "1.0"
+          - name: WANDB_RUN_NAME
+            value: "resnet50-heavy-augment-fork"
+      newJobName: resnet50-heavy-augment
+
+    # Fork 3: Extend training from epoch 60
+    - name: extended-from-epoch-60
+      fromCheckpoint:
+        epoch: 60
+      overrides:
+        env:
+          - name: MAX_EPOCHS
+            value: "150"
+          - name: LR_SCHEDULE
+            value: "cosine-restart"
+          - name: WANDB_RUN_NAME
+            value: "resnet50-extended-fork"
+      newJobName: resnet50-extended

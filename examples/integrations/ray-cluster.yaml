@@ -1,0 +1,269 @@
+---
+# Ray Cluster with GPU Workers
+apiVersion: ray.io/v1alpha1
+kind: RayCluster
+metadata:
+  name: ray-gpu-cluster
+  namespace: default
+spec:
+  rayVersion: '2.9.0'
+
+  # Head node
+  headGroupSpec:
+    serviceType: ClusterIP
+    rayStartParams:
+      dashboard-host: '0.0.0.0'
+      num-cpus: '0'  # Don't schedule tasks on head
+    template:
+      spec:
+        securityContext:
+          runAsNonRoot: true
+          seccompProfile:
+            type: RuntimeDefault
+        containers:
+          - name: ray-head
+            image: rayproject/ray:2.9.0-py310-gpu
+            securityContext:
+              allowPrivilegeEscalation: false
+              capabilities:
+                drop: ["ALL"]
+            ports:
+              - containerPort: 6379
+                name: gcs
+              - containerPort: 8265
+                name: dashboard
+              - containerPort: 10001
+                name: client
+            resources:
+              limits:
+                cpu: 8
+                memory: 32Gi
+              requests:
+                cpu: 4
+                memory: 16Gi
+            volumeMounts:
+              - name: ray-logs
+                mountPath: /tmp/ray
+            env:
+              - name: RAY_GRAFANA_HOST
+                value: "http://grafana.gryvia-system.svc.cluster.local:3000"
+              - name: RAY_PROMETHEUS_HOST
+                value: "http://prometheus.gryvia-system.svc.cluster.local:9090"
+        volumes:
+          - name: ray-logs
+            emptyDir: {}
+
+  # GPU worker groups
+  workerGroupSpecs:
+    # T4 workers for inference
+    - replicas: 2
+      minReplicas: 0
+      maxReplicas: 10
+      groupName: t4-workers
+      rayStartParams:
+        num-gpus: '1'
+      template:
+        spec:
+          containers:
+            - name: ray-worker
+              image: rayproject/ray:2.9.0-py310-gpu
+              resources:
+                limits:
+                  cpu: 8
+                  memory: 32Gi
+                  nvidia.com/gpu: 1
+                requests:
+                  cpu: 4
+                  memory: 16Gi
+                  nvidia.com/gpu: 1
+              volumeMounts:
+                - name: ray-logs
+                  mountPath: /tmp/ray
+          nodeSelector:
+            gryvia.io/gpu-type: T4
+          volumes:
+            - name: ray-logs
+              emptyDir: {}
+
+    # A100-80G workers for training
+    - replicas: 4
+      minReplicas: 1
+      maxReplicas: 16
+      groupName: a100-workers
+      rayStartParams:
+        num-gpus: '2'
+        resources: '{"accelerator_type:A100": 2}'
+      template:
+        spec:
+          containers:
+            - name: ray-worker
+              image: rayproject/ray:2.9.0-py310-gpu
+              resources:
+                limits:
+                  cpu: 32
+                  memory: 256Gi
+                  nvidia.com/gpu: 2
+                requests:
+                  cpu: 16
+                  memory: 128Gi
+                  nvidia.com/gpu: 2
+              volumeMounts:
+                - name: ray-logs
+                  mountPath: /tmp/ray
+                - name: shared-storage
+                  mountPath: /data
+              env:
+                - name: NCCL_DEBUG
+                  value: "INFO"
+          nodeSelector:
+            gryvia.io/gpu-type: A100-80G
+          volumes:
+            - name: ray-logs
+              emptyDir: {}
+            - name: shared-storage
+              persistentVolumeClaim:
+                claimName: ray-shared-storage
+
+  # Autoscaler
+  enableInTreeAutoscaling: true
+  autoscalerOptions:
+    upscalingMode: Default
+    idleTimeoutSeconds: 300
+    resources:
+      limits:
+        cpu: 2
+        memory: 4Gi
+      requests:
+        cpu: 1
+        memory: 2Gi
+
+---
+# Shared storage for Ray cluster
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ray-shared-storage
+  namespace: default
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: vast-sc
+  resources:
+    requests:
+      storage: 1Ti
+
+---
+# Ray Dashboard Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: ray-dashboard
+  namespace: default
+spec:
+  type: LoadBalancer
+  selector:
+    ray.io/cluster: ray-gpu-cluster
+    ray.io/node-type: head
+  ports:
+    - name: dashboard
+      port: 8265
+      targetPort: 8265
+
+---
+# Ray Client Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: ray-client
+  namespace: default
+spec:
+  type: ClusterIP
+  selector:
+    ray.io/cluster: ray-gpu-cluster
+    ray.io/node-type: head
+  ports:
+    - name: client
+      port: 10001
+      targetPort: 10001
+
+---
+# Example Ray Job
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ray-example-script
+  namespace: default
+data:
+  distributed_training.py: |
+    import ray
+    import torch
+    import torch.nn as nn
+    from ray import train
+    from ray.train import ScalingConfig
+    from ray.train.torch import TorchTrainer
+
+    def train_func(config):
+        # Get distributed training info
+        world_size = train.get_context().get_world_size()
+        rank = train.get_context().get_world_rank()
+
+        # Setup device
+        device = torch.device(f"cuda:{rank % torch.cuda.device_count()}")
+
+        # Simple model
+        model = nn.Sequential(
+            nn.Linear(784, 128),
+            nn.ReLU(),
+            nn.Linear(128, 10)
+        ).to(device)
+
+        # Wrap with DDP
+        model = torch.nn.parallel.DistributedDataParallel(model)
+
+        # Training loop
+        optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+
+        for epoch in range(10):
+            # Dummy training step
+            optimizer.zero_grad()
+            loss = torch.rand(1).to(device)
+            loss.backward()
+            optimizer.step()
+
+            # Report metrics
+            train.report({"loss": loss.item(), "epoch": epoch})
+
+        print(f"Rank {rank}/{world_size} completed training")
+
+    # Initialize Ray
+    ray.init(address="ray://ray-client:10001")
+
+    # Create trainer
+    trainer = TorchTrainer(
+        train_func,
+        scaling_config=ScalingConfig(
+            num_workers=4,
+            use_gpu=True,
+            resources_per_worker={"GPU": 2}
+        )
+    )
+
+    # Run training
+    result = trainer.fit()
+    print(f"Training completed: {result}")
+
+---
+# Gryvia Quota for Ray cluster
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaQuota
+metadata:
+  name: ray-cluster-quota
+spec:
+  team: ml-platform
+  namespaces:
+    - default
+  gpuQuota:
+    maxGPUs: 32
+  budget:
+    monthlyBudget: 150000
+    alertThreshold: 80

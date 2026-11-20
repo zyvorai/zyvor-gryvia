@@ -1,0 +1,175 @@
+# Example: ImageNet Dataset
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaDataset
+metadata:
+  name: imagenet-2012
+spec:
+  description: "ImageNet ILSVRC 2012 classification dataset"
+  type: image
+  license: "research-only"
+  tags: [imagenet, classification, vision]
+
+  source:
+    type: s3
+    s3:
+      bucket: datasets-archive
+      prefix: imagenet/ILSVRC2012
+      region: us-west-2
+      credentialsSecret: aws-credentials
+
+  versioning:
+    enabled: true
+    strategy: snapshot
+    retentionPolicy:
+      keepLast: 5
+
+  version: "1.0.0"
+
+  cache:
+    enabled: true
+    storageClass: vast-data
+    size: 200Gi
+    warmup: true  # Pre-load for faster access
+
+  access:
+    public: false
+    allowedTeams:
+      - ml-research
+      - vision-team
+
+
+  statistics:
+    sampleCount: 1281167
+    totalSizeBytes: 147000000000  # 147 GB
+    fileCount: 1281167
+---
+# Example: LLM Training Corpus
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaDataset
+metadata:
+  name: llm-training-corpus-v2
+spec:
+  description: "Large language model training corpus"
+  type: text
+  license: "internal-use"
+  tags: [llm, text, pre-training]
+
+  source:
+    type: vast
+    nfs:
+      server: vast-cluster.company.com
+      path: /datasets/llm-corpus-v2
+
+  versioning:
+    enabled: true
+    strategy: incremental
+    retentionPolicy:
+      keepLast: 10
+      keepDays: 90
+
+  version: "2.1.0"
+
+  cache:
+    enabled: true
+    size: 2Ti
+    warmup: false
+
+  access:
+    public: false
+    allowedTeams:
+      - nlp-team
+      - llm-research
+
+
+  statistics:
+    sampleCount: 500000000  # 500M documents
+    totalSizeBytes: 5000000000000  # 5 TB
+    fileCount: 10000
+---
+# Example: Audio Dataset with Augmentation
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaDataset
+metadata:
+  name: speech-recognition-corpus
+spec:
+  description: "Multi-lingual speech recognition dataset"
+  type: audio
+  tags: [speech, asr, audio]
+
+  source:
+    type: s3   # GCS bucket accessed through its S3-compatible interoperability API
+    s3:
+      bucket: speech-datasets
+      prefix: multi-lingual-v3
+
+  version: "3.0.0"
+
+  cache:
+    enabled: true
+    size: 500Gi
+
+
+  statistics:
+    sampleCount: 10000000
+    totalSizeBytes: 500000000000
+---
+# Example: Using Dataset in Job
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaAIJob
+metadata:
+  name: imagenet-training
+spec:
+  type: training
+
+  # Mount the (cached) dataset from a PVC that holds the imagenet-2012 data
+  volumeMounts:
+    - name: training-data
+      mountPath: /data/imagenet
+      readOnly: true
+  volumes:
+    - name: training-data
+      persistentVolumeClaim:
+        claimName: imagenet-2012-cache
+        readOnly: true
+
+  gpus: 8
+  gpuType: A100-80G
+
+  image: nvcr.io/nvidia/pytorch:24.01-py3
+  command:
+    - python
+    - train.py
+    - --data=/data/imagenet
+    - --batch-size=256
+---
+# Dataset Version History
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaDataset
+metadata:
+  name: imagenet-2012
+status:
+  state: ready
+  currentVersion: "1.0.0"
+
+  versions:
+    - version: "1.0.0"
+      createdAt: "2024-01-01T00:00:00Z"
+      size: 147000000000
+      checksum: sha256:abcd1234...
+      changes: "Initial version"
+
+    - version: "1.0.1"
+      createdAt: "2024-01-15T00:00:00Z"
+      size: 147000000000
+      checksum: sha256:efgh5678...
+      changes: "Fixed corrupted images in validation set"
+
+  cacheStatus:
+    cached: true
+    hitRate: 98.5
+    lastAccess: "2024-01-21T14:00:00Z"
+
+  usage:
+    jobsUsing: 5
+    lastUsedBy: "imagenet-training-42"
+    totalAccesses: 1247

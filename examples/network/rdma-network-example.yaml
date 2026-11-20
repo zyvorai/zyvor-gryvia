@@ -1,0 +1,53 @@
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaNetwork
+metadata:
+  name: rdma-infiniband
+spec:
+  networkType: rdma
+  mtu: 9000
+  nodeSelector:
+    gryvia.io/rdma: "true"
+  rdma:
+    mode: infiniband
+    devices:
+      - mlx5_0
+      - mlx5_1
+    subnet: 10.100.0.0/16
+    gateway: 10.100.0.1
+---
+# Example Pod using RDMA network
+apiVersion: v1
+kind: Pod
+metadata:
+  name: distributed-training
+  annotations:
+    k8s.v1.cni.cncf.io/networks: rdma-infiniband
+spec:
+  containers:
+  - name: pytorch
+    image: nvcr.io/nvidia/pytorch:24.01-py3
+    command: ["torchrun"]
+    args:
+      - "--nproc_per_node=8"
+      - "--nnodes=4"
+      - "--node_rank=0"
+      - "--master_addr=master-0"
+      - "--master_port=29500"
+      - "train.py"
+    resources:
+      limits:
+        nvidia.com/gpu: 8
+        rdma/rdma_shared_device_a: 1
+    volumeMounts:
+    - name: training-data
+      mountPath: /data
+    - name: dshm
+      mountPath: /dev/shm
+  volumes:
+  - name: training-data
+    persistentVolumeClaim:
+      claimName: training-data
+  - name: dshm
+    emptyDir:
+      medium: Memory
+      sizeLimit: 32Gi

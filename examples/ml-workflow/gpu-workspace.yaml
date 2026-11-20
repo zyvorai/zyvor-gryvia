@@ -1,0 +1,41 @@
+# GryviaWorkspace - GPU-attached JupyterLab environment for interactive ML work
+# Creates a persistent development workspace with 2 A100 GPUs, auto-pause on
+# idle, and pre-configured ML libraries.
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaWorkspace
+metadata:
+  name: research-notebook
+  namespace: ml-team
+spec:
+  # Workspace type: jupyter or vscode
+  type: jupyter
+
+  # Attach 2 A100-80G GPUs for large model experimentation
+  gpuCount: 2
+  gpuType: A100-80G
+
+  # Custom JupyterLab image with ML libraries pre-installed
+  image: ml-images/jupyterlab-cuda:12.1-pytorch2.1
+
+  # Persistent storage for notebooks and data
+  storage: "100Gi"
+  storageClassName: fast-ssd
+
+  # CPU and memory allocation
+  cpuRequest: "8"
+  cpuLimit: "16"
+  memRequest: "32Gi"
+  memLimit: "64Gi"
+
+  # Pause workspace after 60 minutes of inactivity to save GPU costs
+  idleTimeoutMinutes: 60
+
+  # Auto-shutdown after 72 hours to prevent runaway costs
+  maxLifetimeHours: 72
+
+  # Pre-set environment variables for the workspace
+  env:
+    WANDB_PROJECT: "ml-research"
+    HF_HOME: "/workspace/.cache/huggingface"
+    NCCL_DEBUG: "INFO"
+    CUDA_VISIBLE_DEVICES: "0,1"

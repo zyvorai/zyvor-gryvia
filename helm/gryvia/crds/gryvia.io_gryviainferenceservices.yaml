@@ -1,0 +1,432 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.22.0
+  name: gryviainferenceservices.gryvia.io
+spec:
+  group: gryvia.io
+  names:
+    kind: GryviaInferenceService
+    listKind: GryviaInferenceServiceList
+    plural: gryviainferenceservices
+    singular: gryviainferenceservice
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.modelRef
+      name: ModelRef
+      type: string
+    - jsonPath: .spec.backend
+      name: Backend
+      type: string
+    - jsonPath: .status.readyReplicas
+      name: Replicas
+      type: integer
+    - jsonPath: .status.phase
+      name: Phase
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: GryviaInferenceService is the Schema for the gryviainferenceservices
+          API
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: GryviaInferenceServiceSpec defines the desired state of GryviaInferenceService
+            properties:
+              args:
+                description: Args are additional arguments passed to the serving container
+                items:
+                  type: string
+                type: array
+              autoscaling:
+                description: Autoscaling configures horizontal pod autoscaling
+                properties:
+                  enabled:
+                    description: Enabled turns on horizontal pod autoscaling
+                    type: boolean
+                  maxReplicas:
+                    description: MaxReplicas is the maximum number of replicas
+                    format: int32
+                    type: integer
+                  minReplicas:
+                    description: MinReplicas is the minimum number of replicas
+                    format: int32
+                    type: integer
+                  targetGPUUtilization:
+                    description: TargetGPUUtilization is the target GPU utilization
+                      percentage for scaling
+                    format: int32
+                    type: integer
+                  targetRequestsPerSecond:
+                    description: TargetRequestsPerSecond is the target request rate
+                      per replica for scaling
+                    format: int32
+                    type: integer
+                required:
+                - enabled
+                - maxReplicas
+                type: object
+              backend:
+                description: Backend is the inference backend (triton, vllm, tensorrt-llm,
+                  torchserve)
+                type: string
+              canary:
+                description: Canary configures canary deployment and traffic splitting
+                properties:
+                  autoPromote:
+                    description: AutoPromote automatically promotes canary to primary
+                      if health checks pass
+                    type: boolean
+                  enabled:
+                    description: Enabled turns on canary deployment
+                    type: boolean
+                  modelVersion:
+                    description: ModelVersion is the model version (GryviaModelRegistry
+                      name) to deploy as canary
+                    type: string
+                  promoteAfterSeconds:
+                    description: PromoteAfterSeconds is the duration in seconds to
+                      wait before auto-promoting
+                    format: int64
+                    type: integer
+                  weight:
+                    description: Weight is the percentage of traffic routed to the
+                      canary (0-100)
+                    format: int32
+                    type: integer
+                required:
+                - enabled
+                - modelVersion
+                - weight
+                type: object
+              gpuCount:
+                description: GPUCount is the number of GPUs per replica
+                format: int32
+                type: integer
+              gpuType:
+                description: GPUType is the preferred GPU type for inference
+                type: string
+              healthCheck:
+                description: HealthCheck configures health checking and automatic
+                  rollback
+                properties:
+                  autoRollback:
+                    description: AutoRollback enables automatic rollback to the previous
+                      version on failure
+                    type: boolean
+                  failureThreshold:
+                    description: FailureThreshold is the number of consecutive failures
+                      before marking unhealthy
+                    format: int32
+                    type: integer
+                  intervalSeconds:
+                    description: IntervalSeconds is the interval between health checks
+                    format: int32
+                    type: integer
+                  path:
+                    description: 'Path is the HTTP health check path (default: /health)'
+                    type: string
+                type: object
+              image:
+                description: Image overrides the default container image for the backend
+                type: string
+              modelRef:
+                description: ModelRef is the name of the GryviaModelRegistry resource
+                  to serve
+                type: string
+              replicas:
+                description: Replicas is the desired number of serving replicas
+                format: int32
+                type: integer
+              scaleToZero:
+                description: |-
+                  ScaleToZero scales the service to zero replicas after a period without requests and back up when the LLM
+                  gateway receives a request for it. Only traffic through the gateway counts and wakes it: callers of
+                  status.endpoint get no activator. Not supported together with an enabled canary.
+                properties:
+                  coldStartTimeoutSeconds:
+                    description: |-
+                      ColdStartTimeoutSeconds is how long the LLM gateway holds a request while the service starts, and how much
+                      longer a service that is not ready may run idle before it is scaled to zero. Default 300.
+                    format: int32
+                    maximum: 3600
+                    minimum: 10
+                    type: integer
+                  enabled:
+                    description: Enabled turns idle scale-down on.
+                    type: boolean
+                  idleSeconds:
+                    description: IdleSeconds without a request (or since the last
+                      wake-up) before the service is scaled to zero. Default 900.
+                    format: int32
+                    minimum: 60
+                    type: integer
+                required:
+                - enabled
+                type: object
+              servicePort:
+                description: 'ServicePort is the port the inference service listens
+                  on (default: 8080)'
+                format: int32
+                type: integer
+              slo:
+                description: |-
+                  SLO keeps latency and error objectives by raising the HPA's minimum replicas while an objective is breached
+                  and the engine is overloaded, and lowering it again after a run of healthy windows. Needs autoscaling
+                  enabled and the operator's inference Prometheus URL; not used together with scale-to-zero.
+                properties:
+                  enabled:
+                    description: Enabled turns SLO control on.
+                    type: boolean
+                  maxErrorRate:
+                    description: MaxErrorRate is the objective for the stable track's
+                      error ratio (serving sidecar counters), 0 to 1.
+                    maximum: 1
+                    minimum: 0
+                    type: number
+                  maxInterTokenMilliseconds:
+                    description: MaxInterTokenMilliseconds is the objective for the
+                      worst replica's p99 inter-token latency.
+                    format: int32
+                    minimum: 1
+                    type: integer
+                  maxTTFTMilliseconds:
+                    description: |-
+                      MaxTTFTMilliseconds is the objective for the worst replica's p99 time to first token (engine metrics read by
+                      the collector, gryvia_inference_latency_seconds{metric="ttft_p99"}).
+                    format: int32
+                    minimum: 1
+                    type: integer
+                  metricsJob:
+                    description: |-
+                      MetricsJob is the job label the collector uses for this service's engine metrics. Default: the service name
+                      (pods of an SLO-controlled service carry gryvia.io/job=<name>, which the collector's discovery uses).
+                    maxLength: 63
+                    type: string
+                  minRequests:
+                    description: MinRequests in a window before it is evaluated. Default
+                      100.
+                    format: int32
+                    minimum: 1
+                    type: integer
+                  scaleDownAfterWindows:
+                    description: ScaleDownAfterWindows is how many consecutive healthy
+                      windows lower the floor by one. Default 10.
+                    format: int32
+                    maximum: 1000
+                    minimum: 3
+                    type: integer
+                  scaleUpStep:
+                    description: ScaleUpStep is how many replicas the floor rises
+                      per breached, overloaded window. Default 1.
+                    format: int32
+                    maximum: 10
+                    minimum: 1
+                    type: integer
+                  windowSeconds:
+                    description: WindowSeconds is the evaluation window and interval.
+                      Default 60.
+                    format: int32
+                    maximum: 600
+                    minimum: 30
+                    type: integer
+                required:
+                - enabled
+                type: object
+            required:
+            - backend
+            - modelRef
+            type: object
+          status:
+            description: GryviaInferenceServiceStatus defines the observed state of
+              GryviaInferenceService
+            properties:
+              canaryStatus:
+                description: CanaryStatus holds the status of the canary deployment
+                properties:
+                  active:
+                    description: Active indicates whether a canary is currently deployed
+                    type: boolean
+                  deploymentName:
+                    description: DeploymentName is the name of the canary Deployment
+                    type: string
+                  health:
+                    description: Health is the canary health status
+                    type: string
+                  readyReplicas:
+                    description: ReadyReplicas is the number of ready canary replicas
+                    format: int32
+                    type: integer
+                  startedAt:
+                    description: StartedAt is when the canary deployment started
+                    format: date-time
+                    type: string
+                  weight:
+                    description: Weight is the current traffic weight for the canary
+                    format: int32
+                    type: integer
+                required:
+                - active
+                type: object
+              conditions:
+                description: Conditions represent the latest available observations
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+              consecutiveFailures:
+                description: ConsecutiveFailures is the number of consecutive health
+                  check failures
+                format: int32
+                type: integer
+              deploymentName:
+                description: DeploymentName is the name of the Kubernetes Deployment
+                type: string
+              endpoint:
+                description: Endpoint is the URL at which the inference service can
+                  be reached
+                type: string
+              healthStatus:
+                description: HealthStatus is the current health (Healthy, Unhealthy,
+                  Unknown)
+                type: string
+              lastHealthCheck:
+                description: LastHealthCheck is the timestamp of the last health check
+                format: date-time
+                type: string
+              lastWakeAt:
+                description: |-
+                  LastWakeAt is when the service was last woken (scaled up from zero, or a wake request while running), or when
+                  scale-to-zero was turned on; the idle period is counted from it or from the last request, whichever is later.
+                format: date-time
+                type: string
+              message:
+                description: Message provides additional status information
+                type: string
+              phase:
+                description: Phase is the current phase (Pending, Deploying, Ready,
+                  ScaledToZero, Failed, RollingBack)
+                type: string
+              readyReplicas:
+                description: ReadyReplicas is the number of ready serving replicas
+                format: int32
+                type: integer
+              scaledToZeroAt:
+                description: ScaledToZeroAt is when the service was scaled to zero
+                  for being idle; unset while it runs.
+                format: date-time
+                type: string
+              serviceName:
+                description: ServiceName is the name of the Kubernetes Service
+                type: string
+              slo:
+                description: SLO reports SLO control (spec.slo).
+                properties:
+                  breaches:
+                    description: Breaches counts breached windows since SLO control
+                      was enabled.
+                    format: int32
+                    type: integer
+                  floorReplicas:
+                    description: FloorReplicas is the HPA minimum the SLO controller
+                      currently sets (0 while it sets none).
+                    format: int32
+                    type: integer
+                  healthyWindows:
+                    description: HealthyWindows is the run of consecutive healthy
+                      windows.
+                    format: int32
+                    type: integer
+                  lastEvaluated:
+                    description: LastEvaluated is when the last window was evaluated.
+                    format: date-time
+                    type: string
+                  message:
+                    description: Message explains the last decision with the measured
+                      values.
+                    type: string
+                  state:
+                    description: State is Healthy, Breached, ScaledUp, ScaledDown,
+                      InsufficientTraffic or Unknown.
+                    type: string
+                type: object
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

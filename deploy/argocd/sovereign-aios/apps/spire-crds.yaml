@@ -1,0 +1,27 @@
+# Add-on spire-crds; its images come through the nodes' registry mirror (ansible role rke2_hardened).
+# The version is the one pinned in deploy/airgap/charts.yaml (scripts/tests/sovereign-aios-airgap.test.sh).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: spire-crds
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: '-2'
+  finalizers:
+  - resources-finalizer.argocd.argoproj.io
+spec:
+  project: sovereign-aios
+  source:
+    repoURL: harbor.sovereign.internal/charts
+    chart: spire-crds
+    targetRevision: 0.6.1
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: spire-server
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true
+    - ServerSideApply=true

@@ -1,0 +1,12 @@
+# Renders the operator.sources.* wiring (flags, Secret mounts, RBAC). Workloads are not run (see ci-values.yaml).
+operator:
+  replicas: 0
+  sources:
+    enabled: true
+    collector:
+      tokenSecret: ci-collector-token
+    netra:
+      url: http://netra.example.svc:8080
+collector:
+  nodeSelector:
+    gryvia.io/ci-never-schedule: "true"

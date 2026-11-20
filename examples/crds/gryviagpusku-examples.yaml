@@ -1,0 +1,25 @@
+# GPU price catalog. Rates are per GPU-hour; tenants are metered against the matching enabled SKU.
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaGpuSku
+metadata:
+  name: h100-standard
+spec:
+  gpuType: H100
+  gpusPerUnit: 8
+  hourlyRate: 6.5
+  currency: USD
+  spotDiscount: 60
+  description: "NVIDIA H100 80GB, 8-GPU node"
+  enabled: true
+---
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaGpuSku
+metadata:
+  name: t4-economy
+spec:
+  gpuType: T4
+  gpusPerUnit: 1
+  hourlyRate: 0.6
+  currency: USD
+  description: "NVIDIA T4 16GB for inference and light training"
+  enabled: true

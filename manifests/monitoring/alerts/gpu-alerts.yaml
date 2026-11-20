@@ -1,0 +1,119 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gryvia-gpu-alerts
+  namespace: gryvia-system
+data:
+  gpu-alerts.yaml: |
+    groups:
+      - name: gpu_health
+        interval: 30s
+        rules:
+          - alert: GPUHighTemperature
+            expr: DCGM_FI_DEV_GPU_TEMP > 85
+            for: 5m
+            labels:
+              severity: warning
+              component: gpu
+            annotations:
+              summary: "GPU temperature is high"
+              description: "GPU {{ $labels.gpu }} on node {{ $labels.kubernetes_node }} has temperature {{ $value }}°C"
+
+          - alert: GPUCriticalTemperature
+            expr: DCGM_FI_DEV_GPU_TEMP > 95
+            for: 1m
+            labels:
+              severity: critical
+              component: gpu
+            annotations:
+              summary: "GPU temperature is critical"
+              description: "GPU {{ $labels.gpu }} on node {{ $labels.kubernetes_node }} has critical temperature {{ $value }}°C"
+
+          - alert: GPULowUtilization
+            expr: avg_over_time(DCGM_FI_DEV_GPU_UTIL[10m]) < 10
+            for: 30m
+            labels:
+              severity: info
+              component: gpu
+            annotations:
+              summary: "GPU is underutilized"
+              description: "GPU {{ $labels.gpu }} on node {{ $labels.kubernetes_node }} has low utilization {{ $value }}%"
+
+          - alert: GPUMemoryFull
+            expr: DCGM_FI_DEV_FB_USED / (DCGM_FI_DEV_FB_USED + DCGM_FI_DEV_FB_FREE) * 100 > 95
+            for: 5m
+            labels:
+              severity: warning
+              component: gpu
+            annotations:
+              summary: "GPU memory is nearly full"
+              description: "GPU {{ $labels.gpu }} on node {{ $labels.kubernetes_node }} has {{ $value }}% memory used"
+
+          - alert: GPUXIDError
+            expr: increase(DCGM_FI_DEV_XID_ERRORS[5m]) > 0
+            for: 1m
+            labels:
+              severity: critical
+              component: gpu
+            annotations:
+              summary: "GPU XID error detected"
+              description: "GPU {{ $labels.gpu }} on node {{ $labels.kubernetes_node }} reported XID errors"
+
+          - alert: GPUThrottling
+            expr: DCGM_FI_DEV_THERMAL_VIOLATION > 0 or DCGM_FI_DEV_POWER_VIOLATION > 0
+            for: 5m
+            labels:
+              severity: warning
+              component: gpu
+            annotations:
+              summary: "GPU is being throttled"
+              description: "GPU {{ $labels.gpu }} on node {{ $labels.kubernetes_node }} is experiencing throttling"
+
+      - name: training_jobs
+        interval: 30s
+        rules:
+          - alert: TrainingJobStalled
+            expr: |
+              (rate(DCGM_FI_DEV_GPU_UTIL{pod=~".*-training-.*"}[10m]) < 5)
+              and
+              (kube_pod_status_phase{phase="Running", pod=~".*-training-.*"} == 1)
+            for: 15m
+            labels:
+              severity: warning
+              component: training
+            annotations:
+              summary: "Training job appears stalled"
+              description: "Pod {{ $labels.pod }} has low GPU utilization for 15 minutes"
+
+          - alert: TrainingJobFailed
+            expr: kube_pod_status_phase{phase="Failed", pod=~".*-training-.*"} == 1
+            for: 1m
+            labels:
+              severity: critical
+              component: training
+            annotations:
+              summary: "Training job failed"
+              description: "Training pod {{ $labels.pod }} has failed"
+
+      - name: cluster_capacity
+        interval: 60s
+        rules:
+          - alert: ClusterGPUCapacityLow
+            expr: (count(DCGM_FI_DEV_GPU_UTIL > 80) / count(DCGM_FI_DEV_GPU_UTIL)) > 0.9
+            for: 10m
+            labels:
+              severity: warning
+              component: capacity
+            annotations:
+              summary: "Cluster GPU capacity is low"
+              description: "{{ $value | humanizePercentage }} of GPUs are highly utilized"
+
+          - alert: NodeGPUDown
+            expr: up{job="dcgm-exporter"} == 0
+            for: 5m
+            labels:
+              severity: critical
+              component: node
+            annotations:
+              summary: "GPU node is down"
+              description: "DCGM exporter on {{ $labels.kubernetes_node }} is not responding"

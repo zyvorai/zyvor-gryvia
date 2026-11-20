@@ -1,0 +1,165 @@
+{{- $h := .Values.hardening }}
+{{- $ns := include "sovereign-aios.namespace" . }}
+{{- if $h.openbao.enabled }}
+---
+# External Secrets reads the Sovereign AI OS keys from OpenBao (KV v2) with OpenBao's Kubernetes auth.
+apiVersion: {{ $h.openbao.esoApiVersion }}
+kind: ClusterSecretStore
+metadata:
+  name: sovereign-aios-openbao
+  labels:
+    {{- include "sovereign-aios.labels" . | nindent 4 }}
+spec:
+  conditions:
+    - namespaces: {{ concat (list $ns (dig "llmGateway" "keyNamespace" "gryvia-llm-keys" .Values.gryvia)) .Values.agentToken.namespaces | uniq | toJson }}
+  provider:
+    vault:
+      server: {{ required "hardening.openbao.server" $h.openbao.server | quote }}
+      path: {{ $h.openbao.mount | quote }}
+      version: v2
+      {{- with $h.openbao.caBundle }}
+      caBundle: {{ . | quote }}
+      {{- end }}
+      auth:
+        kubernetes:
+          mountPath: {{ $h.openbao.authMountPath | quote }}
+          role: {{ $h.openbao.role | quote }}
+          serviceAccountRef:
+            name: {{ $h.openbao.serviceAccount.name | quote }}
+            namespace: {{ $h.openbao.serviceAccount.namespace | quote }}
+{{- end }}
+{{- if $h.kyverno.enabled }}
+{{- $k := $h.kyverno }}
+{{- $match := dict "any" (list (dict "resources" (dict "kinds" (list "Pod")))) }}
+{{- with $k.namespaces }}
+{{- $match = dict "any" (list (dict "resources" (dict "kinds" (list "Pod") "namespaces" .))) }}
+{{- end }}
+{{- $exclude := dict "any" (list (dict "resources" (dict "namespaces" $k.excludeNamespaces))) }}
+{{- $alts := list }}
+{{- range $k.allowedRegistries }}{{ $alts = append $alts (printf "%s*" .) }}{{ end }}
+---
+# Every container image comes from an allowed registry.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: sovereign-aios-allowed-registries
+  labels:
+    {{- include "sovereign-aios.labels" . | nindent 4 }}
+  annotations:
+    policies.kyverno.io/title: Allowed registries
+    policies.kyverno.io/description: Containers run images only from hardening.kyverno.allowedRegistries.
+spec:
+  background: true
+  rules:
+    - name: allowed-registries
+      match: {{ toJson $match }}
+      exclude: {{ toJson $exclude }}
+      validate:
+        failureAction: {{ $k.failureAction }}
+        message: "Images must come from: {{ join ", " $k.allowedRegistries }}"
+        pattern:
+          spec:
+            =(initContainers):
+              - image: {{ join " | " $alts | quote }}
+            =(ephemeralContainers):
+              - image: {{ join " | " $alts | quote }}
+            containers:
+              - image: {{ join " | " $alts | quote }}
+{{- if $k.verifyImages.enabled }}
+{{- $v := $k.verifyImages }}
+---
+# The Zyvor images carry the cosign signature of their release workflow (or of your key after mirroring).
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: sovereign-aios-verify-images
+  labels:
+    {{- include "sovereign-aios.labels" . | nindent 4 }}
+  annotations:
+    policies.kyverno.io/title: Signed Zyvor images
+    policies.kyverno.io/description: Gryvia, Zyntra and Netra images must be signed with cosign.
+spec:
+  webhookTimeoutSeconds: 30
+  rules:
+    - name: cosign-signature
+      match: {{ toJson $match }}
+      exclude: {{ toJson $exclude }}
+      verifyImages:
+        - imageReferences: {{ toJson $v.images }}
+          failureAction: {{ $k.failureAction }}
+          mutateDigest: true
+          verifyDigest: true
+          attestors:
+            - count: 1
+              entries:
+                {{- if eq $v.mode "key" }}
+                - keys:
+                    publicKeys: |-
+                      {{- required "hardening.kyverno.verifyImages.publicKey is needed with mode key" $v.publicKey | nindent 22 }}
+                    rekor: {ignoreTlog: true}
+                    ctlog: {ignoreSCT: true}
+                {{- else if eq $v.mode "keyless" }}
+                {{- range $v.keyless.subjects }}
+                - keyless:
+                    issuer: {{ $v.keyless.issuer | quote }}
+                    subject: {{ . | quote }}
+                    rekor: {url: https://rekor.sigstore.dev}
+                {{- end }}
+                {{- else }}
+                {{- fail "hardening.kyverno.verifyImages.mode must be keyless or key" }}
+                {{- end }}
+{{- end }}
+{{- end }}
+{{- if $h.falco.enabled }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: sovereign-aios-falco-rules
+  namespace: {{ $h.falco.namespace }}
+  labels:
+    {{- include "sovereign-aios.labels" . | nindent 4 }}
+data:
+  sovereign-aios-rules.yaml: |
+    {{- .Files.Get "files/falco/sovereign-aios-rules.yaml" | nindent 4 }}
+{{- end }}
+{{- if $h.spire.enabled }}
+{{- $s := $h.spire }}
+---
+# Every pod in Gryvia's namespace: spiffe://<trust domain>/ns/<namespace>/sa/<service account>.
+apiVersion: spire.spiffe.io/v1alpha1
+kind: ClusterSPIFFEID
+metadata:
+  name: sovereign-aios-platform
+  labels:
+    {{- include "sovereign-aios.labels" . | nindent 4 }}
+spec:
+  {{- with $s.className }}
+  className: {{ . | quote }}
+  {{- end }}
+  spiffeIDTemplate: {{ printf "spiffe://%s/ns/{{ .PodMeta.Namespace }}/sa/{{ .PodSpec.ServiceAccountName }}" $s.trustDomain | quote }}
+  namespaceSelector:
+    matchLabels: {kubernetes.io/metadata.name: {{ $ns }}}
+  podSelector:
+    matchExpressions:
+      - {key: gryvia.io/component, operator: NotIn, values: [agent]}
+{{- $agentNs := concat (list $ns) $s.agentNamespaces | uniq }}
+---
+# GryviaAgent pods: spiffe://<trust domain>/agent/<namespace>/<agent>, so Zyntra and Netra can tell agents apart.
+apiVersion: spire.spiffe.io/v1alpha1
+kind: ClusterSPIFFEID
+metadata:
+  name: sovereign-aios-agents
+  labels:
+    {{- include "sovereign-aios.labels" . | nindent 4 }}
+spec:
+  {{- with $s.className }}
+  className: {{ . | quote }}
+  {{- end }}
+  spiffeIDTemplate: {{ printf "spiffe://%s/agent/{{ .PodMeta.Namespace }}/{{ index .PodMeta.Labels \"gryvia.io/agent\" }}" $s.trustDomain | quote }}
+  namespaceSelector:
+    matchExpressions:
+      - {key: kubernetes.io/metadata.name, operator: In, values: {{ toJson $agentNs }}}
+  podSelector:
+    matchLabels: {gryvia.io/component: agent}
+{{- end }}

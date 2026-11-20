@@ -1,0 +1,33 @@
+    ______      Gryvia:       OK
+   /      \     Operators:    OK  gpu, ai, quota
+  /   G    \    API gateway:  OK  2/2 ready
+  \        /    Dashboard:    OK  2/2 ready
+   \______/     GPU nodes:    OK  2/2 ready
+                GPU add-ons:  OK  dcgm-exporter 2/2, nvidia-device-plugin 2/2
+                Collectors:   disabled  not installed
+
+Deployment gryvia-gpu-operator          Desired: 1, Ready: 1/1, Available: 1/1
+Deployment gryvia-ai-operator           Desired: 1, Ready: 1/1, Available: 1/1
+Deployment gryvia-quota-operator        Desired: 1, Ready: 1/1, Available: 1/1
+Deployment gryvia-api-gateway           Desired: 2, Ready: 2/2, Available: 2/2
+Deployment gryvia-ui                    Desired: 2, Ready: 2/2, Available: 2/2
+DaemonSet  gryvia-dcgm-exporter         Desired: 2, Ready: 2/2, Available: 2/2
+DaemonSet  gryvia-nvidia-device-plugin  Desired: 2, Ready: 2/2, Available: 2/2
+
+Cluster Pods:   5/5 running
+Jobs:           1 running, 2 pending, 3 completed, 0 failed
+Namespace:      gryvia-system
+
+Image versions
+  gryvia-ai-operator           ghcr.io/zyvorai/gryvia-ai-operator:1.0.0
+  gryvia-api-gateway           ghcr.io/zyvorai/gryvia-api-gateway:1.0.0
+  gryvia-dcgm-exporter         ghcr.io/zyvorai/gryvia-dcgm-exporter:1.0.0
+  gryvia-gpu-operator          ghcr.io/zyvorai/gryvia-gpu-operator:1.0.0
+  gryvia-nvidia-device-plugin  ghcr.io/zyvorai/gryvia-nvidia-device-plugin:1.0.0
+  gryvia-quota-operator        ghcr.io/zyvorai/gryvia-quota-operator:1.0.0
+  gryvia-ui                    ghcr.io/zyvorai/gryvia-ui:1.0.0
+
+Nodes
+  NODE    STATE  GPUS      DRIVER              GPU HEALTH  DCGM  PLUGIN  COLLECTOR  PODS
+  node-a  Ready  8 x H100  550.54 / CUDA 12.4  8/8         ✓     ✓       -          3
+  node-b  Ready  8 x H100  550.54 / CUDA 12.4  8/8         ✓     ✓       -          2

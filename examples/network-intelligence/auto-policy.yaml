@@ -1,0 +1,33 @@
+# GryviaAutoPolicy - Self-learning firewall that observes traffic and suggests policies
+# Learns service-to-service edges from the collector's service graph. With mode "suggest" and after the
+# learning window it writes one GryviaFlowPolicy per learned edge, labelled gryvia.io/suggested=true, in THIS
+# object's namespace (sources in other namespaces are not suggested). Suggestions are never applied
+# automatically: `gryvia network policy suggest -n production` lists them, `gryvia network policy apply NAME`
+# approves one. Needs the collector (helm ebpf.enabled) and the operator with sources enabled.
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaAutoPolicy
+metadata:
+  name: production-auto-firewall
+  namespace: production
+spec:
+  # Operational mode:
+  # "learn" only records the learned edges (ConfigMap autopolicy-<name>-learned), no objects are created
+  # "suggest" writes suggested GryviaFlowPolicy objects once the learning window has passed
+  # "enforce" behaves like "suggest": nothing is ever applied without a human approving it
+  mode: suggest
+
+  # Duration to observe traffic patterns before generating suggestions
+  learningWindow: "10m"
+
+  # Namespaces to monitor for traffic pattern discovery
+  targetNamespaces:
+    - production
+
+  # Services excluded from policy generation (e.g., monitoring agents)
+  excludeServices:
+    - kube-dns
+    - metrics-server
+    - node-exporter
+
+  # Kept for compatibility; suggestions always need a human to approve them
+  approvalRequired: true

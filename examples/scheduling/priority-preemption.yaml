@@ -1,0 +1,72 @@
+# GryviaPriority - Define priority tiers for GPU job scheduling
+# Three tiers: critical (production), normal (research), and preemptible (batch).
+# Higher-priority jobs can preempt lower-priority ones with configurable SLAs.
+---
+# Critical priority - for production inference and urgent training jobs
+# These jobs can preempt any lower-priority workload and have guaranteed resources
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaPriority
+metadata:
+  name: critical
+spec:
+  # Priority value: higher number = more important (0-1000000)
+  value: 100000
+  description: "Production workloads and time-sensitive training runs"
+
+  # Allow preempting lower-priority jobs to free resources
+  preemptionPolicy: PreemptLowerPriority
+
+  # Can exceed team quota by up to 50% for critical workloads
+  quotaOverride:
+    enabled: true
+    maxOverridePercent: 50
+
+  # Strict SLA: jobs must start within 2 minutes with guaranteed resources
+  sla:
+    maxQueueTimeMinutes: 2
+    guaranteedResources: true
+---
+# Normal priority - for standard research and training workloads
+# These jobs run with fair-share scheduling and cannot preempt others
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaPriority
+metadata:
+  name: normal
+spec:
+  value: 50000
+  description: "Standard research and training workloads"
+
+  # Normal jobs do not preempt other jobs
+  preemptionPolicy: Never
+
+  # No quota override for normal priority
+  quotaOverride:
+    enabled: false
+
+  # Moderate SLA: target 15-minute queue time
+  sla:
+    maxQueueTimeMinutes: 15
+    guaranteedResources: false
+---
+# Preemptible priority - for batch processing and non-urgent experimentation
+# These jobs can be preempted by critical or normal jobs at any time.
+# Ideal for long-running HPO trials, data preprocessing, or low-priority sweeps.
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaPriority
+metadata:
+  name: preemptible
+spec:
+  value: 1000
+  description: "Batch and opportunistic workloads that can tolerate preemption"
+
+  # These jobs will never preempt others
+  preemptionPolicy: Never
+
+  # No quota override
+  quotaOverride:
+    enabled: false
+
+  # Best-effort SLA: no queue time guarantee
+  sla:
+    maxQueueTimeMinutes: 0
+    guaranteedResources: false

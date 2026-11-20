@@ -1,0 +1,328 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.22.0
+  name: gryviacheckpointguards.gryvia.io
+spec:
+  group: gryvia.io
+  names:
+    kind: GryviaCheckpointGuard
+    listKind: GryviaCheckpointGuardList
+    plural: gryviacheckpointguards
+    singular: gryviacheckpointguard
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .status.validCheckpoints
+      name: Valid
+      type: integer
+    - jsonPath: .status.lastCheckpointTime
+      name: LastCheckpoint
+      type: string
+    - jsonPath: .status.storageUsed
+      name: StorageUsed
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: GryviaCheckpointGuard is the Schema for the gryviacheckpointguards
+          API
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: GryviaCheckpointGuardSpec defines the desired state of GryviaCheckpointGuard
+            properties:
+              checkpointPolicy:
+                description: CheckpointPolicy defines when and how checkpoints are
+                  taken
+                properties:
+                  directory:
+                    description: |-
+                      Directory is where matched jobs write coordinated checkpoints (GRYVIA_CHECKPOINT_DIR). It must be a clean
+                      path below /data, the job's persistent spec.storage volume. Default /data/checkpoints.
+                    type: string
+                  emergencyCheckpoint:
+                    description: EmergencyCheckpoint defines triggers for immediate
+                      checkpoint creation
+                    properties:
+                      triggers:
+                        description: |-
+                          Triggers is a list of conditions that trigger an emergency checkpoint.
+                          Valid values: GpuHealthDegraded, SpotPreemptionSignal, MemoryPressure, LossDivergence, NvlinkDegraded
+                        items:
+                          type: string
+                        type: array
+                    type: object
+                  everySteps:
+                    description: EverySteps is passed to matched jobs as GRYVIA_CHECKPOINT_EVERY
+                      (commit every N training steps).
+                    format: int32
+                    minimum: 1
+                    type: integer
+                  intervalMinutes:
+                    description: IntervalMinutes is the interval in minutes between
+                      periodic checkpoints
+                    format: int32
+                    type: integer
+                  replication:
+                    description: Replication defines how checkpoints are replicated
+                      for durability
+                    properties:
+                      asyncUpload:
+                        description: AsyncUpload enables asynchronous upload to avoid
+                          blocking training
+                        type: boolean
+                      backend:
+                        description: Backend is the storage backend for replicated
+                          checkpoints (s3, gcs, azure-blob, nfs, pvc)
+                        type: string
+                      copies:
+                        description: Copies is the number of checkpoint copies to
+                          maintain
+                        format: int32
+                        type: integer
+                      target:
+                        description: |-
+                          Target is where rank 0 copies each committed step (GRYVIA_CHECKPOINT_REPLICA): file:///<path> on a
+                          mounted volume or s3://<bucket>/<prefix> (the trainer needs boto3 and credentials). Empty = no replica.
+                        pattern: ^(file:///|s3://)[^\s]*$
+                        type: string
+                    type: object
+                type: object
+              jobSelector:
+                description: JobSelector selects which GryviaAIJob resources this
+                  guard applies to
+                properties:
+                  matchLabels:
+                    additionalProperties:
+                      type: string
+                    description: MatchLabels is a map of key-value pairs to match
+                      against job labels
+                    type: object
+                type: object
+              monitoring:
+                description: Monitoring defines observability settings for checkpoint
+                  operations
+                properties:
+                  alertOnFailure:
+                    description: AlertOnFailure enables alerts when checkpoint operations
+                      fail
+                    type: boolean
+                  exportMetrics:
+                    description: ExportMetrics enables Prometheus metrics export for
+                      checkpoint operations
+                    type: boolean
+                type: object
+              restore:
+                description: Restore defines how checkpoints are restored on job restart
+                properties:
+                  autoRestore:
+                    description: AutoRestore enables automatic restore from the latest
+                      valid checkpoint
+                    type: boolean
+                  injectEnvVars:
+                    additionalProperties:
+                      type: string
+                    description: InjectEnvVars defines environment variables injected
+                      into restored job pods
+                    type: object
+                  nodeLossGraceSeconds:
+                    description: |-
+                      NodeLossGraceSeconds is how long a matched job's pod may sit on a NotReady or deleted node before
+                      AutoRestore force-deletes it so the Indexed Job recreates it elsewhere. Default 60.
+                    format: int32
+                    maximum: 3600
+                    minimum: 15
+                    type: integer
+                  preferNearStorage:
+                    description: PreferNearStorage schedules restored jobs near checkpoint
+                      storage
+                    type: boolean
+                type: object
+              validation:
+                description: Validation defines how checkpoints are validated after
+                  creation
+                properties:
+                  checksumVerify:
+                    description: ChecksumVerify enables checksum verification after
+                      writing
+                    type: boolean
+                  loadTest:
+                    description: LoadTest enables a trial load of the checkpoint to
+                      verify integrity
+                    type: boolean
+                  retainValidOnly:
+                    description: RetainValidOnly retains only checkpoints that pass
+                      validation
+                    type: boolean
+                  retentionCount:
+                    description: RetentionCount is the number of valid checkpoints
+                      to retain
+                    format: int32
+                    type: integer
+                  tensorShapeVerify:
+                    description: TensorShapeVerify enables tensor shape verification
+                    type: boolean
+                type: object
+            required:
+            - checkpointPolicy
+            - jobSelector
+            type: object
+          status:
+            description: GryviaCheckpointGuardStatus defines the observed state of
+              GryviaCheckpointGuard
+            properties:
+              avgCheckpointDuration:
+                description: AvgCheckpointDuration is the average time to complete
+                  a checkpoint (e.g., 2m30s)
+                type: string
+              conditions:
+                description: Conditions represent the latest available observations
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+              emergencyCheckpointsTaken:
+                description: EmergencyCheckpointsTaken is the number of emergency
+                  checkpoints triggered
+                format: int32
+                type: integer
+              jobs:
+                description: Jobs is the checkpoint state the matched jobs reported
+                  (needs the ai-operator checkpointGuard capability).
+                items:
+                  description: GuardedJob is one matched job's checkpoint state, copied
+                    from its status.checkpoint.
+                  properties:
+                    injected:
+                      description: Injected is true when the job's pods got the guard's
+                        checkpoint environment.
+                      type: boolean
+                    lastCommittedAt:
+                      format: date-time
+                      type: string
+                    lastCommittedStep:
+                      format: int64
+                      type: integer
+                    message:
+                      type: string
+                    name:
+                      type: string
+                    nodeLossRecoveries:
+                      description: NodeLossRecoveries counts pods this guard's AutoRestore
+                        replaced after a node loss.
+                      format: int32
+                      type: integer
+                  required:
+                  - injected
+                  - name
+                  type: object
+                type: array
+              lastCheckpointTime:
+                description: LastCheckpointTime is the timestamp of the last checkpoint
+                format: date-time
+                type: string
+              lastValidCheckpoint:
+                description: LastValidCheckpoint is the name/path of the last valid
+                  checkpoint
+                type: string
+              matchedJobs:
+                description: MatchedJobs is the number of GryviaAIJob resources matched
+                  by jobSelector
+                format: int32
+                type: integer
+              phase:
+                description: Phase is the current phase (Idle, Monitoring, Checkpointing,
+                  Restoring, Error)
+                type: string
+              storageUsed:
+                description: StorageUsed is the total storage consumed by retained
+                  checkpoints (e.g., 42Gi)
+                type: string
+              totalCheckpoints:
+                description: TotalCheckpoints is the total number of checkpoints taken
+                format: int32
+                type: integer
+              validCheckpoints:
+                description: ValidCheckpoints is the number of checkpoints that passed
+                  validation
+                format: int32
+                type: integer
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

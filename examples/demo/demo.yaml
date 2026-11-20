@@ -1,0 +1,159 @@
+# Demo data for evaluating Gryvia without GPUs. Every object below is fictional.
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaGpuNode
+metadata:
+  name: demo-h100-1
+spec:
+  nodeName: demo-h100-1
+  gpuType: H100
+  gpuCount: 8
+  memoryGB: 80
+  interconnect: nvlink
+  rdma: true
+---
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaGpuNode
+metadata:
+  name: demo-a100-1
+spec:
+  nodeName: demo-a100-1
+  gpuType: A100-80G
+  gpuCount: 4
+  memoryGB: 80
+  interconnect: nvlink
+  rdma: false
+---
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaQuota
+metadata:
+  name: demo-team
+spec:
+  team: demo-team
+  namespaces: [gryvia-system]
+  priority: 50
+  gpuQuota:
+    maxGPUs: 8
+    maxGPUsPerJob: 4
+    maxRunningJobs: 4
+    allowedGPUTypes: [H100, A100-80G]
+  budget:
+    monthlyBudget: 5000
+    alertThreshold: 80
+---
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaAIJob
+metadata:
+  name: demo-train
+  namespace: gryvia-system
+  labels:
+    gryvia.io/framework: pytorch
+spec:
+  type: training
+  image: busybox:1.36
+  command: ["sleep", "3600"]
+  gpus: 2
+  gpuType: H100
+  resources:
+    requests: {cpu: "1", memory: 1Gi}
+---
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaGpuSku
+metadata:
+  name: h100-80g
+spec:
+  gpuType: H100
+  gpusPerUnit: 1
+  hourlyRate: 8
+  currency: USD
+  spotDiscount: 60
+  description: H100 80 GB (demo price)
+---
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaGpuSku
+metadata:
+  name: a100-80g
+spec:
+  gpuType: A100-80G
+  gpusPerUnit: 1
+  hourlyRate: 4
+  currency: USD
+  spotDiscount: 50
+  description: A100 80 GB (demo price)
+---
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaGpuSku
+metadata:
+  name: l40
+spec:
+  gpuType: L40
+  gpusPerUnit: 1
+  hourlyRate: 2.5
+  currency: USD
+  description: L40 48 GB (demo price)
+---
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaTenant
+metadata:
+  name: acme
+spec:
+  displayName: Acme Robotics (demo)
+  allowedSkus: [h100-80g, a100-80g]
+  quotas:
+    concurrentGPUs: 8
+  networkPolicy:
+    isolated: true
+---
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaTenant
+metadata:
+  name: globex
+spec:
+  displayName: Globex Labs (demo)
+  allowedSkus: [l40]
+  quotas:
+    concurrentGPUs: 2
+  networkPolicy:
+    isolated: true
+---
+# Fictional finished jobs so the Usage page and `gryvia usage` have data in the demo.
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaUsageRecord
+metadata:
+  name: usage-demo-acme-1
+  namespace: gryvia-system
+  labels: {gryvia.io/tenant: acme, gryvia.io/job: demo-acme-train}
+spec:
+  tenant: acme
+  job: demo-acme-train
+  jobUID: demo-acme-1
+  gpuType: H100
+  sku: h100-80g
+  gpus: 4
+  start: "2026-09-20T08:00:00Z"
+  end: "2026-09-20T14:00:00Z"
+  gpuHours: 24
+  rate: 8
+  cost: 192
+  currency: USD
+  final: true
+---
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaUsageRecord
+metadata:
+  name: usage-demo-globex-1
+  namespace: gryvia-system
+  labels: {gryvia.io/tenant: globex, gryvia.io/job: demo-globex-infer}
+spec:
+  tenant: globex
+  job: demo-globex-infer
+  jobUID: demo-globex-1
+  gpuType: L40
+  sku: l40
+  gpus: 1
+  start: "2026-09-21T00:00:00Z"
+  end: "2026-09-22T00:00:00Z"
+  gpuHours: 24
+  rate: 2.5
+  cost: 60
+  currency: USD
+  final: true

@@ -1,0 +1,130 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.22.0
+  name: gryvianetworkusagerecords.gryvia.io
+spec:
+  group: gryvia.io
+  names:
+    kind: GryviaNetworkUsageRecord
+    listKind: GryviaNetworkUsageRecordList
+    plural: gryvianetworkusagerecords
+    singular: gryvianetworkusagerecord
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.tenant
+      name: Tenant
+      type: string
+    - jsonPath: .spec.peerClass
+      name: Peer
+      type: string
+    - jsonPath: .spec.zoneClass
+      name: Zone
+      type: string
+    - jsonPath: .spec.egressBytes
+      name: Egress
+      type: integer
+    - jsonPath: .spec.final
+      name: Final
+      type: boolean
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          GryviaNetworkUsageRecord is the Schema for the gryvianetworkusagerecords API. It is written by the
+          collector (opt-in), never by a controller.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: |-
+              GryviaNetworkUsageRecordSpec is one fragment of a tenant's measured network usage: the bytes one node's
+              collector attributed to (tenant, UTC hour, peerClass, zoneClass). The gateway sums the fragments of all
+              nodes. Only egress is billable (see docs/network-cost-attribution.md); ingress is informational.
+              Values are measurements from a tcx byte counter, not invoices.
+            properties:
+              egressBytes:
+                description: EgressBytes sent by the tenant's pods to the peer (billable)
+                format: int64
+                minimum: 0
+                type: integer
+              final:
+                description: Final is true once the hour is closed; a final record
+                  is never modified again
+                type: boolean
+              hour:
+                description: Hour is the start of the UTC hour bucket
+                format: date-time
+                type: string
+              ingressBytes:
+                description: IngressBytes received by the tenant's pods from the peer
+                  (informational, never billed)
+                format: int64
+                minimum: 0
+                type: integer
+              node:
+                description: Node is the node whose collector measured the fragment
+                type: string
+              peerClass:
+                description: PeerClass classifies the other end of the traffic
+                enum:
+                - same-tenant
+                - other-tenant
+                - cluster
+                - external
+                - unknown
+                type: string
+              source:
+                default: collector
+                description: Source of the measurement; the gateway uses exactly one
+                  source per tenant and period
+                enum:
+                - collector
+                - netra
+                type: string
+              tenant:
+                description: Tenant the traffic is attributed to (the namespace is
+                  tenant-<tenant>)
+                type: string
+              zoneClass:
+                description: |-
+                  ZoneClass is the zone relation between the tenant pod and the peer. internet is the zone class of
+                  every external peer; same-node is only recorded for cross-tenant traffic
+                enum:
+                - same-zone
+                - cross-zone
+                - same-node
+                - unknown-zone
+                - internet
+                type: string
+            required:
+            - egressBytes
+            - final
+            - hour
+            - node
+            - peerClass
+            - tenant
+            - zoneClass
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources: {}

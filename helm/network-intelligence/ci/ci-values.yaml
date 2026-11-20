@@ -1,0 +1,7 @@
+# Used by `ct install`: installs the chart's objects without running the workloads, whose images are
+# only published on release. The operator is scaled to zero and the collector DaemonSet matches no node.
+operator:
+  replicas: 0
+collector:
+  nodeSelector:
+    gryvia.io/ci-never-schedule: "true"

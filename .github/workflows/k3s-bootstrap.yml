@@ -1,0 +1,89 @@
+name: k3s bootstrap
+
+# Runs scripts/install-k3s-gpu.sh on a real Ubuntu runner: real k3s, real systemd, this checkout's chart and
+# locally built images. The runner has no GPU, so the NVIDIA parts are covered by `--no-gpu` here and by the
+# script's dry-run tests; docs/gpu-validation.md lists what to run on real GPU hardware.
+on:
+  pull_request:
+    paths:
+      - "scripts/install-k3s-gpu.sh"
+      - "scripts/validate-gpu.sh"
+      - "scripts/tests/**"
+      - "helm/gryvia/**"
+      - ".github/workflows/k3s-bootstrap.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: k3s-bootstrap-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  dry-run:
+    name: Installer dry-run tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: shellcheck -S warning scripts/install-k3s-gpu.sh scripts/tests/install-k3s-gpu.test.sh scripts/validate-gpu.sh scripts/tests/validate-gpu.test.sh
+      - run: bash scripts/tests/install-k3s-gpu.test.sh
+      - run: bash scripts/tests/validate-gpu.test.sh
+
+  k3s:
+    name: k3s + Gryvia on Ubuntu
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Build images
+        run: |
+          set -euo pipefail
+          for spec in "gpu-operator:operators/gpu-operator:operators/gpu-operator/Dockerfile" \
+                      "ai-operator:operators/ai-operator:operators/ai-operator/Dockerfile" \
+                      "quota-operator:operators/quota-operator:operators/quota-operator/Dockerfile" \
+                      "storage-operator:operators/storage-operator:operators/storage-operator/Dockerfile" \
+                      "network-operator:operators/network-operator:operators/network-operator/Dockerfile" \
+                      "api-gateway:services/api-gateway:services/api-gateway/Dockerfile" \
+                      "ui:.:docker/Dockerfile.ui"; do
+            IFS=: read -r name ctx df <<<"$spec"
+            docker build -f "$df" -t "ghcr.io/zyvorai/gryvia-$name:dev" "$ctx"
+            docker save "ghcr.io/zyvorai/gryvia-$name:dev" -o "/tmp/gryvia-$name.tar"
+          done
+
+      - name: Start k3s and load the images
+        # The script skips the k3s install when k3s is already running, so the locally built images can be
+        # imported before Helm waits for the pods.
+        run: |
+          set -euo pipefail
+          curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION="$(sed -n 's/^K3S_VERSION_DEFAULT="\(.*\)"/\1/p' scripts/install-k3s-gpu.sh)" sh -s - server --write-kubeconfig-mode 644
+          # `kubectl wait --all` fails with "no matching resources found" until the node has registered.
+          for i in $(seq 1 100); do sudo k3s kubectl get nodes --no-headers 2>/dev/null | grep -q . && break; sleep 3; done
+          sudo k3s kubectl wait --for=condition=Ready node --all --timeout=300s
+          for f in /tmp/gryvia-*.tar; do sudo k3s ctr images import "$f"; done
+
+      - name: Install Gryvia with the script
+        run: |
+          sudo ./scripts/install-k3s-gpu.sh server --no-gpu \
+            --chart ./helm/gryvia --api-key ci-test-key \
+            --set global.imageTag=dev --set global.imagePullPolicy=Never
+
+      - name: Check the cluster
+        run: |
+          export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+          sudo k3s kubectl -n gryvia-system get pods -o wide
+          sudo k3s kubectl -n gryvia-system rollout status deployment/gryvia-api-gateway --timeout=300s
+          sudo k3s kubectl -n gryvia-system rollout status deployment/gryvia-ui --timeout=300s
+          # The dashboard answers on the NodePort with the chart's self-signed certificate.
+          curl -ksf -o /dev/null -w 'dashboard HTTP %{http_code}\n' https://127.0.0.1:32443/
+
+      - name: Debug on failure
+        if: failure()
+        run: |
+          sudo k3s kubectl get pods -A -o wide || true
+          sudo k3s kubectl -n gryvia-system describe pods || true
+          sudo journalctl -u k3s --no-pager -n 100 || true
+
+      - name: Uninstall
+        run: sudo ./scripts/install-k3s-gpu.sh --uninstall

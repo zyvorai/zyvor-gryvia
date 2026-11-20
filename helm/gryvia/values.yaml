@@ -1,0 +1,799 @@
+# Default values for the Gryvia chart (operators, API gateway and dashboard).
+
+global:
+  # Registry prefix for every Gryvia image: <registry>/<image.name>:<tag>.
+  # Mirrored on Docker Hub as docker.io/zyvorai.
+  imageRegistry: ghcr.io/zyvorai
+  # Defaults to the chart appVersion.
+  imageTag: ""
+  imagePullPolicy: IfNotPresent
+
+# --- Operators ---------------------------------------------------------------
+# All operators share one ServiceAccount and ClusterRole (see templates/rbac.yaml).
+gpuOperator:
+  enabled: true
+  # Create a GryviaGpuNode for every node that carries the NVIDIA GPU feature-discovery labels
+  # (nvidia.com/gpu.present=true), and remove it again when the GPU goes away. Hand-made objects are never touched.
+  autoRegister: true
+  # Reconcile GryviaGPUSharingPolicy (flag --enable-gpu-sharing): matching GPU nodes get the labels the NVIDIA GPU Operator
+  # reads for time-slicing (nvidia.com/device-plugin.config) and MIG (nvidia.com/mig.config), plus gryvia.io/* labels.
+  # Off by default because it writes node labels — unless nvidiaPlatform.timeSlicing.enabled is true, which
+  # auto-enables sharing + devicePluginConfig so GryviaGPUSharingPolicy is not a dead CR. See NVIDIA_ONE_CLICK.md.
+  gpuSharing: false
+  # With gpuSharing (or timeSlicing.enabled), let a time-slicing policy write gryvia-ts-<maxPodsPerGPU> into the
+  # device-plugin ConfigMap and label nodes with it. Off alone: nodes get the fixed key gryvia-time-slicing.
+  devicePluginConfig: false
+  # Node-local GPU reset agent (DaemonSet on nodes labelled nvidia.com/gpu.present=true). A person or the health-check escalation ladder annotates a cordoned,
+  # drained node with gryvia.io/gpu-reset-request=<id> (and optionally gryvia.io/gpu-reset-gpus=0,1); the agent records
+  # the outcome in gryvia.io/gpu-reset-result. DRY-RUN unless execute is true: then it runs `<nvidiaSmi> --gpu-reset`,
+  # which needs a runnable nvidia-smi (hostPath driverRoot) and a privileged container. Never cordons, drains or
+  # uncordons (the health-check controller does). Unverified on real GPUs. See docs/gpu-reset-agent.md.
+  resetAgent:
+    enabled: false
+    execute: false
+    pollInterval: 15s
+    # With execute: path of nvidia-smi inside the container and the host directory that provides it (mounted read-only).
+    nvidiaSmi: ""
+    driverRoot: ""
+    # Recovery actions the health-check escalation ladder may request (spec.remediation driverReload / nodeReboot).
+    # allowDriverReload lets the agent delete this node's GPU Operator driver and device-plugin pods.
+    # allowReboot reboots the node: kured (write <rebootSentinelDir>/reboot-required; kured must watch that path)
+    # or nsenter (systemctl reboot through hostPID). One node at a time via a Lease. Unverified on real GPUs.
+    allowDriverReload: false
+    allowReboot: false
+    rebootMethod: kured
+    rebootSentinelDir: /var/run/gryvia
+  image: {name: gryvia-gpu-operator, tag: ""}
+  replicas: 1
+  resources:
+    limits: {cpu: 500m, memory: 512Mi}
+    requests: {cpu: 100m, memory: 128Mi}
+  nodeSelector: {}
+  tolerations: []
+
+aiOperator:
+  enabled: true
+  image: {name: gryvia-ai-operator, tag: ""}
+  replicas: 1
+  resources:
+    limits: {cpu: 500m, memory: 512Mi}
+    requests: {cpu: 100m, memory: 128Mi}
+  nodeSelector: {}
+  tolerations: []
+  # Fabric-aware node ranking (--fabric-aware-scheduling): subtract a capped penalty from nodes whose fresh
+  # GryviaNodeFabric (published by the collector, network-intelligence ebpf.publishNodeFabric) reports a sick
+  # fabric, and record why in status.placementExplanation. Off by default; adds get/list/watch on
+  # gryvianodefabrics to the operators ClusterRole. Per-job override: annotation gryvia.io/fabric-aware.
+  fabricAwareScheduling: false
+  # Topology-aware group placement (--topology-placement): keep a multi-node job's nodes inside one
+  # gryvia.io/ib-block, else one gryvia.io/rack, when such a group has enough eligible nodes (smallest fitting group
+  # first), record it in status.placementTopology and add soft node affinity toward it. Off by default. Per-job
+  # opt-out: annotation gryvia.io/topology-placement=false. Not used for elastic jobs or Kueue-managed placement.
+  topologyPlacement: false
+  # Hold the GPUs of a job's chosen nodes until its pods are up (--placement-holds), so two jobs placed in the
+  # same window cannot pick the same free GPUs. A single job is already placed all-or-nothing (too few nodes means it
+  # stays Pending); this closes the race between jobs. In memory, expires after 5 minutes. Unverified on GPUs.
+  placementHolds: false
+  # Kueue integration (--kueue-integration, off by default): a job with a queue (spec.queueName, annotation
+  # gryvia.io/queue-name, or the default LocalQueue in tenant-* namespaces) gets its batch Job created suspended with
+  # the label kueue.x-k8s.io/queue-name; Kueue admits all its pods together (gang) against the queue's quota and
+  # unsuspends it, and the job shows phase Queued while it waits. Needs Kueue installed (`kueue.enabled=true` below or
+  # your own) and adds get/list/watch on kueue.x-k8s.io workloads and localqueues and get/create on
+  # workloadpriorityclasses to the operators ClusterRole. See docs/kueue-integration.md.
+  kueueIntegration: false
+  # Built-in DRF fair-share / gang / priority-preemption admission driven by the gryvia-native-scheduler
+  # ConfigMap (deploy/native-scheduler-config.yaml). Mutually exclusive with kueueIntegration.
+  nativeQueueScheduler: false
+  # LocalQueue used by jobs in tenant-* namespaces that name no queue (only when that LocalQueue exists).
+  kueueDefaultQueue: gryvia
+  # Fail closed for tenant batch jobs when the default queue/controller is missing.
+  kueueStrictAdmission: false
+  # KAI Scheduler (--kai-scheduler, off by default): every job's pods get schedulerName kai-scheduler and the label
+  # kai.scheduler/queue (spec.queueName, annotation gryvia.io/queue-name, else kaiDefaultQueue); multi-pod jobs are
+  # gang scheduled (kai.scheduler/batch-min-member) and gryvia.io/gpu-share below one GPU becomes KAI's gpu-fraction
+  # or gpu-memory annotation. Install KAI Scheduler v0.18 or later yourself
+  # (oci://ghcr.io/kai-scheduler/kai-scheduler/kai-scheduler).
+  # Mutually exclusive with kueueIntegration and nativeQueueScheduler. No extra RBAC. See docs/kai-scheduler.md.
+  kaiScheduler: false
+  kaiDefaultQueue: default-queue
+  # Hand pods to Volcano (schedulerName volcano). Mutually exclusive with kaiScheduler, kueueIntegration and
+  # nativeQueueScheduler. See docs/volcano.md.
+  volcanoScheduler: false
+  volcanoDefaultQueue: default
+  # Admission gate (--admission-gate): before creating a job's PVC/Service/workload, check the GryviaQuota limits
+  # (allowed GPU types and SKUs, max GPUs per job, concurrent GPUs) and hard budgets (GryviaQuota budget.hardLimit,
+  # GryviaBudget enforcement block) against the metered spend plus a cost forecast for the job, and reject it
+  # instead. Estimates only; fails OPEN on lookup errors. Off by default; the operators ClusterRole already
+  # grants the reads it needs. See docs/gpuaas-completion.md.
+  admissionGate: false
+  # Idle-GPU reclaim (--idle-reclaim): flag running jobs whose profiler-reported GPU utilization stays under
+  # thresholdPercent for window (condition IdleGPU plus an event). suspend=true also sets spec.suspend to release
+  # the GPUs. Needs a GryviaTrainingProfiler for the job; a job annotated gryvia.io/idle-reclaim=false is exempt.
+  idleReclaim:
+    enabled: false
+    suspend: false
+    thresholdPercent: 10
+    window: 30m
+  # Hours assumed for a job without spec.timeout in the gate's cost forecast (--admission-default-hours).
+  admissionDefaultHours: 1
+  # Preflight enforcement (--preflight-enforce): reject a Pending job whose preflight annotations
+  # (gryvia.io/model-params-billions, weight-bits, tensor-parallel, extra-memory-gib, require-fast-interconnect) fit
+  # no node pool by GPU type, node shape, estimated memory per GPU (label gryvia.io/gpu-memory), RDMA or
+  # interconnect. Without it the webhook only warns. Jobs without the annotations, an empty cluster and unknown GPU
+  # memory are allowed; fails OPEN on lookup errors. See docs/workload-intelligence.md.
+  preflightEnforce: false
+  # Checkpoint guard (--checkpoint-guard): a new batch training job (with spec.storage) matched by a
+  # GryviaCheckpointGuard gets its checkpoint environment (GRYVIA_CHECKPOINT_DIR, _EVERY, _INTERVAL_SECONDS, _REPLICA,
+  # _STATUS_CONFIGMAP), a status ConfigMap and a Role letting the namespace's default service account get/update
+  # only that ConfigMap; the trainer's reports land in status.checkpoint. With restore.autoRestore, pods of a
+  # non-elastic job stuck on a deleted or NotReady node are force-deleted after restore.nodeLossGraceSeconds so the
+  # Job recreates them. Grants the operator Role/RoleBinding create. See docs/checkpoint-guard.md.
+  checkpointGuard: false
+  # GryviaFederation members (off while allowedServers is empty): only these https API servers are probed, with an
+  # inline kubeconfig Secret (key kubeconfig) from credentialsNamespace (empty: the release namespace). failover lets
+  # a federation with spec.failover.enabled and automatic fence a member that failed failureThreshold health checks
+  # (delete its copies of the jobs, or wait spec.failover.leaseTimeout when it is unreachable) and then evict the
+  # Kueue MultiKueue Workloads dispatched to it so they run on another member. Needs aiOperator.kueueIntegration;
+  # grants patch on Kueue Workloads. See docs/federation-failover.md.
+  federation:
+    allowedServers: []
+    credentialsNamespace: ""
+    failover: false
+  # Extra command-line flags for the ai-operator manager, one string each. The ML controllers (GryviaWorkspace,
+  # GryviaInferenceService, GryviaModelRegistry, GryviaWorkflow, GryviaAutoTuner) take their default images and limits
+  # here, e.g. ["--workspace-code-image=nginxinc/nginx-unprivileged:stable-alpine", "--inference-image-vllm=...",
+  # "--inference-health-path=/", "--autoserve-default-gpu-count=0", "--workflow-allow-webhooks=true"].
+  # See docs/ml-controllers.md for the full list. Empty by default.
+  # Optional Gateway API v1 routing; requires an installed Gateway controller.
+  inferenceGatewayRouting: false
+  # Optional administrator-configured Prometheus base URL for canary SLO evaluation.
+  inferencePrometheusURL: ""
+  # GryviaModelWatch (--enable-model-watch): poll a Hugging Face compatible hub and run a GryviaWorkflow (download,
+  # fine-tune, evaluate, register) for each new model that passes the watch's filters. Off by default: the operator
+  # makes outbound requests to hubURL. A watch's spec.tokenSecretRef is read with the secrets access the operators
+  # ClusterRole already has. See docs/model-factory.md.
+  modelWatch:
+    enabled: false
+    hubURL: https://huggingface.co
+    minPollInterval: 5m
+  # GryviaVectorIndex (--enable-rag): a managed Qdrant (or an external store) per index and ingestion Jobs that chunk
+  # a GryviaDataset version and embed it through the LLM gateway; the gateway answers POST /v1/retrieve. Needs
+  # llmGateway.enabled (the gateway URL and key namespace are taken from it). See docs/rag.md.
+  rag:
+    enabled: false
+    qdrantImage: qdrant/qdrant:v1.12.6-unprivileged
+    ingestImage: ghcr.io/zyvorai/gryvia-rag-ingest:latest
+  # GryviaAgent (--enable-agents): a tool-calling agent runtime Deployment per agent, serving an OpenAI-compatible
+  # /v1/chat/completions, calling its model through the LLM gateway with its own key, behind a NetworkPolicy that
+  # limits egress to DNS, the gateway and the allowlisted tool hosts. Needs llmGateway.enabled. See docs/agents.md.
+  agents:
+    enabled: false
+    image: ghcr.io/zyvorai/gryvia-agent-runtime:latest
+  # Job hooks (GryviaJobHook, namespaced): a signed POST to a tenant's webhook when a GryviaAIJob or GryviaWorkflow in
+  # its namespace reaches one of the hook's phases. Receivers on private, loopback or link-local addresses are refused
+  # unless listed in allowedCIDRs, which also permits plain http to them (for example the cluster's service CIDR for
+  # in-cluster receivers). See docs/job-hooks.md.
+  jobHooks:
+    enabled: false
+    allowedCIDRs: []
+    # Goroutines that POST deliveries (--job-hook-workers); a slow receiver holds one of them, not a reconcile.
+    workers: 8
+  extraArgs: []
+  # Fold the per-node entries collectors write into GryviaFabricSignal status.nodes[] (network-intelligence
+  # ebpf.fabricStatusPerNode) into the top-level status: max for degradation metrics, sample-weighted means for ratios,
+  # entries older than their ttl ignored (--merge-fabric-signals). Off by default; needs no extra RBAC.
+  mergeFabricSignals: false
+
+# LLM gateway (`/manager llm-gateway`, the ai-operator image): one OpenAI-compatible endpoint
+# (/v1/models, /v1/chat/completions, /v1/completions, /v1/embeddings) in front of every GryviaInferenceService
+# annotated gryvia.io/llm-model. Callers use per-tenant keys (created with `gryvia llm keys create` or
+# POST /api/llm-keys; stored hashed in Secrets in keyNamespace), tokens are metered into GryviaUsageRecords of kind
+# tokens and GryviaQuota.spec.tokensPerDay is enforced with HTTP 429. Off by default. Adds the namespace keyNamespace,
+# a Role on its Secrets for the gateway (read) and the api-gateway (create/delete), and a ClusterRole that reads
+# inference services and quotas and writes usage records. See docs/llm-gateway.md.
+llmGateway:
+  enabled: false
+  replicas: 1
+  # Namespace of the key Secrets; created by the chart. Keep it dedicated: the api-gateway may create and delete
+  # every Secret in it.
+  keyNamespace: gryvia-llm-keys
+  # Default prices per million tokens for models without the gryvia.io/llm-price-*-per-1m annotations.
+  priceInputPer1M: 0
+  priceOutputPer1M: 0
+  currency: USD
+  # How often token counts are written as GryviaUsageRecords, and how often GryviaQuotas are reloaded.
+  flushInterval: 5m
+  quotaRefreshInterval: 30s
+  # How often each replica adds its token counts to the shared daily counter (a ConfigMap in the release namespace)
+  # and reads back the totals that tokensPerDay is checked against.
+  quotaSyncInterval: 1s
+  # Optional IntentPolicy JSON (simple/large model rewrite + burst URL). Empty = disabled.
+  # Mounted for the llm-gateway as --intent-policy-file. See docs/dra-and-intent.md.
+  intentPolicy: ""
+  service:
+    type: ClusterIP
+    port: 8080
+  resources:
+    limits: {cpu: "1", memory: 512Mi}
+    requests: {cpu: 100m, memory: 128Mi}
+  nodeSelector: {}
+  tolerations: []
+
+# Admission webhook served by the ai-operator: validates GryviaAIJob on CREATE/UPDATE.
+# It uses its own self-signed certificate (independent of tls.mode), reused on upgrades.
+webhook:
+  enabled: true
+  # Ignore: if the webhook is unreachable, job creation still succeeds (recommended default).
+  # Fail: reject job creation while the webhook is down (hardening; requires a healthy ai-operator).
+  failurePolicy: Ignore
+  timeoutSeconds: 5
+
+quotaOperator:
+  enabled: true
+  image: {name: gryvia-quota-operator, tag: ""}
+  replicas: 1
+  resources:
+    limits: {cpu: 500m, memory: 512Mi}
+    requests: {cpu: 100m, memory: 128Mi}
+  nodeSelector: {}
+  tolerations: []
+  # Validating webhook that rejects spec changes to a GryviaUsageRecord once spec.final is true (the chargeback
+  # record is immutable after the job finishes). failurePolicy is Fail on purpose: while the quota-operator is
+  # unreachable, writes to gryviausagerecords are rejected instead of letting a sealed record be edited.
+  # Own certificate and Service; independent of the GryviaAIJob webhook. Needs webhook.enabled too.
+  usageRecordWebhook:
+    enabled: true
+  # POST each GryviaBudget threshold alert as JSON to this URL (flag --budget-webhook-url) in addition to the
+  # Kubernetes Event. https only (or loopback); never a payment, e-mail or pager integration. Signed like the
+  # invoice webhook (X-Gryvia-Signature = sha256 HMAC of "<timestamp>.<body>") when secretName names a Secret
+  # holding the key under secretKey. Delivery is at least once. Off while url is empty.
+  budgetWebhook:
+    url: ""
+    secretName: ""
+    secretKey: secret
+  # Kueue objects per GryviaTenant (--kueue-integration, off by default): LocalQueue tenant-<name>/gryvia, ClusterQueue
+  # gryvia-<tenant> (cohort gryvia; nominal quota from spec.quotas.concurrentGPUs) and ResourceFlavors. Turn it on
+  # together with aiOperator.kueueIntegration. Adds create/update/delete on kueue.x-k8s.io clusterqueues,
+  # resourceflavors and localqueues to the operators ClusterRole. See docs/kueue-integration.md.
+  kueueIntegration: false
+  # Resource(s) the tenant's nominal quota is applied to. nvidia.com/gpu on GPU clusters; the kind e2e uses cpu.
+  kueueQuotaResources: nvidia.com/gpu
+  # One ResourceFlavor per enabled GryviaGpuSku gpuType in each ClusterQueue (see the doc for the caveat).
+  kueueGpuTypeFlavors: false
+  # KAI Scheduler queue per GryviaTenant (--kai-integration, off by default): Queue gryvia-<tenant> under the parent
+  # queue gryvia, GPU quota from spec.quotas.concurrentGPUs (limit quota + borrowingLimit, else unlimited), and the
+  # tenant namespace labelled gryvia.io/kai-queue so jobs there use it. Turn it on together with
+  # aiOperator.kaiScheduler; not with kueueIntegration. Adds scheduling.run.ai queues to the operators ClusterRole.
+  # See docs/kai-scheduler.md.
+  kaiIntegration: false
+  # Slurm partition per GryviaTenant (--slurm-integration, off by default): a Slinky NodeSet gryvia-<tenant> (and so
+  # the partition gryvia-<tenant>) next to the Slurm Controller CR, and finished jobs of those partitions read from
+  # slurmrestd into GryviaUsageRecords (kind slurm). Needs Slinky's slurm-operator and a Slurm cluster: slurmOperator
+  # and slurm below, or your own (set slurm.namespace/controller/restapiUrl and a token Secret). Adds create/update/
+  # delete on slinky.slurm.net nodesets to the operators ClusterRole. See docs/slurm.md.
+  slurmIntegration: false
+  slurm:
+    # Namespace of the Controller CR, the NodeSets and the token Secret; empty is the release namespace.
+    namespace: ""
+    # Slinky Controller CR (the bundled slurm chart names it after slurm.fullnameOverride).
+    controller: slurm
+    # slurmd image of the tenant NodeSets; empty is the operator default (the bundled chart's slurmd image).
+    slurmdImage: ""
+    # slurmd pods per tenant without a GPU quota (or when gpusPerNode is 0).
+    nodesPerTenant: 1
+    # nvidia.com/gpu per slurmd pod; the tenant GPU quota divided by it is the node count. 0 is CPU only.
+    gpusPerNode: 0
+    # Several slurmd pods on one Kubernetes node (test clusters only).
+    oversubscribe: false
+    # slurmrestd; empty is http://slurm-restapi.<namespace>.svc:6820.
+    restapiUrl: ""
+    # Secret (in namespace) with a slurmrestd JWT under tokenKey. With slurm.enabled the chart creates a Slinky Token
+    # that writes it. Empty turns accounting off.
+    tokenSecret: gryvia-slurm-token
+    tokenKey: auth-token
+    # Keep it well under slurmctld's MinJobAge (300s by default): finished jobs older than that are gone.
+    accountingInterval: 30s
+  # Per-tenant Kubernetes RBAC (--tenant-rbac): ships the ClusterRoles gryvia-tenant-viewer|member|admin and lets the
+  # tenant controller create RoleBindings in tenant-<name> namespaces from GryviaTenant spec.members and spec.oidcGroups
+  # (adds rolebindings verbs and `bind` on those three ClusterRoles to the operators ClusterRole). Off by default.
+  tenantRbac: false
+  # GryviaReservation controller (--enable-reservations): reserves nodes with the gryvia.io/reserved:NoSchedule taint
+  # plus labels for the owner's jobs. Off by default: turning it on makes existing GryviaReservation objects start
+  # tainting nodes.
+  reservations: false
+
+storageOperator:
+  enabled: false
+  image: {name: gryvia-storage-operator, tag: ""}
+  replicas: 1
+  # GryviaDataset controller (needs storageOperator.enabled): materializes a dataset's http (optional sha256
+  # checksum), s3 or nfs source into a PVC, one directory per version, with a download Job. See docs/datasets.md.
+  datasets:
+    enabled: false
+    # Where a dataset without spec.namespace gets its PVC and download Jobs (empty: the chart's namespace).
+    namespace: ""
+    image: busybox:1.36
+    s3Image: amazon/aws-cli:2.17.0
+    defaultSize: 10Gi
+  resources:
+    limits: {cpu: 200m, memory: 256Mi}
+    requests: {cpu: 50m, memory: 64Mi}
+  nodeSelector: {}
+  tolerations: []
+
+networkOperator:
+  enabled: false
+  image: {name: gryvia-network-operator, tag: ""}
+  replicas: 1
+  resources:
+    limits: {cpu: 200m, memory: 256Mi}
+    requests: {cpu: 50m, memory: 64Mi}
+  nodeSelector: {}
+  tolerations: []
+
+# --- API gateway and dashboard -----------------------------------------------
+apiGateway:
+  # Durable two-person OIDC operations. Grants gateway node/quota patches and local ConfigMap storage.
+  intelligenceActions: false
+  # Days to keep finished operation records (Rejected, Applied, RolledBack, expired proposals); 0 keeps all.
+  # Executing/RollingBack records (uncertain writes) are never deleted.
+  intelligenceRetentionDays: 30
+  # POST /api/jobs/preflight always previews Kubernetes admission (dry run, strict fields). enforce: true makes
+  # every POST /api/jobs pass the same checks first (fail closed, strict fields, no gpuCount alias).
+  submissionAdmission:
+    enforce: false
+  # Allow POST /api/fairshare/apply to patch tenant fairShareWeight from lookback recommendations.
+  # Recommend-only (GET /api/fairshare) always works for admins. Needs platformCompletion.kueueFairSharing
+  # for Kueue ClusterQueues to honor the weight.
+  fairshareApply: false
+  enabled: true
+  image: {name: gryvia-api-gateway, tag: ""}
+  replicas: 2
+  # Optional Prometheus URL for cost and metrics history.
+  prometheusUrl: ""
+  # Same random token as network-intelligence ebpf.flightTokenSecret, copied
+  # into the gateway namespace as a separate Kubernetes Secret.
+  flightTokenSecret: ""
+  flightTokenKey: token
+  flightCollectorNamespace: gryvia-network
+  # Prometheus /metrics of the gateway (request counts and latency by route template, auth results, rate-limit hits,
+  # collector reachability). OFF by default and never unauthenticated: the gateway serves /metrics only when it is given
+  # a token of >= 32 characters (GRYVIA_METRICS_TOKEN) and then requires `Authorization: Bearer <token>`; without one
+  # the route does not exist. Create the Secret yourself in this namespace, for example:
+  #   kubectl -n gryvia-system create secret generic gryvia-gateway-metrics --from-literal=token="$(openssl rand -hex 24)"
+  # Scrapers use the existing https port; with monitoring.enabled the chart adds a ServiceMonitor that sends this token.
+  metrics:
+    enabled: false
+    tokenSecret: ""
+    tokenKey: token
+    # The default gateway certificate is self-signed; set false and give the ServiceMonitor a CA only if you replaced it.
+    insecureSkipVerify: true
+  # Talking to collectors (network-intelligence chart ebpf.security). All optional; unset keeps plain http and
+  # unsigned requests. See docs/collector-security.md.
+  collector:
+    # Existing Secret in this namespace holding ca.crt (CA that signed the collector certificate). Switches the
+    # gateway to https for discovered collectors (GRYVIA_COLLECTOR_CA_FILE).
+    tlsSecret: ""
+    # Also present tls.crt/tls.key from tlsSecret as a client certificate (collectors with mTLS).
+    clientCert: false
+    # Certificate name to verify (collectors are reached by pod IP); must be in the collector certificate.
+    serverName: gryvia-collector
+    # Secret with the shared token the collectors' apiTokenSecret holds (>= 32 chars); signs non-flight requests.
+    tokenSecret: ""
+    tokenKey: token
+  # Roles: the API key and dashboard login are the provider admin; an OIDC user is a tenant user whose
+  # `org`/`groups` claim must match a GryviaTenant (name or namespace tenant-<name>).
+  oidc:
+    # Comma separated `groups` claim values that make an OIDC user a provider admin (default: none).
+    adminGroups: ""
+    # Keep the pre-tenant behaviour (claim values used as namespaces) while NO GryviaTenant exists.
+    legacyNamespaces: false
+  # Real network flows come from Netra (a separate eBPF network observability product), not from Gryvia.
+  # Install Netra, then point this at its controller, the address the gateway can actually reach, e.g. https://<netra-public-ip>:30870 (a cluster-internal name only works when Netra runs in this cluster). Netra's certificate is self-signed by default: set insecureTLS, or trust its CA. Empty: the network
+  # pages show service-graph edges only.
+  # Serve /api/network/usage, the invoice networkLines and /api/network/reconcile from GryviaNetworkUsageRecord
+  # and GryviaNetworkRate objects (docs/network-cost-attribution.md). Off by default: only adds read access to those
+  # two kinds to the gateway ClusterRole (without it the endpoints return no data and invoices are unchanged).
+  networkCost:
+    enabled: false
+  # Durable, searchable audit trail (GET /api/audit, /api/audit/export.csv): stores entries in SQLite on a
+  # PersistentVolumeClaim. OFF by default (the audit log on stdout is the durable record without it). SQLite has one
+  # writer, so enabling this requires apiGateway.replicas: 1 (the chart fails otherwise) and rolls out with Recreate.
+  audit:
+    database:
+      enabled: false
+      size: 1Gi
+      storageClass: ""
+      # Use your own claim instead of creating one.
+      existingClaim: ""
+      # Delete entries older than this many days; 0 keeps everything.
+      retentionDays: 0
+  # Approvals. productionPromotion: a tenant user's request to promote a model to production is recorded
+  # (annotation gryvia.io/promotion-request on the GryviaModelRegistry) instead of applied, and a provider
+  # administrator approves or rejects it (POST /api/models/{name}/approve|reject, or the Models page). Admins still
+  # promote directly. Off by default. Every request, approval and rejection appears in the audit trail.
+  approvals:
+    productionPromotion: false
+  netra:
+    url: ""
+    # Secret holding a Netra API token (viewer role is enough).
+    tokenSecret: ""
+    tokenKey: token
+    insecureTLS: false
+  # The Sovereign AI OS overview page (helm/sovereign-aios sets these). With zyntraURL empty it shows Zyntra as not
+  # installed; the console URLs are the links it offers and may be empty.
+  sovereign:
+    zyntraURL: ""
+    # Secret holding a Zyntra token (a viewer service token is enough) for open gaps and pending proposals.
+    zyntraTokenSecret: ""
+    zyntraTokenKey: token
+    zyntraConsoleURL: ""
+    netraConsoleURL: ""
+    # Verify Zyntra and Netra against Gryvia's own certificate (they serve it in the umbrella chart).
+    trustGryviaCert: false
+  resources:
+    limits: {cpu: 500m, memory: 512Mi}
+    requests: {cpu: 200m, memory: 256Mi}
+
+ui:
+  enabled: true
+  image: {name: gryvia-ui, tag: ""}
+  replicas: 2
+  resources:
+    limits: {cpu: 200m, memory: 256Mi}
+    requests: {cpu: 100m, memory: 128Mi}
+  service:
+    # ClusterIP, NodePort or LoadBalancer. The dashboard is HTTPS on port 443.
+    type: ClusterIP
+    nodePort: null
+  ingress:
+    enabled: false
+    className: ""
+    host: gryvia.example.com
+    annotations: {}
+    # Secret with the ingress certificate (leave empty for none).
+    tlsSecretName: ""
+  # Envoy (or any Gateway API implementation, e.g. Envoy Gateway) instead of an Ingress controller. Mutually
+  # exclusive with ui.ingress. The dashboard serves HTTPS on 443, so the proxy re-encrypts to it and a
+  # BackendTLSPolicy pins the CA: create the ConfigMap once from the certificate the chart minted, e.g.
+  #   kubectl -n gryvia-system get secret gryvia-tls -o jsonpath='{.data.tls\.crt}' | base64 -d |
+  #     kubectl -n gryvia-system create configmap gryvia-ui-ca --from-file=ca.crt=/dev/stdin
+  gateway:
+    enabled: false
+    createGateway: true          # false: only attach the routes to an existing Gateway (below)
+    gatewayClassName: eg
+    gatewayName: ""              # existing Gateway when createGateway=false (default: gryvia)
+    gatewayNamespace: ""         # default: the release namespace
+    host: gryvia.example.com
+    httpsPort: 7443              # client-facing HTTPS listener port (not 443); the http listener stays on 80
+    tlsSecretName: ""            # client-facing kubernetes.io/tls Secret; empty = plain HTTP :80 listener only
+    backendTLS:
+      caConfigMapName: ""        # required when gateway.enabled: ConfigMap holding ca.crt for gryvia-ui
+      hostname: ""               # validation hostname; default gryvia-ui.<namespace>.svc (a chart SAN)
+    requestTimeout: "0s"         # 0s: no route timeout (dashboard streams / websockets)
+
+# Open GryviaWorkspaces (Jupyter, VS Code) in the browser at <publicURL>/ws/<namespace>/<name>/, through the dashboard
+# and the api-gateway, which checks a per-workspace session cookie. The ai-operator derives each Jupyter server's
+# token from a key it shares with the gateway (the Secret gryvia-workspace-proxy, generated once, key "key"; or
+# existingSecret) and limits workspace pod ingress to the gateway and the operator with a NetworkPolicy, which is
+# only enforced by CNIs that implement NetworkPolicy. See docs/workspaces.md.
+workspaceProxy:
+  enabled: false
+  # The origin users open, e.g. https://gryvia.example.com or https://localhost:8443 (kind demo).
+  publicURL: ""
+  existingSecret: ""
+
+# Sign-in. The dashboard and API use one shared bearer key (login: admin / <key>).
+# LAB DEFAULT: the key below is well known (Admin@321) and the dashboard shows a warning while it is
+# in use. For anything reachable from an untrusted network set your own (--set auth.apiKey=<secret>),
+# use an existing Secret, or set apiKey to "" to have the chart generate a random key once
+# (read it back: kubectl -n gryvia-system get secret gryvia-api-key -o jsonpath='{.data.GRYVIA_API_KEY}' | base64 -d).
+auth:
+  apiKey: "Admin@321"
+  # Existing Secret holding the key under `GRYVIA_API_KEY`; overrides apiKey.
+  existingSecret: ""
+
+# TLS between browser -> UI and UI -> gateway.
+tls:
+  # selfSigned: the chart mints one certificate and reuses it on upgrades.
+  # existingSecret: use the kubernetes.io/tls Secret named below.
+  # certManager: request a certificate from the issuer named below.
+  mode: selfSigned
+  secretName: gryvia-tls
+  extraSANs: []
+  certManager:
+    issuerName: ""
+    issuerKind: ClusterIssuer
+
+# --- Optional hardening -------------------------------------------------------
+podDisruptionBudget:
+  enabled: false
+  minAvailable: 1
+
+networkPolicy:
+  enabled: false
+
+# --- GPU node add-ons ----------------------------------------------------------
+# --- NVIDIA GPU Operator (drivers, container toolkit, device plugin, DCGM, GPU feature discovery) ---------
+# Off by default, so kind and CPU-only clusters get nothing NVIDIA-specific. On a GPU cluster whose nodes do not
+# already have the NVIDIA driver and container toolkit, turn it on: `--set nvidia.enabled=true`. It installs NVIDIA's
+# own operator as a sub-chart (https://github.com/NVIDIA/gpu-operator); Gryvia then auto-registers the GPU nodes
+# it prepares. While it is on, the two DaemonSets below (Gryvia's own device plugin and DCGM exporter) are not
+# rendered. Every other key under `nvidia:` is passed through to the NVIDIA chart.
+nvidia:
+  enabled: false
+  driver:
+    # true: the driver runs in a container, nothing is needed on the host.
+    # false: the host already has the NVIDIA driver installed.
+    enabled: true
+  toolkit:
+    enabled: true
+    # k3s runs its own containerd. `scripts/install-k3s-gpu.sh` sets these; set them yourself on k3s:
+    #   - {name: CONTAINERD_CONFIG, value: /var/lib/rancher/k3s/agent/etc/containerd/config.toml.tmpl}
+    #   - {name: CONTAINERD_SOCKET, value: /run/k3s/containerd/containerd.sock}
+    #   - {name: CONTAINERD_RUNTIME_CLASS, value: nvidia}
+    #   - {name: CONTAINERD_SET_AS_DEFAULT, value: "true"}
+    env: []
+
+# --- NVIDIA one-click extras (NOT passed to the GPU Operator chart) ----------------------
+# Sibling of `nvidia:` so unknown keys never hit the GPU Operator values schema.
+# GPU Operator pass-through (set these on the install; they are real GPU Operator keys):
+#   --set nvidia.driver.rdma.enabled=true
+#   --set nvidia.gds.enabled=true
+#   --set nvidia.mig.strategy=mixed
+#   --set nvidia.migManager.enabled=true
+# Time-slicing also needs the ClusterPolicy to read the ConfigMap rendered below:
+#   --set nvidia.devicePlugin.config.name=gryvia-time-slicing   (same as nvidiaPlatform.timeSlicing.configName)
+nvidiaPlatform:
+  timeSlicing:
+    enabled: false
+    replicas: 4
+    configName: gryvia-time-slicing
+  validate:
+    enabled: false
+    image: nvcr.io/nvidia/cuda:12.8.0-base-ubuntu22.04
+
+# NVIDIA Network Operator sub-chart (alias nvidiaNetwork). DOCA/OFED, SR-IOV and RDMA
+# device plugins. Off by default. Not validated on real NICs.
+nvidiaNetwork:
+  enabled: false
+  nfd:
+    enabled: false
+  # When true, Gryvia renders a minimal, cluster-scoped NicClusterPolicy (nic-cluster-policy).
+  # Edit examples/nvidia/nic-cluster-policy.yaml if you need SR-IOV PF lists or a specific OFED version.
+  nicClusterPolicy:
+    enabled: false
+    ofedDriver: true
+    rdmaSharedDevicePlugin: true
+    sriovDevicePlugin: false
+    secondaryNetwork: true
+
+# NVIDIA NIM Operator sub-chart. Off by default. Needs an NGC API key in
+# nvidiaNim.ngcApiKey (or create secret ngc-api). Not a model catalog.
+nvidiaNim:
+  enabled: false
+  ngcApiKey: ""
+
+# --- Kueue (job queueing, gang admission, quotas, preemption) -------------------------------------------------
+# Off by default. `kueue.enabled=true` installs the Kueue controller from its own chart (registry.k8s.io/kueue/charts,
+# version pinned in Chart.yaml) into the release namespace; Gryvia only uses it with aiOperator.kueueIntegration and
+# quotaOperator.kueueIntegration. Every other key under `kueue:` is passed through to the Kueue chart.
+# Enable all three together:
+#   --set kueue.enabled=true --set aiOperator.kueueIntegration=true --set quotaOperator.kueueIntegration=true
+# SchedMD's Slinky slurm-operator (sub-chart slurm-operator 1.2.3). Off by default. Its CRDs come with it; the
+# webhook gets a self-signed certificate from the chart instead of cert-manager.
+slurmOperator:
+  enabled: false
+  # Its objects are named after the chart name, which the alias would make slurmOperator (rejected by Kubernetes).
+  nameOverride: slurm-operator
+  crds:
+    enabled: true
+  certManager:
+    enabled: false
+
+# A Slurm cluster run by that operator (Slurm 26.05; objects as Slinky's slurm chart 1.2.3 renders them by default):
+# the Secrets slurm-auth-slurm and slurm-auth-jwt, a Controller (slurmctld) and a RestApi (slurmrestd, Service
+# slurm-restapi:6820). No login nodes and no worker NodeSets of its own: with quotaOperator.slurmIntegration the quota
+# operator adds one NodeSet per tenant. Needs the operator's CRDs already installed: turn on slurmOperator.enabled in
+# one helm upgrade and slurm.enabled in the next (one release cannot create CRDs and their objects together). Off by
+# default.
+slurm:
+  enabled: false
+  # Name of the Controller and RestApi (and prefix of the key Secrets and Services).
+  name: slurm
+  images:
+    slurmctld: ghcr.io/slinkyproject/slurmctld:26.05-ubuntu26.04
+    slurmrestd: ghcr.io/slinkyproject/slurmrestd:26.05-ubuntu26.04
+    logfile: docker.io/library/alpine:3.22
+  # slurmctld state (job IDs, queue) on a PVC; off keeps it in an emptyDir and loses it on restart.
+  persistence:
+    enabled: true
+    size: 4Gi
+    storageClassName: ""
+  # Extra slurm.conf lines (Slinky's Controller spec.extraConf).
+  extraConf: ""
+
+kueue:
+  enabled: false
+  # Makes the controller Deployment `kueue-controller-manager` regardless of the Helm release name.
+  fullnameOverride: kueue
+  # The chart's probes use timeoutSeconds: 1 and failureThreshold: 3, so a loaded node kills a healthy
+  # manager. A 5s timeout and 6 failures still detect a hung process within ~2 minutes.
+  controllerManager:
+    readinessProbe:
+      timeoutSeconds: 5
+      failureThreshold: 6
+    livenessProbe:
+      initialDelaySeconds: 30
+      timeoutSeconds: 5
+      failureThreshold: 6
+  managerConfig:
+    # Kueue's Configuration (config.kueue.x-k8s.io/v1beta2, the API of the pinned chart version). This REPLACES the
+    # chart's default; it differs from it in two ways: waitForPodsReady is on, and only the batch/job integration is
+    # registered (no pod/deployment/statefulset webhooks in every namespace). Jobs without a queue label are never
+    # managed (manageJobsWithoutQueueName is false), so nothing outside Gryvia's queues is affected.
+    #   waitForPodsReady: an admitted workload whose pods are not all Ready within `timeout` is evicted and requeued
+    #     (with backoff), and with blockAdmission: true no other workload is admitted meanwhile, so two gangs can
+    #     never each hold half of the nodes. (The v1beta2 API has no `enable` field: the block enables it.)
+    controllerManagerConfigYaml: |-
+      apiVersion: config.kueue.x-k8s.io/v1beta2
+      kind: Configuration
+      health:
+        healthProbeBindAddress: :8081
+      metrics:
+        bindAddress: :8443
+      webhook:
+        port: 9443
+      # Generous leader-election timing. client-go defaults (15s lease / 10s renew / 2s retry, each API call
+      # limited to a 5s timeout) make the manager abandon leadership and exit when the API server is merely
+      # slow, which on a single busy control-plane node became a restart loop (58 restarts in 29h) while its
+      # failurePolicy=Fail webhooks rejected every Job in the cluster. Must satisfy
+      # leaseDuration > renewDeadline > retryPeriod * 1.2.
+      leaderElection:
+        leaderElect: true
+        resourceName: c1f6bfd2.kueue.x-k8s.io
+        leaseDuration: 60s
+        renewDeadline: 45s
+        retryPeriod: 10s
+      controller:
+        groupKindConcurrency:
+          Job.batch: 5
+          Workload.kueue.x-k8s.io: 10
+          LocalQueue.kueue.x-k8s.io: 5
+          ClusterQueue.kueue.x-k8s.io: 5
+          ResourceFlavor.kueue.x-k8s.io: 1
+      clientConnection:
+        qps: 300
+        burst: 500
+      waitForPodsReady:
+        timeout: 10m
+        blockAdmission: true
+        requeuingStrategy:
+          timestamp: Eviction
+          backoffBaseSeconds: 60
+          backoffMaxSeconds: 3600
+      integrations:
+        frameworks:
+          - "batch/job"
+
+# --- Gryvia's own GPU add-ons: used only when nvidia.enabled=false ---------------------------------------------
+# They assume the host already has the NVIDIA driver, the container toolkit and nvidia as the default (or
+# `runtimeClassName`) runtime. They run only on nodes labelled nvidia.com/gpu.present=true (set by GPU feature
+# discovery, or by hand: kubectl label node <name> nvidia.com/gpu.present=true), never on CPU nodes.
+nvidiaDevicePlugin:
+  enabled: true
+  nodeSelector:
+    nvidia.com/gpu.present: "true"
+  # Set to `nvidia` when the toolkit registered an nvidia RuntimeClass but did not make it the default.
+  runtimeClassName: ""
+  image:
+    repository: nvcr.io/nvidia/k8s-device-plugin
+    tag: v0.17.0
+    pullPolicy: IfNotPresent
+
+dcgmExporter:
+  enabled: true
+  nodeSelector:
+    nvidia.com/gpu.present: "true"
+  runtimeClassName: ""
+  image:
+    repository: nvcr.io/nvidia/k8s/dcgm-exporter
+    tag: 3.3.9-3.6.1-ubuntu22.04
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 9400
+
+# --- Cluster plumbing -----------------------------------------------------------
+rbac:
+  create: true
+
+serviceAccount:
+  create: true
+  name: gryvia-operator
+  annotations: {}
+
+namespace:
+  # Off by default: `helm install --create-namespace` creates the release namespace before the chart renders, so a chart-managed
+  # Namespace object collides with it ("namespaces already exists"). Set true only for flows that do not use
+  # --create-namespace (for example `helm template | kubectl apply`). With nvidia.enabled=true the namespace must allow
+  # privileged pods: label it `pod-security.kubernetes.io/enforce=privileged` (scripts/install-k3s-gpu.sh does).
+  create: false
+  name: gryvia-system
+
+# Observability wiring (docs/observability.md). OFF by default. When on, the chart can install, from the copies in
+# monitoring-assets/ (kept in sync with monitoring/ by scripts/sync-monitoring-assets.sh):
+#   - a PodMonitor for the operators' :8080/metrics and a ServiceMonitor for the gateway (only when apiGateway.metrics.enabled),
+#   - a PrometheusRule with the alerts,
+#   - a ConfigMap with the Grafana dashboards (label grafana_dashboard: "1" for the grafana sidecar).
+# The monitors and the rule need the Prometheus Operator CRDs (monitoring.coreos.com/v1) and are skipped without them.
+monitoring:
+  enabled: false
+  prometheus:
+    enabled: true
+    serviceMonitor:
+      enabled: true
+      interval: 30s
+      # Namespace for the monitors and the rule (default: the release namespace).
+      namespace: ""
+      # Labels your Prometheus selects on (for kube-prometheus-stack: release: <its release name>).
+      additionalLabels: {}
+    rules:
+      enabled: true
+  grafana:
+    enabled: true
+    dashboards:
+      enabled: true
+
+ha:
+  leaderElection: true
+
+# Container-level security context (operators)
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
+  runAsUser: 65532
+  capabilities:
+    drop:
+      - ALL
+
+# Pod-level security context (operators)
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  fsGroup: 65532
+  seccompProfile:
+    type: RuntimeDefault
+
+# Immutable billing (off by default). ledger.enabled runs the quota-operator with --billing-ledger: every sealed
+# GryviaUsageRecord gets an append-only, per-tenant hash-chained GryviaLedgerEntry, and the admission webhook rejects
+# edits/deletes of ledger entries, of non-Draft GryviaInvoices and deletes of sealed usage records. The gateway can
+# then finalize (admin), void and verify invoices. Requires webhook.enabled and quotaOperator.usageRecordWebhook.
+# stripe.secretName optionally names a Secret with a Stripe *test-mode* key (sk_test_..., under secretKeyKey) and the
+# webhook signing secret (whsec_..., under webhookSecretKey); live keys are refused and Stripe stays off when empty.
+billing:
+  ledger:
+    enabled: false
+  stripe:
+    secretName: ""
+    secretKeyKey: secret-key
+    webhookSecretKey: webhook-secret
+nameOverride: ""
+fullnameOverride: ""
+imagePullSecrets: []
+
+# Optional capabilities added by the platform completion bundle.
+platformCompletion:
+  # Mark unsupported legacy APIs explicitly; does not run their dormant controllers.
+  reportUnsupportedAPIs: false
+  inferenceTelemetry: false
+  gpuHealth: false
+  gpuRemediation: false
+  kueueFairSharing: false
+  # Existing administrator-created Topology and AdmissionCheck objects.
+  kueueTopologyName: ""
+  # With kueueTopologyName and quotaOperator.kueueIntegration: create that Topology (levels gryvia.io/ib-block,
+  # gryvia.io/rack, kubernetes.io/hostname) when it does not exist (--kueue-generate-topology).
+  kueueGenerateTopology: false
+  kueueAdmissionCheck: ""

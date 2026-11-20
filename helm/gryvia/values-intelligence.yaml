@@ -1,0 +1,3 @@
+# Opt-in workload intelligence approved operations (reviewer-gated writes).
+apiGateway:
+  intelligenceActions: true

@@ -1,0 +1,93 @@
+---
+# RDMA (InfiniBand/RoCE) Configuration
+
+- name: Install RDMA packages
+  apt:
+    name:
+      - rdma-core
+      - libibverbs1
+      - ibverbs-utils
+      - librdmacm1
+      - rdmacm-utils
+      - infiniband-diags
+      - perftest
+      - opensm
+      - mlnx-ofed-all  # Mellanox OFED
+    state: present
+    update_cache: yes
+  when: rdma_enabled | default(false)
+
+- name: Load RDMA kernel modules
+  modprobe:
+    name: "{{ item }}"
+    state: present
+  loop:
+    - rdma_cm
+    - ib_core
+    - ib_umad
+    - ib_uverbs
+    - mlx5_core
+    - mlx5_ib
+  when: rdma_enabled | default(false)
+
+- name: Ensure RDMA modules load on boot
+  copy:
+    dest: /etc/modules-load.d/rdma.conf
+    content: |
+      rdma_cm
+      ib_core
+      ib_umad
+      ib_uverbs
+      mlx5_core
+      mlx5_ib
+  when: rdma_enabled | default(false)
+
+- name: Configure RDMA sysctl parameters
+  sysctl:
+    name: "{{ item.key }}"
+    value: "{{ item.value }}"
+    state: present
+    sysctl_set: yes
+    reload: yes
+  loop:
+    - { key: 'net.core.rmem_max', value: '268435456' }
+    - { key: 'net.core.wmem_max', value: '268435456' }
+    - { key: 'net.ipv4.tcp_rmem', value: '4096 87380 134217728' }
+    - { key: 'net.ipv4.tcp_wmem', value: '4096 65536 134217728' }
+    - { key: 'net.core.netdev_max_backlog', value: '250000' }
+    - { key: 'net.ipv4.tcp_no_metrics_save', value: '1' }
+    - { key: 'net.ipv4.tcp_congestion_control', value: 'bbr' }
+  when: rdma_enabled | default(false)
+
+- name: Check InfiniBand devices
+  shell: ibstat
+  register: ib_devices
+  changed_when: false
+  ignore_errors: yes
+  when: rdma_enabled | default(false)
+
+- name: Display InfiniBand devices
+  debug:
+    var: ib_devices.stdout_lines
+  when:
+    - rdma_enabled | default(false)
+    - ib_devices.rc == 0
+
+- name: Configure SR-IOV for RDMA
+  shell: |
+    echo 8 > /sys/class/net/{{ rdma_device | default('ib0') }}/device/sriov_numvfs
+  when:
+    - rdma_enabled | default(false)
+    - rdma_device is defined
+  ignore_errors: yes
+
+- name: Test RDMA connectivity
+  shell: ibv_devices
+  register: ibv_devices_output
+  changed_when: false
+  when: rdma_enabled | default(false)
+
+- name: Display RDMA devices
+  debug:
+    var: ibv_devices_output.stdout_lines
+  when: rdma_enabled | default(false)

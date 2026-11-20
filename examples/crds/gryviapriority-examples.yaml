@@ -1,0 +1,184 @@
+# System-Critical Priority (highest)
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaPriority
+metadata:
+  name: system-critical
+spec:
+  value: 1000000
+  description: "System and infrastructure jobs"
+  preemptionPolicy: PreemptLowerPriority
+  quotaOverride:
+    enabled: true
+    maxOverridePercent: 50  # Can use 150% of quota
+  sla:
+    maxQueueTimeMinutes: 1
+    guaranteedResources: true
+---
+# Production Priority (very high)
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaPriority
+metadata:
+  name: production
+spec:
+  value: 100000
+  description: "Production inference and serving workloads"
+  preemptionPolicy: PreemptLowerPriority
+  quotaOverride:
+    enabled: true
+    maxOverridePercent: 25  # Can use 125% of quota
+  sla:
+    maxQueueTimeMinutes: 5
+    guaranteedResources: true
+---
+# High Priority
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaPriority
+metadata:
+  name: high
+spec:
+  value: 10000
+  description: "Important research and critical experiments"
+  preemptionPolicy: PreemptLowerPriority
+  quotaOverride:
+    enabled: true
+    maxOverridePercent: 10
+  sla:
+    maxQueueTimeMinutes: 30
+    guaranteedResources: false
+---
+# Normal Priority (default)
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaPriority
+metadata:
+  name: normal
+spec:
+  value: 1000
+  description: "Standard training and development jobs"
+  preemptionPolicy: Never
+  quotaOverride:
+    enabled: false
+  sla:
+    maxQueueTimeMinutes: 120
+    guaranteedResources: false
+---
+# Low Priority
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaPriority
+metadata:
+  name: low
+spec:
+  value: 100
+  description: "Non-urgent batch jobs"
+  preemptionPolicy: Never
+  quotaOverride:
+    enabled: false
+  sla:
+    maxQueueTimeMinutes: 1440  # 24 hours
+    guaranteedResources: false
+---
+# Best-Effort Priority (lowest)
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaPriority
+metadata:
+  name: best-effort
+spec:
+  value: 10
+  description: "Opportunistic jobs, use spare capacity only"
+  preemptionPolicy: Never
+  quotaOverride:
+    enabled: false
+  sla:
+    maxQueueTimeMinutes: 10080  # 1 week
+    guaranteedResources: false
+---
+# Spot Priority (for spot instance jobs)
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaPriority
+metadata:
+  name: spot
+spec:
+  value: 50
+  description: "Jobs using spot instances"
+  preemptionPolicy: Never
+  quotaOverride:
+    enabled: false
+  sla:
+    maxQueueTimeMinutes: 2880  # 48 hours
+    guaranteedResources: false
+---
+# Example Job with Priority
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaAIJob
+metadata:
+  name: critical-training
+spec:
+  type: training
+  # High priority (job priority is 0-100; the "high" GryviaPriority class maps to ~80)
+  priority: 80
+
+  gpus: 32
+  gpuType: A100-80G
+
+  image: nvcr.io/nvidia/pytorch:24.01-py3
+  command: ["python", "train.py"]
+---
+# Example: Preemptible Job
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaAIJob
+metadata:
+  name: batch-job
+spec:
+  type: training
+  # Low priority (below 50 = preemptible)
+  priority: 20
+
+  gpus: 8
+  gpuType: A100-40G
+
+  # Checkpointing for preemption is handled by the job itself (--checkpoint-dir below)
+
+  image: nvcr.io/nvidia/pytorch:24.01-py3
+  command: ["python", "train.py", "--checkpoint-dir=/checkpoints"]
+---
+# Example: Production Serving (highest priority)
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaAIJob
+metadata:
+  name: llm-serving
+spec:
+  type: inference
+  # Highest priority (the "production" GryviaPriority class)
+  priority: 95
+
+  gpus: 8
+  gpuType: H100
+
+  image: vllm/vllm:v0.6.6
+  command: ["python", "-m", "vllm.entrypoints.api_server"]
+---
+# Preemption Event Example
+apiVersion: v1
+kind: Event
+metadata:
+  name: job-preempted
+type: Warning
+reason: Preempted
+message: |
+  Job 'batch-job' preempted to make room for higher priority job 'critical-training'
+
+  Preempted Job:
+    Name: batch-job
+    Priority: low (100)
+    Resources: 8x A100-40G
+
+  Preempting Job:
+    Name: critical-training
+    Priority: high (10000)
+    Resources: 32x A100-80G
+    Reason: Insufficient cluster capacity
+
+  Preemption Actions:
+    • Created checkpoint at /checkpoints/batch-job-1705834562
+    • Gracefully terminated batch-job
+    • Queued batch-job for restart when capacity available
+    • Started critical-training

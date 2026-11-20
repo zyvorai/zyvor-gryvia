@@ -1,0 +1,77 @@
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaAIJob
+metadata:
+  name: pytorch-simple-training
+  namespace: default
+spec:
+  type: training
+  model: resnet50
+  gpus: 1
+  gpuType: A100
+  network: standard
+  storage: vast-fast
+
+  image: pytorch/pytorch:2.1.0-cuda12.1-cudnn8-runtime
+  imagePullPolicy: IfNotPresent
+
+  command:
+    - python
+    - -c
+  args:
+    - |
+      import torch
+      import torchvision
+      import time
+
+      print("=" * 60)
+      print("Gryvia PyTorch Training Example")
+      print("=" * 60)
+
+      # Check GPU
+      print(f"CUDA available: {torch.cuda.is_available()}")
+      print(f"GPU count: {torch.cuda.device_count()}")
+      if torch.cuda.is_available():
+          print(f"GPU name: {torch.cuda.get_device_name(0)}")
+          print(f"GPU memory: {torch.cuda.get_device_properties(0).total_memory / 1e9:.2f} GB")
+
+      # Create model
+      print("\nCreating ResNet50 model...")
+      model = torchvision.models.resnet50(pretrained=False)
+      if torch.cuda.is_available():
+          model = model.cuda()
+
+      # Training loop
+      print("\nStarting training...")
+      optimizer = torch.optim.SGD(model.parameters(), lr=0.01)
+      criterion = torch.nn.CrossEntropyLoss()
+
+      for epoch in range(10):
+          # Dummy batch
+          data = torch.randn(32, 3, 224, 224)
+          target = torch.randint(0, 1000, (32,))
+
+          if torch.cuda.is_available():
+              data, target = data.cuda(), target.cuda()
+
+          start = time.time()
+          optimizer.zero_grad()
+          output = model(data)
+          loss = criterion(output, target)
+          loss.backward()
+          optimizer.step()
+          elapsed = time.time() - start
+
+          print(f"Epoch {epoch+1}/10 - Loss: {loss.item():.4f} - Time: {elapsed:.3f}s")
+
+      print("\nTraining complete!")
+
+  resources:
+    requests:
+      memory: "16Gi"
+      cpu: "4"
+    limits:
+      memory: "32Gi"
+      cpu: "8"
+
+  priority: 50
+  retryLimit: 3

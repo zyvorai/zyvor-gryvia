@@ -1,0 +1,23 @@
+# Metrics referenced by monitoring/ that Gryvia does NOT export. scripts/check-metrics-refs.py accepts these; every other
+# metric must be defined by an exporter in collector/, operators/ or services/api-gateway/. A trailing * matches a prefix.
+# One entry per line; text after # is a comment.
+
+# Prometheus itself
+up
+ALERTS
+ALERTS_FOR_STATE
+
+# NVIDIA dcgm-exporter (enable dcgmExporter in helm/gryvia, or run your own)
+DCGM_FI_*
+
+# kube-state-metrics
+kube_pod_*
+
+# controller-runtime / client-go, served by every Gryvia operator
+controller_runtime_*
+workqueue_*
+rest_client_*
+
+# Go runtime and process collectors (operators, collector, gateway)
+go_*
+process_*

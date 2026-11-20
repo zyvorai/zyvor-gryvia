@@ -1,0 +1,126 @@
+---
+# VSCode Server with GPU Access
+# code-server listens on 8080; expose it with `kubectl port-forward` or your own Service
+# (GryviaAIJob has no ports/probes fields).
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaAIJob
+metadata:
+  name: vscode-gpu
+  namespace: default
+  labels:
+    app: vscode-server
+    team: ml-research
+spec:
+  type: training
+  gpus: 1
+  gpuType: A100-80G
+  resources:
+    requests:
+      cpu: "16"
+      memory: 64Gi
+  image: codercom/code-server:4.20.0
+  command:
+    - /bin/sh
+    - -c
+    - |
+      # Install CUDA toolkit awareness
+      pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+      pip install transformers accelerate bitsandbytes
+      pip install jupyter ipykernel
+      pip install mlflow
+
+      # Start code-server
+      code-server \
+        --bind-addr=0.0.0.0:8080 \
+        --auth=password \
+        --disable-telemetry \
+        --disable-update-check \
+        /workspace
+  env:
+    - name: PASSWORD
+      valueFrom:
+        secretKeyRef:
+          name: vscode-secret
+          key: password
+    - name: MLFLOW_TRACKING_URI
+      value: "http://mlflow.gryvia-system.svc.cluster.local:5000"
+    - name: CUDA_VISIBLE_DEVICES
+      value: "0"
+  volumeMounts:
+    - name: workspace
+      mountPath: /workspace
+    - name: config
+      mountPath: /home/coder/.config/code-server
+  volumes:
+    - name: workspace
+      persistentVolumeClaim:
+        claimName: vscode-workspace
+    - name: config
+      emptyDir: {}
+
+---
+# VSCode Workspace PVC
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: vscode-workspace
+  namespace: default
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: vast-sc
+  resources:
+    requests:
+      storage: 200Gi
+
+---
+# VSCode Secret
+apiVersion: v1
+kind: Secret
+metadata:
+  name: vscode-secret
+  namespace: default
+type: Opaque
+stringData:
+  password: "REPLACE_ME"  # Set a strong password (or create this Secret out of band) before applying
+
+---
+# VSCode Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: vscode-gpu
+  namespace: default
+spec:
+  type: ClusterIP
+  selector:
+    job-name: vscode-gpu
+  ports:
+    - port: 8080
+      targetPort: 8080
+      name: http
+
+---
+# VSCode route (optional): replaces the former nginx Ingress. Envoy upgrades websockets without extra
+# annotations; the `gryvia` Gateway (namespace gryvia-system) must allow routes from this namespace.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: vscode-gpu
+  namespace: default
+spec:
+  parentRefs:
+  - name: gryvia
+    namespace: gryvia-system
+  hostnames:
+  - vscode.gryvia.local
+  rules:
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /
+    backendRefs:
+    - name: vscode-gpu
+      port: 8080
+    timeouts:
+      request: "0s"

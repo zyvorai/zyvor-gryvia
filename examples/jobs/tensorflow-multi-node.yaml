@@ -1,0 +1,64 @@
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaAIJob
+metadata:
+  name: tensorflow-multi-node-training
+  namespace: default
+  labels:
+    team: computer-vision
+    project: object-detection
+spec:
+  type: training
+
+  # Distributed configuration
+  distributed:
+    framework: tensorflow
+    enabled: true
+    nodes: 4       # 4 nodes
+    gpusPerNode: 4 # 4 GPUs per node = 16 total
+
+  gpus: 16   # 4 nodes x 4 GPUs
+  gpuType: A100-80G
+  resources:
+    requests:
+      cpu: "32"
+      memory: 256Gi
+
+  image: nvcr.io/nvidia/tensorflow:24.01-tf2-py3
+
+  command:
+    - python
+    - -m
+    - tf_distributed_training
+    - --num_gpus=4
+    - --model=efficientdet-d7
+    - --dataset=coco2017
+    - --batch_size=16
+    - --epochs=100
+    - --learning_rate=0.08
+    - --warmup_epochs=5
+
+  env:
+    - name: TF_FORCE_GPU_ALLOW_GROWTH
+      value: "true"
+    - name: TF_GPU_THREAD_MODE
+      value: gpu_private
+    - name: TF_GPU_THREAD_COUNT
+      value: "2"
+    - name: TF_CPP_MIN_LOG_LEVEL
+      value: "2"
+    - name: NCCL_DEBUG
+      value: WARN
+
+  volumeMounts:
+    - name: data
+      mountPath: /data
+    - name: models
+      mountPath: /models
+
+  volumes:
+    - name: data
+      persistentVolumeClaim:
+        claimName: coco-dataset-pvc
+    - name: models
+      persistentVolumeClaim:
+        claimName: model-registry-pvc

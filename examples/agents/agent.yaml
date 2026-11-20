@@ -1,0 +1,44 @@
+# A handbook assistant (chart values aiOperator.agents.enabled and llmGateway.enabled). See docs/agents.md.
+#
+#   kubectl apply -f examples/agents/agent.yaml
+#   gryvia agents list -n tenant-alpha
+#   gryvia agents chat helper how are GPU hours capped        # through the api-gateway (GRYVIA_GATEWAY_URL)
+#
+# In the cluster, applications call http://helper-agent.tenant-alpha.svc.cluster.local:8080/v1/chat/completions
+# (OpenAI-compatible, no key: the agent's NetworkPolicy admits its own namespace and the api-gateway).
+#
+# "chat" is a model published on the LLM gateway (examples/llm-gateway) that supports OpenAI tool calling (vLLM:
+# --enable-auto-tool-choice and a --tool-call-parser for the model). "handbook" is the GryviaVectorIndex of
+# examples/rag/vector-index.yaml.
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaAgent
+metadata:
+  name: helper
+  namespace: tenant-alpha
+spec:
+  model: chat
+  systemPrompt: |
+    You answer questions about the team handbook and the platform's status. Search the handbook before answering,
+    cite the source file of what you use, and say so when the handbook does not cover the question.
+  maxSteps: 5
+  replicas: 1
+  tools:
+    - name: search_handbook
+      description: Search the team handbook. Use it for any question about policies, quotas or procedures.
+      type: retrieval
+      retrieval:
+        vectorIndexRef: handbook
+        topK: 4
+    - name: platform_status
+      description: Read the platform status page (GET https://status.example.com/api/v2/summary.json).
+      type: http
+      http:
+        urls:
+          - https://status.example.com/api/
+        method: GET
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      memory: 256Mi

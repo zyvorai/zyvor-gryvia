@@ -1,0 +1,229 @@
+# Complete Gryvia Production Setup
+# This example shows all operators working together for a full AI infrastructure
+
+---
+# 1. Storage Backend - VAST Data for training data
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaStorage
+metadata:
+  name: vast-production
+spec:
+  backend: vast
+  endpoint: vast-mgmt.example.com
+  capacity: 500Ti
+  credentials:
+    secretName: vast-credentials
+    secretNamespace: gryvia-system
+  mountOptions: ["rw", "relatime", "vers=3"]
+  storageClass:
+    name: vast-production
+    parameters:
+      vipPool: "10.0.0.0/24"
+
+---
+# 2. Network Configuration - RDMA InfiniBand for distributed training
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaNetwork
+metadata:
+  name: rdma-training-network
+spec:
+  networkType: rdma
+  mtu: 9000
+  nodeSelector:
+    gryvia.io/rdma: "true"
+  rdma:
+    mode: infiniband
+    devices: [mlx5_0, mlx5_1]
+    subnet: 10.100.0.0/16
+    gateway: 10.100.0.1
+
+---
+# 3. GPU Nodes - Register H100 cluster
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaGpuNode
+metadata:
+  name: gpu-node-01
+spec:
+  nodeName: gpu-worker-01
+  gpuType: H100
+  gpuCount: 8
+  memoryGB: 80        # GPU memory per GPU
+  rdma: true
+  interconnect: nvlink
+  healthCheck:
+    enabled: true
+    intervalSeconds: 60
+
+---
+# 4. Team Quotas - ML Research Team
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaQuota
+metadata:
+  name: team-ml-research
+spec:
+  team: ml-research
+  namespaces: [ml-training, ml-inference]
+  priority: 80
+  gpuQuota:
+    maxGPUs: 64
+    maxGPUsPerJob: 32
+    maxRunningJobs: 4
+    maxQueuedJobs: 8
+    allowedGPUTypes: [H100, A100-80G]
+  budget:
+    monthlyBudget: 100000.00
+    alertThreshold: 80.0
+    hardLimit: true
+
+---
+# 5. Team Quotas - Computer Vision Team
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaQuota
+metadata:
+  name: team-cv
+spec:
+  team: computer-vision
+  namespaces: [cv-training, cv-prod]
+  priority: 70
+  gpuQuota:
+    maxGPUs: 32
+    maxGPUsPerJob: 16
+    maxRunningJobs: 6
+    maxQueuedJobs: 12
+    allowedGPUTypes: [A100-80G, L40]
+  budget:
+    monthlyBudget: 50000.00
+    alertThreshold: 75.0
+    hardLimit: false
+
+---
+# 6. Namespaces for teams
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ml-training
+  labels:
+    gryvia.io/team: ml-research
+    gryvia.io/quota: team-ml-research
+
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cv-training
+  labels:
+    gryvia.io/team: computer-vision
+    gryvia.io/quota: team-cv
+
+---
+# 7. Storage Secrets
+# IMPORTANT: Replace placeholder values with real credentials before applying.
+# Consider using a secrets manager (e.g., Vault, Sealed Secrets) in production.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: vast-credentials
+  namespace: gryvia-system
+type: Opaque
+stringData:
+  username: <REPLACE_WITH_USERNAME>
+  password: <REPLACE_WITH_PASSWORD>
+
+---
+# 8. Distributed Training Job - LLM on 32x H100
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaAIJob
+metadata:
+  name: llm-pretraining
+  namespace: ml-training
+spec:
+  type: training
+  distributed:
+    framework: pytorch
+    enabled: true
+    nodes: 4         # 4 nodes
+    gpusPerNode: 8   # 8 GPUs per node = 32 GPUs total
+
+  gpus: 32  # 4 nodes x 8 GPUs
+  gpuType: H100
+  priority: 80
+  resources:
+    requests:
+      cpu: "96"
+      memory: 1Ti
+
+  image: nvcr.io/nvidia/pytorch:24.01-py3
+
+  command:
+    - torchrun
+    - --nproc_per_node=8
+    - --nnodes=4
+    - --node_rank=$(RANK)
+    - --master_addr=$(MASTER_ADDR)
+    - --master_port=29500
+    - train_llm.py
+    - --model=llama-70b
+    - --batch-size=4
+    - --gradient-checkpointing
+
+  env:
+    - name: NCCL_IB_HCA
+      value: "mlx5_0,mlx5_1"
+    - name: NCCL_IB_GID_INDEX
+      value: "3"
+    - name: NCCL_NET_GDR_LEVEL
+      value: "5"
+    - name: CUDA_VISIBLE_DEVICES
+      value: "0,1,2,3,4,5,6,7"
+
+  # Volume provisioned from the vast-production storage class
+  # (training data ~50Ti + checkpoints ~10Ti)
+  storage: vast-production
+  storageRequest: 60Ti
+
+  # RDMA fabric (see rdma-training-network above)
+  network: rdma
+
+---
+# 9. Inference Service - Computer Vision Model
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaAIJob
+metadata:
+  name: cv-inference-service
+  namespace: cv-prod
+spec:
+  type: inference
+  priority: 80
+
+  gpus: 2
+  gpuType: L40
+  resources:
+    requests:
+      cpu: "32"
+      memory: 128Gi
+
+  image: nvcr.io/nvidia/tritonserver:24.01-py3
+
+  command:
+    - tritonserver
+    - --model-repository=/models
+    - --http-port=8000
+    - --grpc-port=8001
+    - --metrics-port=8002
+
+  storage: vast-production
+  storageRequest: 1Ti   # model repository, mounted for tritonserver (/models)
+
+---
+# 10. PersistentVolumeClaim for shared dataset
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: imagenet-dataset
+  namespace: cv-training
+spec:
+  accessModes: [ReadWriteMany]
+  storageClassName: vast-production
+  resources:
+    requests:
+      storage: 5Ti

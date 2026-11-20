@@ -1,0 +1,37 @@
+# Requires the pinned Kueue version, a configured manager and worker credentials.
+apiVersion: kueue.x-k8s.io/v1beta1
+kind: Topology
+metadata:
+  name: rack
+spec:
+  levels:
+    - nodeLabel: topology.kubernetes.io/zone
+    - nodeLabel: gryvia.io/rack
+    - nodeLabel: kubernetes.io/hostname
+---
+apiVersion: kueue.x-k8s.io/v1beta1
+kind: MultiKueueCluster
+metadata:
+  name: gpu-worker
+spec:
+  kubeConfig:
+    locationType: Secret
+    location: gpu-worker-kubeconfig
+---
+apiVersion: kueue.x-k8s.io/v1beta1
+kind: MultiKueueConfig
+metadata:
+  name: gryvia-workers
+spec:
+  clusters: [gpu-worker]
+---
+apiVersion: kueue.x-k8s.io/v1beta1
+kind: AdmissionCheck
+metadata:
+  name: multikueue
+spec:
+  controllerName: kueue.x-k8s.io/multikueue
+  parameters:
+    apiGroup: kueue.x-k8s.io
+    kind: MultiKueueConfig
+    name: gryvia-workers

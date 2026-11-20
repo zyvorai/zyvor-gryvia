@@ -1,0 +1,128 @@
+name: Kind end-to-end
+
+# Builds the images from the checkout, installs the chart on a kind cluster with the demo data and
+# checks that the API answers with the demo objects. Proves the install path works without GPUs.
+
+on:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'helm/**'
+      - 'crds/**'
+      - 'operators/**'
+      - 'services/api-gateway/**'
+      - 'web-ui/**'
+      - 'docker/**'
+      - 'scripts/kind-demo.sh'
+      - 'examples/demo/**'
+      - 'cli/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  demo:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: azure/setup-helm@v5
+      - uses: helm/kind-action@v1
+        with:
+          install_only: true
+      - name: Install with demo data (local images)
+        run: GRYVIA_LOCAL_IMAGES=1 ./scripts/kind-demo.sh
+      - name: Check the API serves the demo data
+        run: |
+          kubectl -n gryvia-system port-forward svc/gryvia-ui 8443:443 &
+          sleep 5
+          key='Admin@321'
+          curl -sfk -H "Authorization: Bearer $key" https://localhost:8443/api/auth/me
+          curl -sfk -H "Authorization: Bearer $key" https://localhost:8443/api/nodes | grep -q demo-h100-1
+          curl -sfk -H "Authorization: Bearer $key" https://localhost:8443/api/jobs | grep -q demo-train
+          test "$(curl -sk -o /dev/null -w '%{http_code}' https://localhost:8443/api/jobs)" = "401" -o "$(curl -sk -o /dev/null -w '%{http_code}' https://localhost:8443/api/jobs)" = "403"
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: cli
+      - name: Build the CLI
+        run: cargo build --release --locked
+        working-directory: cli
+      - name: The CLI reads the demo cluster
+        run: |
+          gryvia="$PWD/cli/target/release/gryvia"
+          # Wait for the platform, then print the report the way a user sees it.
+          "$gryvia" status --wait --wait-timeout 3m
+          "$gryvia" status
+          test "$("$gryvia" status --brief)" = "OK"
+          # The GPU nodes in the demo are fictional, so they may be reported as a warning, never as a failure.
+          "$gryvia" status -o json | python3 -c "
+          import json, sys
+          m = json.load(sys.stdin)
+          assert m['overall'] in ('ok', 'warn'), m['overall']
+          names = [c['name'] for c in m['components']]
+          assert 'Operators' in names and 'API gateway' in names and 'Dashboard' in names, names
+          assert any(n['name'] == 'demo-h100-1' for n in m['nodes']), [n['name'] for n in m['nodes']]
+          print('status JSON ok:', m['overall'], len(m['nodes']), 'nodes')
+          "
+          # Every data command reads the demo data (fictional nodes, a quota and a job) through the real API.
+          "$gryvia" cluster | tee /dev/stderr | grep -q "Total GPUs:"
+          "$gryvia" cluster --detailed
+          "$gryvia" cluster -o json | python3 -c "import json,sys; d=json.load(sys.stdin); assert len(d['nodes'])>=1 and len(d['jobs'])>=1, d.keys()"
+          "$gryvia" capacity
+          "$gryvia" capacity -o json | python3 -c "import json,sys; json.load(sys.stdin)"
+          "$gryvia" list nodes | grep -q demo-h100-1
+          "$gryvia" -n gryvia-system list jobs | grep -q demo-train
+          "$gryvia" -n gryvia-system get job demo-train -o json | python3 -c "import json,sys; assert json.load(sys.stdin)['metadata']['name']=='demo-train'"
+          "$gryvia" quota | grep -q demo-team
+          "$gryvia" quota -o yaml | grep -q demo-team
+          "$gryvia" queue
+          "$gryvia" maintenance list
+          "$gryvia" health
+          "$gryvia" version | grep -q "gryvia-api-gateway"
+          "$gryvia" completion bash | grep -q gryvia
+      - name: GPU as a Service (catalog, tenants, metering)
+        run: |
+          gryvia="$PWD/cli/target/release/gryvia"
+          "$gryvia" catalog | grep -q h100-80g
+          "$gryvia" catalog -o json | python3 -c "import json,sys; assert len(json.load(sys.stdin))>=3"
+          "$gryvia" tenant list | grep -q acme
+          "$gryvia" tenant get acme | grep -q tenant-acme
+          # The tenant controller creates the tenant's namespace with a ResourceQuota.
+          for i in $(seq 1 30); do kubectl get ns tenant-acme >/dev/null 2>&1 && break; sleep 4; done
+          kubectl get ns tenant-acme
+          kubectl -n tenant-acme get resourcequota
+          # The demo data ships two finished usage records (the fictional demo job never runs, so it is not metered).
+          "$gryvia" usage | tee /dev/stderr | grep -q acme
+          "$gryvia" usage --group-by sku -o json | python3 -c "import json,sys; d=json.load(sys.stdin); assert d['totals']['jobs']==2 and abs(d['totals']['cost']-252)<0.01, d"
+          "$gryvia" usage --tenant globex -o json | python3 -c "import json,sys; d=json.load(sys.stdin); assert d['totals']['jobs']==1, d"
+          "$gryvia" usage -o csv | head -1
+          "$gryvia" invoice --month 2026-09 --tenant acme -o json | python3 -c "import json,sys; d=json.load(sys.stdin); assert d[0]['number']=='INV-acme-202609' and abs(d[0]['subtotal']-192)<0.01, d"
+          "$gryvia" invoice --month 2026-09 -o csv | grep -q TOTAL
+          key='Admin@321'
+          curl -sfk -H "Authorization: Bearer $key" https://localhost:8443/api/skus | grep -q h100-80g
+          curl -sfk -H "Authorization: Bearer $key" https://localhost:8443/api/tenants | grep -q acme
+          curl -sfk -H "Authorization: Bearer $key" "https://localhost:8443/api/usage?groupBy=sku" | grep -q totals
+          curl -sfk -H "Authorization: Bearer $key" "https://localhost:8443/api/invoices?month=2026-09" | grep -q INV-acme-202609
+          curl -sfk -H "Authorization: Bearer $key" "https://localhost:8443/api/invoices/globex/2026-09?format=csv" | grep -q TOTAL
+          curl -sfk -H "Authorization: Bearer $key" "https://localhost:8443/api/usage/export?format=csv" | head -1 | grep -q tenant
+      - name: The CLI explains a missing API instead of dumping it
+        run: |
+          # Point at an API group that does not exist: the error must be short and actionable.
+          gryvia="$PWD/cli/target/release/gryvia"
+          kubectl delete crd gryviaquotas.gryvia.io --wait=true
+          out="$("$gryvia" quota 2>&1 || true)"
+          echo "$out"
+          echo "$out" | grep -q "not available on this cluster"
+          ! echo "$out" | grep -q "Status {"
+      - name: Dump state on failure
+        if: failure()
+        run: |
+          kubectl get pods -A
+          kubectl -n gryvia-system describe pods | tail -80
+          kubectl -n gryvia-system logs -l app=gryvia-api-gateway --tail=50 || true

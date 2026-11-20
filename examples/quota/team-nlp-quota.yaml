@@ -1,0 +1,31 @@
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaQuota
+metadata:
+  name: team-nlp
+spec:
+  team: nlp
+  namespaces:
+    - nlp-training
+    - nlp-experiments
+  priority: 90  # Highest priority
+
+  gpuQuota:
+    maxGPUs: 64      # Large cluster for LLM training
+    maxGPUsPerJob: 32
+    maxRunningJobs: 3
+    maxQueuedJobs: 5
+    allowedGPUTypes:
+      - H100        # H100 only for LLM training
+
+  budget:
+    monthlyBudget: 100000.00  # $100k/month for LLM training
+    alertThreshold: 90.0
+    hardLimit: true
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: nlp-training
+  labels:
+    gryvia.io/team: nlp
+    gryvia.io/quota: team-nlp

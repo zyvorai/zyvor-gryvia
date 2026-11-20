@@ -1,0 +1,38 @@
+{
+  "priority_fifo": {
+    "gpu_utilization": 1,
+    "jobs_completed": 3,
+    "jobs_total": 3,
+    "jobs_unschedulable": 0,
+    "makespan": 90,
+    "mean_wait_time": 22.333333333333332,
+    "memory_violations": 0
+  },
+  "rl_small": {
+    "gpu_utilization": 0.6,
+    "jobs_completed": 3,
+    "jobs_total": 3,
+    "jobs_unschedulable": 0,
+    "makespan": 10,
+    "mean_wait_time": 0,
+    "memory_violations": 0
+  },
+  "single_gpu": {
+    "gpu_utilization": 0.9882857142857142,
+    "jobs_completed": 4,
+    "jobs_total": 8,
+    "jobs_unschedulable": 4,
+    "makespan": 700,
+    "mean_wait_time": 302.5,
+    "memory_violations": 0
+  },
+  "small_h100": {
+    "gpu_utilization": 0.8106346153846153,
+    "jobs_completed": 8,
+    "jobs_total": 8,
+    "jobs_unschedulable": 0,
+    "makespan": 7800,
+    "mean_wait_time": 1196,
+    "memory_violations": 0
+  }
+}

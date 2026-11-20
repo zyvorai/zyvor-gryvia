@@ -1,0 +1,197 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.22.0
+  name: gryviainvoices.gryvia.io
+spec:
+  group: gryvia.io
+  names:
+    kind: GryviaInvoice
+    listKind: GryviaInvoiceList
+    plural: gryviainvoices
+    singular: gryviainvoice
+  scope: Cluster
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.tenant
+      name: Tenant
+      type: string
+    - jsonPath: .spec.period
+      name: Period
+      type: string
+    - jsonPath: .spec.number
+      name: Number
+      type: integer
+    - jsonPath: .spec.state
+      name: State
+      type: string
+    - jsonPath: .spec.subtotal
+      name: Subtotal
+      type: string
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: GryviaInvoice is a finalized (or draft, paid, void) monthly invoice
+          of a tenant.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: |-
+              GryviaInvoiceSpec is a tenant's invoice for one month. Created as Draft by the gateway's finalize call, then
+              Finalized with frozen lines; the webhook rejects any change to a non-Draft invoice other than the allowed state
+              transitions, and deleting one.
+            properties:
+              currency:
+                description: Currency of every line, or MIXED.
+                type: string
+              finalizedAt:
+                description: FinalizedAt, FinalizedBy, PaidAt, VoidedAt, VoidedBy
+                  and VoidReason record the transitions.
+                format: date-time
+                type: string
+              finalizedBy:
+                type: string
+              jobs:
+                description: Jobs is the number of distinct jobs billed.
+                format: int32
+                type: integer
+              ledger:
+                description: Ledger is the ledger range the lines were built from.
+                properties:
+                  entries:
+                    description: Entries is the number of ledger entries.
+                    format: int32
+                    type: integer
+                  firstSequence:
+                    description: |-
+                      FirstSequence and LastSequence bound the entries' sequences (not necessarily contiguous: another month's
+                      entries may sit between them).
+                    format: int64
+                    type: integer
+                  headHash:
+                    description: HeadHash is the hash of the tenant's newest ledger
+                      entry when the invoice was finalized.
+                    type: string
+                  lastSequence:
+                    format: int64
+                    type: integer
+                required:
+                - entries
+                type: object
+              lines:
+                description: Lines are frozen at finalization.
+                items:
+                  description: 'InvoiceLine is one frozen line of an invoice: the
+                    ledger entries of one SKU (or GPU type) in the period.'
+                  properties:
+                    amount:
+                      type: string
+                    currency:
+                      type: string
+                    gpuHours:
+                      type: string
+                    gpuType:
+                      type: string
+                    jobs:
+                      format: int32
+                      type: integer
+                    rate:
+                      type: string
+                    sku:
+                      type: string
+                  required:
+                  - amount
+                  - currency
+                  - gpuHours
+                  - jobs
+                  - rate
+                  - sku
+                  type: object
+                type: array
+              number:
+                description: Number is the tenant's sequential invoice number, starting
+                  at 1.
+                format: int64
+                minimum: 1
+                type: integer
+              paidAt:
+                format: date-time
+                type: string
+              payment:
+                description: Payment is set once when the invoice is sent to the payment
+                  provider.
+                properties:
+                  hostedURL:
+                    description: HostedURL is the provider's page for the invoice.
+                    type: string
+                  invoiceID:
+                    description: InvoiceID is the provider's invoice id.
+                    type: string
+                  liveMode:
+                    description: 'LiveMode is always false: only test-mode keys are
+                      accepted.'
+                    type: boolean
+                  provider:
+                    description: Provider is "stripe".
+                    type: string
+                required:
+                - invoiceID
+                - liveMode
+                - provider
+                type: object
+              period:
+                description: Period is the billed UTC month, YYYY-MM.
+                pattern: ^[0-9]{4}-(0[1-9]|1[0-2])$
+                type: string
+              state:
+                description: State is Draft, Finalized, Paid or Void.
+                enum:
+                - Draft
+                - Finalized
+                - Paid
+                - Void
+                type: string
+              subtotal:
+                description: Subtotal is the sum of the line amounts, a decimal string.
+                type: string
+              tenant:
+                description: Tenant billed.
+                type: string
+              voidReason:
+                type: string
+              voidedAt:
+                format: date-time
+                type: string
+              voidedBy:
+                type: string
+            required:
+            - currency
+            - ledger
+            - number
+            - period
+            - state
+            - subtotal
+            - tenant
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources: {}

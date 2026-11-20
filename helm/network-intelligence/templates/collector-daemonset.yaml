@@ -1,0 +1,308 @@
+{{- if .Values.ebpf.enabled }}
+{{- $sec := .Values.ebpf.security }}
+{{- if and (not .Values.collector.hostNetwork) .Values.ebpf.interface }}
+{{- fail "collector.hostNetwork=false cannot attach XDP/TCX to ebpf.interface: the interface is resolved inside the pod network namespace. Set ebpf.interface empty or keep collector.hostNetwork=true" }}
+{{- end }}
+{{- if and $sec.tls.enabled (not $sec.tls.secretName) (not $sec.tls.certManager.enabled) }}
+{{- fail "ebpf.security.tls.enabled needs ebpf.security.tls.secretName or ebpf.security.tls.certManager.enabled" }}
+{{- end }}
+{{- if and $sec.tls.clientCA (not $sec.tls.enabled) }}
+{{- fail "ebpf.security.tls.clientCA (mTLS) needs ebpf.security.tls.enabled" }}
+{{- end }}
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: {{ include "network-intelligence.fullname" . }}-collector
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "network-intelligence.labels" . | nindent 4 }}
+    app.kubernetes.io/component: collector
+spec:
+  selector:
+    matchLabels:
+      {{- include "network-intelligence.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: collector
+  template:
+    metadata:
+      labels:
+        {{- include "network-intelligence.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: collector
+    spec:
+      serviceAccountName: {{ include "network-intelligence.collectorServiceAccountName" . }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      hostNetwork: {{ .Values.collector.hostNetwork }}
+      hostPID: true
+      dnsPolicy: {{ if .Values.collector.hostNetwork }}ClusterFirstWithHostNet{{ else }}ClusterFirst{{ end }}
+      containers:
+        - name: collector
+          image: "{{ .Values.collector.image.repository }}:{{ .Values.collector.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.collector.image.pullPolicy }}
+          # The image entrypoint is /usr/local/bin/gryvia-collector; the programs live in /opt/gryvia/ebpf.
+          args:
+            - -metrics-addr=:9090
+            - -ebpf-dir=/opt/gryvia/ebpf
+            {{- if .Values.ebpf.flightTokenSecret }}
+            - -flight-token-file=/var/run/gryvia-flight/token
+            {{- end }}
+            {{- if $sec.requireAuth }}
+            - -require-auth
+            {{- end }}
+            {{- if $sec.insecureListener }}
+            - -insecure-listener
+            {{- end }}
+            {{- if $sec.apiTokenSecret }}
+            - -api-token-file=/var/run/gryvia-api-token/token
+            {{- end }}
+            {{- if $sec.metricsTokenSecret }}
+            - -metrics-token-file=/var/run/gryvia-metrics-token/token
+            {{- end }}
+            {{- if $sec.tls.enabled }}
+            - -tls-cert-file=/var/run/gryvia-tls/tls.crt
+            - -tls-key-file=/var/run/gryvia-tls/tls.key
+            {{- if $sec.tls.clientCA }}
+            - -tls-client-ca-file=/var/run/gryvia-tls/ca.crt
+            {{- end }}
+            {{- end }}
+            {{- with .Values.ebpf.interface }}
+            - -iface={{ . }}
+            {{- end }}
+            {{- with .Values.ebpf.cgroupPath }}
+            - -cgroup-path={{ . }}
+            {{- end }}
+            {{- if .Values.ebpf.diagnosis.cgroupSignals }}
+            - -flight-diagnosis-cgroup=/host/sys/fs/cgroup
+            {{- end }}
+            {{- if .Values.ebpf.diagnosis.thresholds }}
+            - -flight-diagnosis-thresholds=/etc/gryvia/diagnosis/thresholds.json
+            {{- end }}
+            {{- if .Values.ebpf.flightStore.enabled }}
+            {{- if not (has .Values.ebpf.flightStore.volume (list "emptyDir" "hostPath")) }}
+            {{- fail "ebpf.flightStore.volume must be emptyDir or hostPath" }}
+            {{- end }}
+            - -flight-store-dir=/var/lib/gryvia-flight
+            - -flight-retention={{ .Values.ebpf.flightStore.retention }}
+            - -flight-store-max-bytes={{ int64 .Values.ebpf.flightStore.maxBytes }}
+            - -flight-store-fsync={{ .Values.ebpf.flightStore.fsync }}
+            - -flight-incident-min-duration={{ .Values.ebpf.flightStore.incidentMinDuration }}
+            {{- end }}
+            {{- if .Values.ebpf.quotaPace.enabled }}
+            {{- if not .Values.ebpf.cgroupPath }}
+            {{- fail "ebpf.quotaPace.enabled needs ebpf.cgroupPath (for example /host/sys/fs/cgroup)" }}
+            {{- end }}
+            - -quota-pace
+            {{- end }}
+            {{- if .Values.ebpf.quotaPace.sync }}
+            {{- if not .Values.ebpf.quotaPace.enabled }}
+            {{- fail "ebpf.quotaPace.sync needs ebpf.quotaPace.enabled" }}
+            {{- end }}
+            - -quota-pace-sync
+            {{- end }}
+            {{- if .Values.ebpf.quotaPace.dryRun }}
+            {{- if not .Values.ebpf.quotaPace.sync }}
+            {{- fail "ebpf.quotaPace.dryRun needs ebpf.quotaPace.sync" }}
+            {{- end }}
+            - -quota-pace-dry-run
+            {{- end }}
+            {{- if .Values.ebpf.publishFabricStatus }}
+            - -publish-fabric-status
+            {{- if .Values.ebpf.fabricStatusPerNode }}
+            - -fabric-status-per-node
+            {{- end }}
+            {{- end }}
+            {{- if .Values.ebpf.publishNodeFabric }}
+            - -publish-node-fabric
+            {{- end }}
+            {{- if .Values.ebpf.attributeNetwork }}
+            {{- if not .Values.ebpf.interface }}
+            {{- fail "ebpf.attributeNetwork needs ebpf.interface (cost_tracker is a tcx program)" }}
+            {{- end }}
+            - -attribute-network
+            {{- end }}
+            {{- if .Values.ebpf.publishNetworkUsage }}
+            {{- if not .Values.ebpf.attributeNetwork }}
+            {{- fail "ebpf.publishNetworkUsage needs ebpf.attributeNetwork" }}
+            {{- end }}
+            - -publish-network-usage
+            {{- end }}
+            {{- if .Values.ebpf.traceCorrelation }}
+            {{- if not (and .Values.ebpf.interface .Values.ebpf.flightTokenSecret) }}
+            {{- fail "ebpf.traceCorrelation needs ebpf.interface and ebpf.flightTokenSecret" }}
+            {{- end }}
+            - -trace-correlate
+            {{- end }}
+            {{- range .Values.ebpf.inferMetrics.targets }}
+            - {{ printf "-infer-metrics=%s" . | quote }}
+            {{- end }}
+            {{- if .Values.ebpf.inferMetrics.discover }}
+            - -infer-metrics-discover
+            - -infer-metrics-ports={{ .Values.ebpf.inferMetrics.ports }}
+            {{- end }}
+            {{- if or .Values.ebpf.inferMetrics.targets .Values.ebpf.inferMetrics.discover }}
+            - -infer-metrics-interval={{ .Values.ebpf.inferMetrics.interval }}
+            {{- end }}
+            {{- if .Values.ebpf.xdpMux }}
+            {{- if not .Values.ebpf.interface }}
+            {{- fail "ebpf.xdpMux needs ebpf.interface (xdp_mux attaches to it)" }}
+            {{- end }}
+            - -xdp-mux
+            {{- end }}
+            {{- with .Values.ebpf.enablePrograms }}
+            - -enable-programs={{ join "," . }}
+            {{- end }}
+            {{- if .Values.ebpf.nicCounters }}
+            - -nic-counters
+            {{- end }}
+            {{- if .Values.ebpf.ibverbsProbes }}
+            - -ibverbs-probes
+            {{- end }}
+            {{- if .Values.ebpf.dcgm.enabled }}
+            {{- if and (contains "127.0.0.1" .Values.ebpf.dcgm.url) (not .Values.collector.hostNetwork) }}
+            {{- fail "ebpf.dcgm.url points at 127.0.0.1, which only reaches the node's dcgm-exporter with collector.hostNetwork=true" }}
+            {{- end }}
+            - -dcgm-correlate
+            - -dcgm-url={{ .Values.ebpf.dcgm.url }}
+            - -dcgm-interval={{ .Values.ebpf.dcgm.interval }}
+            - -dcgm-idle-threshold={{ .Values.ebpf.dcgm.idleThreshold }}
+            {{- end }}
+            {{- with .Values.ebpf.ncclLib }}
+            - -nccl-lib={{ . }}
+            {{- end }}
+            {{- with .Values.ebpf.cudaLib }}
+            - -cuda-lib={{ . }}
+            {{- end }}
+          env:
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+          ports:
+            - name: metrics
+              containerPort: 9090
+              protocol: TCP
+          resources:
+            {{- toYaml .Values.collector.resources | nindent 12 }}
+          securityContext:
+            privileged: true
+            runAsUser: 0
+          volumeMounts:
+            - name: sys-fs-bpf
+              mountPath: /sys/fs/bpf
+            - name: sys-kernel-debug
+              mountPath: /sys/kernel/debug
+              readOnly: true
+            - name: proc
+              mountPath: /host/proc
+              readOnly: true
+            - name: run
+              mountPath: /run
+            - name: cgroup
+              mountPath: /host/sys/fs/cgroup
+              readOnly: true
+            {{- if .Values.ebpf.flightTokenSecret }}
+            - name: flight-token
+              mountPath: /var/run/gryvia-flight
+              readOnly: true
+            {{- end }}
+            {{- if $sec.apiTokenSecret }}
+            - name: collector-api-token
+              mountPath: /var/run/gryvia-api-token
+              readOnly: true
+            {{- end }}
+            {{- if $sec.metricsTokenSecret }}
+            - name: collector-metrics-token
+              mountPath: /var/run/gryvia-metrics-token
+              readOnly: true
+            {{- end }}
+            {{- if $sec.tls.enabled }}
+            - name: collector-tls
+              mountPath: /var/run/gryvia-tls
+              readOnly: true
+            {{- end }}
+            {{- if .Values.ebpf.diagnosis.thresholds }}
+            - name: diagnosis-thresholds
+              mountPath: /etc/gryvia/diagnosis
+              readOnly: true
+            {{- end }}
+            {{- if .Values.ebpf.flightStore.enabled }}
+            - name: flight-store
+              mountPath: /var/lib/gryvia-flight
+            {{- end }}
+      volumes:
+        - name: sys-fs-bpf
+          hostPath:
+            path: /sys/fs/bpf
+            type: DirectoryOrCreate
+        - name: sys-kernel-debug
+          hostPath:
+            path: /sys/kernel/debug
+            type: Directory
+        - name: proc
+          hostPath:
+            path: /proc
+            type: Directory
+        - name: run
+          hostPath:
+            path: /run
+            type: Directory
+        - name: cgroup
+          hostPath:
+            path: /sys/fs/cgroup
+            type: Directory
+        {{- if .Values.ebpf.flightTokenSecret }}
+        - name: flight-token
+          secret:
+            secretName: {{ .Values.ebpf.flightTokenSecret | quote }}
+            items:
+              - key: {{ .Values.ebpf.flightTokenKey | quote }}
+                path: token
+        {{- end }}
+        {{- if $sec.apiTokenSecret }}
+        - name: collector-api-token
+          secret:
+            secretName: {{ $sec.apiTokenSecret | quote }}
+            items:
+              - key: {{ $sec.apiTokenKey | quote }}
+                path: token
+        {{- end }}
+        {{- if $sec.metricsTokenSecret }}
+        - name: collector-metrics-token
+          secret:
+            secretName: {{ $sec.metricsTokenSecret | quote }}
+            items:
+              - key: {{ $sec.metricsTokenKey | quote }}
+                path: token
+        {{- end }}
+        {{- if $sec.tls.enabled }}
+        # A whole-Secret mount (no subPath) so rotated files reach the running collector.
+        - name: collector-tls
+          secret:
+            secretName: {{ include "network-intelligence.collectorTLSSecret" . | quote }}
+        {{- end }}
+        {{- if .Values.ebpf.diagnosis.thresholds }}
+        - name: diagnosis-thresholds
+          configMap:
+            name: {{ include "network-intelligence.fullname" . }}-diagnosis-thresholds
+        {{- end }}
+        {{- if .Values.ebpf.flightStore.enabled }}
+        - name: flight-store
+          {{- if eq .Values.ebpf.flightStore.volume "hostPath" }}
+          hostPath:
+            path: {{ .Values.ebpf.flightStore.hostPath | quote }}
+            type: DirectoryOrCreate
+          {{- else }}
+          emptyDir:
+            sizeLimit: {{ .Values.ebpf.flightStore.sizeLimit | quote }}
+          {{- end }}
+        {{- end }}
+      {{- with .Values.collector.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.collector.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

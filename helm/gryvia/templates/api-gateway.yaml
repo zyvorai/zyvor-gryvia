@@ -1,0 +1,467 @@
+{{- if .Values.apiGateway.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gryvia-api-gateway
+  namespace: {{ include "gryvia.namespace" . }}
+  labels:
+    {{- include "gryvia.labels" . | nindent 4 }}
+    app: gryvia-api-gateway
+spec:
+  replicas: {{ .Values.apiGateway.replicas }}
+  {{- if (dig "apiGateway" "audit" "database" "enabled" nil .Values.AsMap) }}
+  {{- if gt (int .Values.apiGateway.replicas) 1 }}
+  {{- fail "apiGateway.audit.database.enabled stores the audit trail in SQLite, which has one writer: set apiGateway.replicas to 1" }}
+  {{- end }}
+  # One writer on a ReadWriteOnce volume: stop the old pod before starting the new one.
+  strategy:
+    type: Recreate
+  {{- end }}
+  selector:
+    matchLabels:
+      app: gryvia-api-gateway
+  template:
+    metadata:
+      labels:
+        app: gryvia-api-gateway
+      annotations:
+        checksum/api-key: {{ printf "%s%s" .Values.auth.apiKey .Values.auth.existingSecret | sha256sum }}
+    spec:
+      serviceAccountName: gryvia-api-gateway
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: api-gateway
+        image: {{ include "gryvia.image" (dict "root" . "image" .Values.apiGateway.image) | quote }}
+        imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+        ports:
+        - containerPort: 8080
+          name: https
+        env:
+        {{- if (dig "apiGateway" "submissionAdmission" "enforce" false .Values.AsMap) }}
+        - name: GRYVIA_SUBMISSION_ADMISSION_ENFORCE
+          value: "1"
+        {{- end }}
+        {{- if (dig "apiGateway" "intelligenceActions" false .Values.AsMap) }}
+        - name: GRYVIA_INTELLIGENCE_ACTIONS
+          value: "1"
+        - name: GRYVIA_INTELLIGENCE_RETENTION_DAYS
+          value: {{ (dig "apiGateway" "intelligenceRetentionDays" 30 .Values.AsMap) | int | quote }}
+        {{- end }}
+        {{- if (dig "apiGateway" "fairshareApply" false .Values.AsMap) }}
+        - name: GRYVIA_FAIRSHARE_APPLY
+          value: "1"
+        {{- end }}
+        {{- if (dig "billing" "ledger" "enabled" false .Values.AsMap) }}
+        - name: GRYVIA_BILLING_LEDGER
+          value: "1"
+        {{- with (dig "billing" "stripe" "secretName" "" .Values.AsMap) }}
+        - name: GRYVIA_STRIPE_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ . | quote }}
+              key: {{ (dig "billing" "stripe" "secretKeyKey" "secret-key" $.Values.AsMap) | quote }}
+        - name: GRYVIA_STRIPE_WEBHOOK_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: {{ . | quote }}
+              key: {{ (dig "billing" "stripe" "webhookSecretKey" "webhook-secret" $.Values.AsMap) | quote }}
+        {{- end }}
+        {{- end }}
+        - name: GRYVIA_FLIGHT_COLLECTOR_NAMESPACE
+          value: {{ .Values.apiGateway.flightCollectorNamespace | quote }}
+        {{- if .Values.apiGateway.flightTokenSecret }}
+        - name: GRYVIA_FLIGHT_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.apiGateway.flightTokenSecret | quote }}
+              key: {{ .Values.apiGateway.flightTokenKey | quote }}
+        {{- end }}
+        {{- if (dig "apiGateway" "metrics" "enabled" nil .Values.AsMap) }}
+        {{- if not (dig "apiGateway" "metrics" "tokenSecret" nil .Values.AsMap) }}
+        {{- fail "apiGateway.metrics.enabled requires apiGateway.metrics.tokenSecret (an existing Secret with a token of at least 32 characters): /metrics is never served unauthenticated" }}
+        {{- end }}
+        - name: GRYVIA_METRICS_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: {{ (dig "apiGateway" "metrics" "tokenSecret" nil .Values.AsMap) | quote }}
+              key: {{ (dig "apiGateway" "metrics" "tokenKey" nil .Values.AsMap) | quote }}
+        {{- end }}
+        {{- with .Values.apiGateway.collector }}
+        {{- if .tlsSecret }}
+        - name: GRYVIA_COLLECTOR_CA_FILE
+          value: /collector-tls/ca.crt
+        {{- if .clientCert }}
+        - name: GRYVIA_COLLECTOR_CERT_FILE
+          value: /collector-tls/tls.crt
+        - name: GRYVIA_COLLECTOR_KEY_FILE
+          value: /collector-tls/tls.key
+        {{- end }}
+        - name: GRYVIA_COLLECTOR_SERVER_NAME
+          value: {{ .serverName | quote }}
+        {{- end }}
+        {{- if .tokenSecret }}
+        - name: GRYVIA_COLLECTOR_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: {{ .tokenSecret | quote }}
+              key: {{ .tokenKey | quote }}
+        {{- end }}
+        {{- end }}
+        {{- if .Values.apiGateway.prometheusUrl }}
+        - name: PROMETHEUS_URL
+          value: {{ .Values.apiGateway.prometheusUrl | quote }}
+        {{- end }}
+        {{- if (dig "apiGateway" "netra" "url" nil .Values.AsMap) }}
+        - name: GRYVIA_NETRA_URL
+          value: {{ (dig "apiGateway" "netra" "url" nil .Values.AsMap) | quote }}
+        {{- if (dig "apiGateway" "netra" "tokenSecret" nil .Values.AsMap) }}
+        - name: GRYVIA_NETRA_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: {{ (dig "apiGateway" "netra" "tokenSecret" nil .Values.AsMap) | quote }}
+              key: {{ (dig "apiGateway" "netra" "tokenKey" nil .Values.AsMap) | quote }}
+        {{- end }}
+        {{- if (dig "apiGateway" "netra" "insecureTLS" nil .Values.AsMap) }}
+        - name: GRYVIA_NETRA_INSECURE
+          value: "1"
+        {{- end }}
+        {{- end }}
+        {{- with (dig "apiGateway" "sovereign" dict .Values.AsMap) }}
+        {{- if .zyntraURL }}
+        - name: GRYVIA_ZYNTRA_URL
+          value: {{ .zyntraURL | quote }}
+        {{- if .zyntraTokenSecret }}
+        - name: GRYVIA_ZYNTRA_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: {{ .zyntraTokenSecret | quote }}
+              key: {{ .zyntraTokenKey | default "token" | quote }}
+        {{- end }}
+        {{- end }}
+        {{- if .zyntraConsoleURL }}
+        - name: GRYVIA_ZYNTRA_CONSOLE_URL
+          value: {{ .zyntraConsoleURL | quote }}
+        {{- end }}
+        {{- if .netraConsoleURL }}
+        - name: GRYVIA_NETRA_CONSOLE_URL
+          value: {{ .netraConsoleURL | quote }}
+        {{- end }}
+        {{- if .trustGryviaCert }}
+        - name: GRYVIA_SOVEREIGN_CA_FILE
+          value: /tls/tls.crt
+        {{- end }}
+        {{- end }}
+        {{- if (dig "llmGateway" "enabled" nil .Values.AsMap) }}
+        - name: GRYVIA_LLM_KEY_NAMESPACE
+          value: {{ (dig "llmGateway" "keyNamespace" "gryvia-llm-keys" .Values.AsMap) | quote }}
+        - name: GRYVIA_LLM_GATEWAY_URL
+          value: {{ printf "http://%s-llm-gateway.%s.svc.cluster.local:%v" (include "gryvia.fullname" .) (include "gryvia.namespace" .) (dig "llmGateway" "service" "port" 8080 .Values.AsMap) | quote }}
+        {{- end }}
+        {{- if (dig "apiGateway" "oidc" "adminGroups" nil .Values.AsMap) }}
+        - name: GRYVIA_OIDC_ADMIN_GROUPS
+          value: {{ (dig "apiGateway" "oidc" "adminGroups" nil .Values.AsMap) | quote }}
+        {{- end }}
+        {{- if (dig "apiGateway" "oidc" "legacyNamespaces" nil .Values.AsMap) }}
+        - name: GRYVIA_OIDC_LEGACY_NAMESPACES
+          value: "1"
+        {{- end }}
+        - name: GRYVIA_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "gryvia.apiKeySecret" . }}
+              key: GRYVIA_API_KEY
+        - name: GRYVIA_API_KEY_SECRET
+          value: {{ include "gryvia.apiKeySecret" . | quote }}
+        - name: GRYVIA_JOB_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        {{- if (dig "apiGateway" "audit" "database" "enabled" nil .Values.AsMap) }}
+        - name: GRYVIA_AUDIT_DB
+          value: /audit/audit.db
+        {{- with (dig "apiGateway" "audit" "database" "retentionDays" nil .Values.AsMap) }}
+        - name: GRYVIA_AUDIT_RETENTION_DAYS
+          value: {{ . | quote }}
+        {{- end }}
+        {{- end }}
+        {{- if (dig "workspaceProxy" "enabled" false .Values.AsMap) }}
+        - name: GRYVIA_WORKSPACE_PROXY_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ (dig "workspaceProxy" "existingSecret" "" .Values.AsMap) | default "gryvia-workspace-proxy" | quote }}
+              key: key
+        {{- end }}
+        {{- if (dig "apiGateway" "approvals" "productionPromotion" nil .Values.AsMap) }}
+        - name: GRYVIA_REQUIRE_PROD_APPROVAL
+          value: "1"
+        {{- end }}
+        - name: LOG_LEVEL
+          value: "INFO"
+        - name: GRYVIA_TLS_CERT
+          value: /tls/tls.crt
+        - name: GRYVIA_TLS_KEY
+          value: /tls/tls.key
+        resources:
+          {{- toYaml .Values.apiGateway.resources | nindent 10 }}
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: https
+            scheme: HTTPS
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: https
+            scheme: HTTPS
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 1000
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+        - name: tls
+          mountPath: /tls
+          readOnly: true
+        {{- if (dig "apiGateway" "collector" "tlsSecret" nil .Values.AsMap) }}
+        - name: collector-tls
+          mountPath: /collector-tls
+          readOnly: true
+        {{- end }}
+        {{- if (dig "apiGateway" "audit" "database" "enabled" nil .Values.AsMap) }}
+        - name: audit
+          mountPath: /audit
+        {{- end }}
+      volumes:
+      - name: tmp
+        emptyDir: {}
+      - name: tls
+        secret:
+          secretName: {{ .Values.tls.secretName }}
+          defaultMode: 0440
+      {{- if (dig "apiGateway" "collector" "tlsSecret" nil .Values.AsMap) }}
+      - name: collector-tls
+        secret:
+          secretName: {{ (dig "apiGateway" "collector" "tlsSecret" nil .Values.AsMap) | quote }}
+          defaultMode: 0440
+      {{- end }}
+      {{- if (dig "apiGateway" "audit" "database" "enabled" nil .Values.AsMap) }}
+      - name: audit
+        persistentVolumeClaim:
+          claimName: {{ (dig "apiGateway" "audit" "database" "existingClaim" "gryvia-api-gateway-audit" .Values.AsMap) | quote }}
+      {{- end }}
+{{- if and (dig "apiGateway" "audit" "database" "enabled" nil .Values.AsMap) (not (dig "apiGateway" "audit" "database" "existingClaim" nil .Values.AsMap)) }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: gryvia-api-gateway-audit
+  namespace: {{ include "gryvia.namespace" . }}
+  labels:
+    {{- include "gryvia.labels" . | nindent 4 }}
+spec:
+  accessModes: ["ReadWriteOnce"]
+  {{- with (dig "apiGateway" "audit" "database" "storageClass" nil .Values.AsMap) }}
+  storageClassName: {{ . | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ (dig "apiGateway" "audit" "database" "size" "1Gi" .Values.AsMap) | quote }}
+{{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gryvia-api-gateway
+  namespace: {{ include "gryvia.namespace" . }}
+  labels:
+    {{- include "gryvia.labels" . | nindent 4 }}
+    app: gryvia-api-gateway
+spec:
+  type: ClusterIP
+  selector:
+    app: gryvia-api-gateway
+  ports:
+  - port: 8080
+    targetPort: https
+    protocol: TCP
+    name: https
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: gryvia-api-gateway
+  namespace: {{ include "gryvia.namespace" . }}
+  labels:
+    {{- include "gryvia.labels" . | nindent 4 }}
+{{- if .Values.rbac.create }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "gryvia.fullname" . }}-api-gateway
+  labels:
+    {{- include "gryvia.labels" . | nindent 4 }}
+rules:
+# Read every kind the gateway serves.
+- apiGroups: ["gryvia.io"]
+  resources:
+  - gryviaaijobs
+  - gryviaquotas
+  - gryviagpunodes
+  - gryviastorages
+  - gryvianetworks
+  - gryviaworkspaces
+  - gryviamodelregistries
+  - gryviainferenceservices
+  - gryviaworkflows
+  - gryviaautotuners
+  - gryviamodelwatches
+  - gryviavectorindexes
+  - gryviaagents
+  - gryviajobhooks
+  - gryviadatasets
+  - gryviaflowpolicies
+  - gryviatrafficinsights
+  - gryviaservicegraphs
+  - gryvianetworkanomalies
+  - gryvianetworkcosts
+  - gryviatracesessions
+  - gryviasecuritypolicies
+  - gryviatraininginsights
+  - gryviagpumemoryoptimizers
+  - gryviagpuskus
+  - gryviatenants
+  - gryviausagerecords
+  - gryviafabricsignals
+  verbs: ["get", "list", "watch"]
+{{- if (dig "apiGateway" "networkCost" "enabled" nil .Values.AsMap) }}
+# apiGateway.networkCost.enabled: read the measured network usage and its price list.
+- apiGroups: ["gryvia.io"]
+  resources:
+  - gryvianetworkusagerecords
+  - gryvianetworkrates
+  verbs: ["get", "list", "watch"]
+{{- end }}
+# Write only the kinds the API creates, deletes or updates.
+- apiGroups: ["gryvia.io"]
+  resources:
+  - gryviaaijobs
+  - gryviaworkspaces
+  - gryviainferenceservices
+  - gryviaworkflows
+  - gryviaautotuners
+  - gryviamodelwatches
+  - gryviavectorindexes
+  - gryviaagents
+  - gryviajobhooks
+  - gryviadatasets
+  - gryviaflowpolicies
+  - gryviatracesessions
+  - gryviasecuritypolicies
+  - gryviamodelregistries
+  - gryviagpuskus
+  - gryviatenants
+  verbs: ["create", "delete", "patch", "update"]
+- apiGroups: [""]
+  resources: ["nodes", "pods", "namespaces"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: [""]
+  resources: ["services", "endpoints"]
+  verbs: ["get", "list"]
+# Job runtime details (pod logs and events) for the dashboard.
+- apiGroups: [""]
+  resources: ["pods/log"]
+  verbs: ["get"]
+- apiGroups: [""]
+  resources: ["events"]
+  verbs: ["get", "list"]
+{{- if (dig "billing" "ledger" "enabled" false .Values.AsMap) }}
+# Billing ledger (read and verify only) and invoices (create Draft, finalize, void, mark paid; only Drafts can be deleted).
+- apiGroups: ["gryvia.io"]
+  resources: ["gryvialedgerentries"]
+  verbs: ["get", "list"]
+- apiGroups: ["gryvia.io"]
+  resources: ["gryviainvoices"]
+  verbs: ["get", "list", "create", "patch", "delete"]
+{{- end }}
+{{- if (dig "apiGateway" "intelligenceActions" false .Values.AsMap) }}
+# Opt-in typed operations only. Node mutation is cordon, never reset/reboot.
+- apiGroups: [""]
+  resources: ["nodes"]
+  verbs: ["patch"]
+- apiGroups: ["gryvia.io"]
+  resources: ["gryviaquotas"]
+  verbs: ["patch"]
+{{- end }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "gryvia.fullname" . }}-api-gateway
+  labels:
+    {{- include "gryvia.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "gryvia.fullname" . }}-api-gateway
+subjects:
+- kind: ServiceAccount
+  name: gryvia-api-gateway
+  namespace: {{ include "gryvia.namespace" . }}
+{{- if (dig "apiGateway" "intelligenceActions" false .Values.AsMap) }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "gryvia.fullname" . }}-intelligence-actions
+  namespace: {{ include "gryvia.namespace" . }}
+rules:
+- apiGroups: [""]
+  resources: ["configmaps"]
+  verbs: ["create", "get", "list", "update", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "gryvia.fullname" . }}-intelligence-actions
+  namespace: {{ include "gryvia.namespace" . }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "gryvia.fullname" . }}-intelligence-actions
+subjects:
+- kind: ServiceAccount
+  name: gryvia-api-gateway
+  namespace: {{ include "gryvia.namespace" . }}
+{{- end }}
+{{- end }}
+{{- if and .Values.podDisruptionBudget.enabled (gt (int .Values.apiGateway.replicas) 1) }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: gryvia-api-gateway
+  namespace: {{ include "gryvia.namespace" . }}
+spec:
+  minAvailable: {{ .Values.podDisruptionBudget.minAvailable }}
+  selector:
+    matchLabels:
+      app: gryvia-api-gateway
+{{- end }}
+{{- end }}

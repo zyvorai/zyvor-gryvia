@@ -1,0 +1,108 @@
+{{- /*
+Observability wiring, all behind monitoring.enabled (default off). See docs/observability.md.
+The PodMonitor/ServiceMonitor/PrometheusRule need the Prometheus Operator CRDs; on clusters without them (or with
+`helm template` without --api-versions monitoring.coreos.com/v1) they are skipped. The dashboards ConfigMap needs nothing.
+Assets come from monitoring-assets/, a copy of monitoring/ maintained by scripts/sync-monitoring-assets.sh.
+*/ -}}
+{{- if .Values.monitoring.enabled }}
+{{- $mon := .Values.monitoring }}
+{{- $ns := default (include "gryvia.namespace" .) $mon.prometheus.serviceMonitor.namespace }}
+{{- $hasCRD := .Capabilities.APIVersions.Has "monitoring.coreos.com/v1" }}
+{{- if and $hasCRD $mon.prometheus.enabled $mon.prometheus.serviceMonitor.enabled }}
+{{- $enabledOps := list }}
+{{- range $name, $op := dict "gpu-operator" .Values.gpuOperator "ai-operator" .Values.aiOperator "quota-operator" .Values.quotaOperator "storage-operator" .Values.storageOperator "network-operator" .Values.networkOperator }}
+{{- if $op.enabled }}{{ $enabledOps = append $enabledOps $name }}{{ end }}
+{{- end }}
+{{- if $enabledOps }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: {{ include "gryvia.fullname" . }}-operators
+  namespace: {{ $ns }}
+  labels:
+    {{- include "gryvia.labels" . | nindent 4 }}
+    {{- with $mon.prometheus.serviceMonitor.additionalLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  namespaceSelector:
+    matchNames:
+      - {{ include "gryvia.namespace" . }}
+  selector:
+    matchLabels:
+      {{- include "gryvia.selectorLabels" . | nindent 6 }}
+    matchExpressions:
+      - key: app.kubernetes.io/component
+        operator: In
+        values:
+          {{- range $enabledOps }}
+          - {{ . }}
+          {{- end }}
+  podMetricsEndpoints:
+    - port: metrics
+      path: /metrics
+      interval: {{ $mon.prometheus.serviceMonitor.interval }}
+{{- end }}
+{{- if and .Values.apiGateway.enabled (dig "apiGateway" "metrics" "enabled" nil .Values.AsMap) }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "gryvia.fullname" . }}-api-gateway
+  namespace: {{ $ns }}
+  labels:
+    {{- include "gryvia.labels" . | nindent 4 }}
+    {{- with $mon.prometheus.serviceMonitor.additionalLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  namespaceSelector:
+    matchNames:
+      - {{ include "gryvia.namespace" . }}
+  selector:
+    matchLabels:
+      app: gryvia-api-gateway
+  endpoints:
+    - port: https
+      path: /metrics
+      scheme: https
+      interval: {{ $mon.prometheus.serviceMonitor.interval }}
+      tlsConfig:
+        insecureSkipVerify: {{ (dig "apiGateway" "metrics" "insecureSkipVerify" nil .Values.AsMap) }}
+      # The Secret must exist in the ServiceMonitor's namespace ({{ $ns }}).
+      bearerTokenSecret:
+        name: {{ (dig "apiGateway" "metrics" "tokenSecret" nil .Values.AsMap) | quote }}
+        key: {{ (dig "apiGateway" "metrics" "tokenKey" nil .Values.AsMap) | quote }}
+{{- end }}
+{{- end }}
+{{- if and $hasCRD $mon.prometheus.enabled $mon.prometheus.rules.enabled }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "gryvia.fullname" . }}-alerts
+  namespace: {{ $ns }}
+  labels:
+    {{- include "gryvia.labels" . | nindent 4 }}
+    {{- with $mon.prometheus.serviceMonitor.additionalLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  groups:
+    {{- (fromYaml (.Files.Get "monitoring-assets/prometheus-rules.yaml")).groups | toYaml | nindent 4 }}
+{{- end }}
+{{- if and $mon.grafana.enabled $mon.grafana.dashboards.enabled }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "gryvia.fullname" . }}-dashboards
+  namespace: {{ include "gryvia.namespace" . }}
+  labels:
+    {{- include "gryvia.labels" . | nindent 4 }}
+    grafana_dashboard: "1"
+data:
+  {{- (.Files.Glob "monitoring-assets/grafana-dashboards/*.json").AsConfig | nindent 2 }}
+{{- end }}
+{{- end }}

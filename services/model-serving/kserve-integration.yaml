@@ -1,0 +1,332 @@
+---
+# KServe Integration for Model Serving
+# Deploys models trained with Gryvia
+
+# Install KServe
+# kubectl apply -f https://github.com/kserve/kserve/releases/download/v0.12.0/kserve.yaml
+
+---
+# InferenceService for LLaMA model
+apiVersion: serving.kserve.io/v1beta1
+kind: InferenceService
+metadata:
+  name: llama-7b
+  namespace: default
+  annotations:
+    gryvia.io/model-source: "mlflow"
+    gryvia.io/model-version: "production"
+    gryvia.io/team: "ml-research"
+spec:
+  predictor:
+    serviceAccountName: kserve-sa
+    minReplicas: 1
+    maxReplicas: 5
+    scaleTarget: 80  # Target GPU utilization
+    scaleMetric: gpu
+    containerConcurrency: 1
+
+    # vLLM predictor for LLMs
+    containers:
+      - name: kserve-container
+        image: vllm/vllm-openai:v0.4.0
+        command:
+          - python3
+          - -m
+          - vllm.entrypoints.openai.api_server
+          - --model=/mnt/models/llama-7b
+          - --tensor-parallel-size=2
+          - --max-model-len=4096
+          - --gpu-memory-utilization=0.90
+          - --port=8080
+        env:
+          - name: CUDA_VISIBLE_DEVICES
+            value: "0,1"
+        resources:
+          limits:
+            cpu: "16"
+            memory: 128Gi
+            nvidia.com/gpu: "2"
+          requests:
+            cpu: "8"
+            memory: 64Gi
+            nvidia.com/gpu: "2"
+        volumeMounts:
+          - name: model-storage
+            mountPath: /mnt/models
+
+    volumes:
+      - name: model-storage
+        persistentVolumeClaim:
+          claimName: llama-7b-model
+
+    nodeSelector:
+      gryvia.io/gpu-type: A100-80G
+
+---
+# Model Storage PVC (copy from MLflow)
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: llama-7b-model
+  namespace: default
+spec:
+  accessModes:
+    - ReadOnlyMany
+  storageClassName: vast-sc
+  resources:
+    requests:
+      storage: 50Gi
+
+---
+# Job to export model from MLflow to serving storage
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: export-llama-7b
+  namespace: default
+spec:
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: exporter
+          image: python:3.11
+          command:
+            - python
+            - -c
+            - |
+              import mlflow
+              import os
+
+              mlflow.set_tracking_uri("http://mlflow.gryvia-system.svc.cluster.local:5000")
+
+              # Download production model
+              model_uri = "models:/llama-7b/Production"
+              local_path = "/mnt/models/llama-7b"
+
+              mlflow.artifacts.download_artifacts(
+                  artifact_uri=model_uri,
+                  dst_path=local_path
+              )
+
+              print(f"Model exported to {local_path}")
+          volumeMounts:
+            - name: model-storage
+              mountPath: /mnt/models
+      volumes:
+        - name: model-storage
+          persistentVolumeClaim:
+            claimName: llama-7b-model
+
+---
+# Triton Inference Server Example
+apiVersion: serving.kserve.io/v1beta1
+kind: InferenceService
+metadata:
+  name: triton-ensemble
+  namespace: default
+spec:
+  predictor:
+    triton:
+      image: nvcr.io/nvidia/tritonserver:24.01-py3
+      storageUri: "pvc://triton-model-repository"
+      resources:
+        limits:
+          cpu: "8"
+          memory: 32Gi
+          nvidia.com/gpu: "1"
+        requests:
+          cpu: "4"
+          memory: 16Gi
+          nvidia.com/gpu: "1"
+      args:
+        - --model-repository=/mnt/models
+        - --strict-model-config=false
+        - --log-verbose=1
+    nodeSelector:
+      gryvia.io/gpu-type: T4
+
+---
+# TensorRT-LLM Inference
+apiVersion: serving.kserve.io/v1beta1
+kind: InferenceService
+metadata:
+  name: tensorrt-llm
+  namespace: default
+spec:
+  predictor:
+    containers:
+      - name: kserve-container
+        image: nvcr.io/nvidia/tensorrt-llm:24.01
+        command:
+          - python3
+          - -m
+          - tensorrt_llm.serve
+          - --model=/mnt/models/llama-7b-trt
+          - --max-batch-size=128
+          - --max-input-len=2048
+          - --max-output-len=512
+        resources:
+          limits:
+            nvidia.com/gpu: "4"
+          requests:
+            nvidia.com/gpu: "4"
+        volumeMounts:
+          - name: model-storage
+            mountPath: /mnt/models
+    volumes:
+      - name: model-storage
+        persistentVolumeClaim:
+          claimName: tensorrt-models
+    nodeSelector:
+      gryvia.io/gpu-type: A100-80G
+
+---
+# Auto-scaling configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kserve-autoscaler-config
+  namespace: knative-serving
+data:
+  container-concurrency-target-percentage: "70"
+  container-concurrency-target-default: "100"
+  target-burst-capacity: "200"
+  panic-window-percentage: "10.0"
+  panic-threshold-percentage: "200.0"
+  max-scale-up-rate: "10"
+  max-scale-down-rate: "2"
+  stable-window: "60s"
+  scale-to-zero-grace-period: "30s"
+
+---
+# Canary Deployment
+apiVersion: serving.kserve.io/v1beta1
+kind: InferenceService
+metadata:
+  name: llama-7b-canary
+spec:
+  predictor:
+    canaryTrafficPercent: 20
+    containers:
+      - name: kserve-container
+        image: vllm/vllm-openai:v0.3.0  # New version
+        # ... same config as above
+
+  # Production traffic
+  transformer:
+    containers:
+      - name: kserve-container
+        image: vllm/vllm-openai:v0.2.7  # Stable version
+
+---
+# ServiceMonitor for Prometheus
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: kserve-metrics
+  namespace: default
+spec:
+  selector:
+    matchLabels:
+      serving.kserve.io/inferenceservice: llama-7b
+  endpoints:
+    - port: metrics
+      interval: 30s
+      path: /metrics
+
+---
+# Cost tracking for inference
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaQuota
+metadata:
+  name: inference-quota
+spec:
+  team: ml-platform
+  namespaces:
+    - default
+  gpuQuota:
+    maxGPUs: 20
+    maxRunningJobs: 50
+  budget:
+    monthlyBudget: 200000
+    alertThreshold: 80
+    hardLimit: false
+
+---
+# Network Policy for inference services
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: inference-network-policy
+  namespace: default
+spec:
+  podSelector:
+    matchLabels:
+      serving.kserve.io/inferenceservice: llama-7b
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: production
+      ports:
+        - protocol: TCP
+          port: 8080
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              name: gryvia
+      ports:
+        - protocol: TCP
+          port: 5000  # MLflow
+
+---
+# Horizontal Pod Autoscaler for KServe
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: llama-7b-hpa
+  namespace: default
+spec:
+  scaleTargetRef:
+    apiVersion: serving.kserve.io/v1beta1
+    kind: InferenceService
+    name: llama-7b
+  minReplicas: 1
+  maxReplicas: 10
+  metrics:
+    - type: Pods
+      pods:
+        metric:
+          name: DCGM_FI_DEV_GPU_UTIL
+        target:
+          type: AverageValue
+          averageValue: "80"
+    - type: Pods
+      pods:
+        metric:
+          name: inference_requests_per_second
+        target:
+          type: AverageValue
+          averageValue: "100"
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Percent
+          value: 50
+          periodSeconds: 60
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 30
+        - type: Pods
+          value: 2
+          periodSeconds: 30
+      selectPolicy: Max

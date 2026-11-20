@@ -1,0 +1,120 @@
+# GryviaWorkflow - End-to-end ML training pipeline
+# Defines a 4-step DAG: preprocess -> train -> evaluate -> deploy
+# Steps execute in dependency order; conditional deployment only on high accuracy.
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaWorkflow
+metadata:
+  name: image-classifier-pipeline
+  namespace: ml-team
+spec:
+  # Global parameters accessible to all steps
+  parameters:
+    dataset: "imagenet-1k"
+    model_name: "resnet50-v2"
+    experiment_id: "exp-20240115"
+
+  steps:
+    # Step 1: Data preprocessing - runs first with no dependencies
+    - name: preprocess
+      type: job
+      timeoutSeconds: 3600          # 1 hour max
+      retries: 2
+      jobTemplate:
+        type: training
+        model: data-pipeline
+        image: ml-pipelines/preprocess:1.4.0
+        gpus: 0
+        command: ["python"]
+        args:
+          - "preprocess.py"
+          - "--dataset=imagenet-1k"
+          - "--output=/data/processed"
+        resources:
+          requests:
+            memory: "32Gi"
+            cpu: "8"
+          limits:
+            memory: "64Gi"
+            cpu: "16"
+
+    # Step 2: Model training - starts after preprocessing completes
+    - name: train
+      type: job
+      dependsOn:
+        - preprocess
+      timeoutSeconds: 86400         # 24 hours max
+      retries: 1
+      jobTemplate:
+        type: training
+        model: resnet50
+        image: training/pytorch-train:2.1.0
+        gpus: 4
+        gpuType: A100
+        network: rdma
+        distributed:
+          enabled: true
+          framework: pytorch
+          nodes: 2
+          gpusPerNode: 4
+          backend: nccl
+        command: ["torchrun"]
+        args:
+          - "--nproc_per_node=4"
+          - "--nnodes=2"
+          - "train.py"
+          - "--epochs=90"
+          - "--data=/data/processed"
+        resources:
+          requests:
+            memory: "64Gi"
+            cpu: "16"
+          limits:
+            memory: "128Gi"
+            cpu: "32"
+
+    # Step 3: Model evaluation - depends on training completion
+    - name: evaluate
+      type: job
+      dependsOn:
+        - train
+      timeoutSeconds: 1800          # 30 minutes max
+      jobTemplate:
+        type: evaluation
+        model: resnet50
+        image: training/pytorch-eval:2.1.0
+        gpus: 1
+        gpuType: A100
+        command: ["python"]
+        args:
+          - "evaluate.py"
+          - "--model=/models/resnet50-v2/best.pt"
+          - "--data=/data/processed/test"
+        resources:
+          requests:
+            memory: "16Gi"
+            cpu: "4"
+          limits:
+            memory: "32Gi"
+            cpu: "8"
+
+    # Step 4: Deploy model - only runs if evaluation accuracy exceeds threshold
+    - name: deploy
+      type: webhook
+      dependsOn:
+        - evaluate
+      # Only deploy if accuracy is high enough
+      condition: "steps.evaluate.status == 'Succeeded'"
+      webhook:
+        url: "https://model-registry.internal/api/v1/deploy"
+        method: POST
+        headers:
+          Content-Type: "application/json"
+          Authorization: "Bearer ${MODEL_REGISTRY_TOKEN}"
+        body: |
+          {
+            "model": "resnet50-v2",
+            "version": "latest",
+            "stage": "staging",
+            "source_job": "image-classifier-pipeline"
+          }
+        successCondition: "$.status == 'deployed'"

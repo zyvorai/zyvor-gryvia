@@ -1,0 +1,238 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: gryvia-operators-policy
+  namespace: gryvia-system
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/part-of: gryvia
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Allow metrics scraping
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: gryvia
+        - podSelector:
+            matchLabels:
+              app: prometheus
+      ports:
+        - protocol: TCP
+          port: 8080  # Metrics port
+    # Allow webhook traffic from kube-apiserver
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: TCP
+          port: 9443  # Webhook port
+  egress:
+    # Allow Kubernetes API access
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              component: apiserver
+      ports:
+        - protocol: TCP
+          port: 443
+    # Allow DNS
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+    # Allow Prometheus access
+    - to:
+        - podSelector:
+            matchLabels:
+              app: prometheus
+      ports:
+        - protocol: TCP
+          port: 9090
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: gryvia-web-ui-policy
+  namespace: gryvia-system
+spec:
+  podSelector:
+    matchLabels:
+      app: gryvia-ui
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Allow ingress traffic from ingress controller namespace
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 80
+    # Allow traffic from within gryvia namespace
+    - from:
+        - podSelector: {}
+      ports:
+        - protocol: TCP
+          port: 80
+  egress:
+    # Allow API Gateway access
+    - to:
+        - podSelector:
+            matchLabels:
+              app: gryvia-api-gateway
+      ports:
+        - protocol: TCP
+          port: 8080
+    # Allow DNS
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: gryvia-api-gateway-policy
+  namespace: gryvia-system
+spec:
+  podSelector:
+    matchLabels:
+      app: gryvia-api-gateway
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Allow Web UI traffic
+    - from:
+        - podSelector:
+            matchLabels:
+              app: gryvia-ui
+      ports:
+        - protocol: TCP
+          port: 8080
+    # Allow traffic from within gryvia namespace
+    - from:
+        - podSelector: {}
+      ports:
+        - protocol: TCP
+          port: 8080
+  egress:
+    # Allow Kubernetes API access
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: TCP
+          port: 443
+    # Allow Prometheus access
+    - to:
+        - podSelector:
+            matchLabels:
+              app: prometheus
+      ports:
+        - protocol: TCP
+          port: 9090
+    # Allow DNS
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: gryvia-gpu-jobs-policy
+  namespace: gpu-workloads
+spec:
+  podSelector:
+    matchLabels:
+      gryvia.io/job-type: ai-training
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Allow intra-job communication for distributed training
+    - from:
+        - podSelector:
+            matchLabels:
+              gryvia.io/job-type: ai-training
+      ports:
+        - protocol: TCP
+          port: 29400  # PyTorch DDP
+        - protocol: TCP
+          port: 2222   # TensorFlow
+  egress:
+    # Allow intra-job communication
+    - to:
+        - podSelector:
+            matchLabels:
+              gryvia.io/job-type: ai-training
+    # Allow storage access (NFS/object storage) - restricted to gryvia namespace
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: gryvia
+      ports:
+        - protocol: TCP
+          port: 111   # NFS portmap
+        - protocol: TCP
+          port: 2049  # NFS
+        - protocol: TCP
+          port: 9000  # Object storage
+    # Allow DNS
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+    # Allow egress to Kubernetes API (for job status updates)
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              component: apiserver
+      ports:
+        - protocol: TCP
+          port: 443
+    # Allow HTTPS egress (restricted - no private IPs)
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 443
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: gryvia-system
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  # Empty ingress rules = deny all by default

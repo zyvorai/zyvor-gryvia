@@ -1,0 +1,115 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  name: hp-sweep-{{workflow.uid}}
+  namespace: default
+  labels:
+    team: ml-research
+    pipeline-type: hyperparameter-sweep
+spec:
+  entrypoint: hyperparameter-sweep
+  serviceAccountName: gryvia-job-runner
+
+  arguments:
+    parameters:
+      - name: model
+        value: "resnet50"
+      - name: dataset
+        value: "imagenet"
+      - name: trials
+        value: "20"
+
+  templates:
+    - name: hyperparameter-sweep
+      steps:
+        # Generate hyperparameter combinations
+        - - name: generate-configs
+            template: generate-hp-configs
+
+        # Run parallel training jobs
+        - - name: parallel-training
+            template: training-trial
+            arguments:
+              parameters:
+                - name: trial-id
+                  value: "{{item}}"
+            withSequence:
+              count: "{{workflow.parameters.trials}}"
+
+        # Analyze results
+        - - name: analyze-results
+            template: result-analysis
+
+    - name: generate-hp-configs
+      script:
+        image: python:3.11
+        command: [python]
+        source: |
+          import json
+          import random
+
+          trials = []
+          for i in range({{workflow.parameters.trials}}):
+              trial = {
+                  "trial_id": i,
+                  "learning_rate": 10 ** random.uniform(-5, -2),
+                  "batch_size": random.choice([16, 32, 64, 128]),
+                  "weight_decay": 10 ** random.uniform(-5, -3),
+                  "dropout": random.uniform(0.1, 0.5)
+              }
+              trials.append(trial)
+
+          print(json.dumps(trials, indent=2))
+
+    - name: training-trial
+      inputs:
+        parameters:
+          - name: trial-id
+      resource:
+        action: create
+        setOwnerReference: true
+        manifest: |
+          apiVersion: gryvia.io/v1alpha1
+          kind: GryviaAIJob
+          metadata:
+            name: trial-{{inputs.parameters.trial-id}}
+            namespace: default
+            labels:
+              sweep: "{{workflow.name}}"
+          spec:
+            type: training
+            gpus: 1
+            gpuType: A100-40G
+            resources:
+              requests:
+                cpu: "16"
+                memory: 64Gi
+            image: nvcr.io/nvidia/pytorch:24.01-py3
+            command:
+              - python
+              - train.py
+              - --trial-id={{inputs.parameters.trial-id}}
+              - --model={{workflow.parameters.model}}
+              - --dataset={{workflow.parameters.dataset}}
+              - --config=/configs/trial-{{inputs.parameters.trial-id}}.json
+            env:
+              - name: MLFLOW_TRACKING_URI
+                value: "http://mlflow:5000"
+
+    - name: result-analysis
+      script:
+        image: python:3.11
+        command: [python]
+        source: |
+          import requests
+
+          # Fetch results from MLflow
+          response = requests.get("http://mlflow:5000/api/2.0/mlflow/experiments/1/runs")
+          runs = response.json()["runs"]
+
+          # Find best run
+          best_run = max(runs, key=lambda r: r["data"]["metrics"]["accuracy"])
+
+          print(f"Best trial: {best_run['data']['tags']['trial_id']}")
+          print(f"Best accuracy: {best_run['data']['metrics']['accuracy']}")
+          print(f"Best hyperparameters: {best_run['data']['params']}")

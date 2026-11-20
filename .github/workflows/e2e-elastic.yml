@@ -1,0 +1,664 @@
+name: Kind e2e (elastic training across nodes)
+
+# Elastic PyTorch training across two kind nodes with a real node loss. A real torchrun (c10d rendezvous, gloo on
+# CPU) runs examples/training/elastic_train.py in an elastic AIJob (nodes 2, minNodes 1) whose workers must sit on
+# different training nodes (required pod anti-affinity). The checkpoints are on a ReadWriteMany NFS volume exported
+# by the runner, so the commit protocol (examples/training/coordinated_checkpoint.py) works across nodes. After a
+# committed checkpoint the node of one worker is stopped and deleted: the Job's replacement pod for that index has
+# no node left and stays Pending, so the survivor must re-form the group alone (world size 1), resume from the
+# committed step and finish, and the Job's success policy (succeededCount: minNodes) must complete it.
+# The matrix loses index 1 (rendezvous hosted by pod 0, the default), index 0 (rendezvous in a standalone store,
+# examples/training/rendezvous_store.py, with --rdzv_conf=is_host=0, so that pod 0 holds nothing the others need), and
+# index 0 with the rendezvous in a 3-member etcd cluster (torch's etcd-v2 backend) that also loses a member first.
+# The cluster is scripts/kind-elastic.yaml; Gryvia installs like the other kind e2e (scripts/kind-demo.sh).
+# Losing index 1 first passed in CI on main on 2026-10-02 (run 36990965624).
+# The node-loss job runs a NON-elastic job under a GryviaCheckpointGuard (aiOperator.checkpointGuard, restore.
+# autoRestore): its checkpoint directory and status ConfigMap come from the guard, the trainer reports commits into
+# status.checkpoint, then its node's container is stopped (the node stays, NotReady). After the guard's grace the
+# operator force-deletes the stuck pod, the Indexed Job recreates it on the other training node, and the trainer
+# resumes from the last committed step.
+# The resize job grows a running elastic job (nodes 3, minNodes 1) from 2 to 3 workers and shrinks it back to 2 by
+# patching spec.distributed.elastic.desiredNodes: the operator changes the Indexed Job's parallelism and
+# completions together, torchrun re-forms the group each time, and DCP reshards the checkpoint to the new world size.
+
+on:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'operators/ai-operator/**'
+      - 'helm/**'
+      - 'crds/**'
+      - 'examples/training/**'
+      - 'scripts/kind-elastic.yaml'
+      - 'scripts/kind-demo.sh'
+      - 'scripts/e2e-ml-lib.sh'
+      - '.github/workflows/e2e-elastic.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  KIND_CLUSTER: gryvia-demo
+
+jobs:
+  elastic:
+    name: elastic (lose index ${{ matrix.lose }}, rendezvous ${{ matrix.rdzv }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {lose: 1, rdzv: pod0}
+          - {lose: 0, rdzv: store}
+          - {lose: 0, rdzv: etcd}
+    env:
+      LOSE: ${{ matrix.lose }}
+      RDZV: ${{ matrix.rdzv }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: azure/setup-helm@v5
+      - uses: helm/kind-action@v1
+        with:
+          install_only: true
+
+      - name: Create a 4-node kind cluster (two tainted training workers)
+        # Same name as scripts/kind-demo.sh so that it reuses this cluster instead of creating a 1-node one.
+        run: |
+          kind create cluster --name "$KIND_CLUSTER" --config scripts/kind-elastic.yaml --wait 120s
+          kubectl get nodes -L e2e.gryvia.io/train
+          assert_count() { [ "$(kubectl get nodes -l e2e.gryvia.io/train=true -o name | wc -l)" -eq 2 ]; }
+          assert_count
+
+      - name: NFS export on the runner, NFS client in the kind nodes
+        # kindest/node has no NFS client. all_squash maps every client to 65534, the user the trainer runs as.
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq nfs-kernel-server >/dev/null
+          sudo mkdir -p /srv/e2e-elastic /etc/exports.d
+          sudo chown 65534:65534 /srv/e2e-elastic
+          echo '/srv/e2e-elastic *(rw,sync,insecure,no_subtree_check,all_squash,anonuid=65534,anongid=65534)' \
+            | sudo tee /etc/exports.d/e2e-elastic.exports >/dev/null
+          sudo exportfs -ra
+          sudo systemctl restart nfs-kernel-server
+          sudo exportfs -v
+          for node in $(kind get nodes --name "$KIND_CLUSTER"); do
+            docker exec "$node" sh -c 'apt-get update -qq && apt-get install -y -qq nfs-common >/dev/null'
+          done
+          echo "NFS_SERVER=$(hostname -I | awk '{print $1}')" >> "$GITHUB_ENV"
+
+      - name: Install Gryvia on kind (local images)
+        run: GRYVIA_LOCAL_IMAGES=1 ./scripts/kind-demo.sh
+
+      - name: Trainer image and the ReadWriteMany checkpoint volume
+        run: |
+          docker build -f examples/training/Dockerfile.elastic -t ghcr.io/zyvorai/gryvia-elastic-train:dev examples/training
+          kind load docker-image --name "$KIND_CLUSTER" ghcr.io/zyvorai/gryvia-elastic-train:dev
+          # noac and lookupcache=none: a rank polls for files another node just created (the commit protocol);
+          # the NFS client's attribute and lookup caches would otherwise hide them for up to a minute.
+          cat <<EOF | kubectl apply -f -
+          apiVersion: v1
+          kind: PersistentVolume
+          metadata: {name: e2e-elastic-rwx}
+          spec:
+            capacity: {storage: 1Gi}
+            accessModes: [ReadWriteMany]
+            persistentVolumeReclaimPolicy: Retain
+            storageClassName: ""
+            mountOptions: [nfsvers=4.2, noac, lookupcache=none]
+            nfs: {server: "${NFS_SERVER}", path: /srv/e2e-elastic}
+          ---
+          apiVersion: v1
+          kind: PersistentVolumeClaim
+          metadata: {name: e2e-elastic-rwx, namespace: gryvia-system}
+          spec:
+            accessModes: [ReadWriteMany]
+            storageClassName: ""
+            volumeName: e2e-elastic-rwx
+            resources: {requests: {storage: 1Gi}}
+          EOF
+          source scripts/e2e-ml-lib.sh
+          wait_for "PVC bound" 60 field_is pvc/e2e-elastic-rwx '{.status.phase}' Bound
+
+      - name: Standalone rendezvous store
+        if: matrix.rdzv == 'store'
+        # Not on a training node (they are tainted), so the node loss does not take the store down.
+        run: |
+          cat <<'EOF' | kubectl apply -f -
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata: {name: e2e-rdzv, namespace: gryvia-system}
+          spec:
+            replicas: 1
+            selector: {matchLabels: {app: e2e-rdzv}}
+            template:
+              metadata: {labels: {app: e2e-rdzv}}
+              spec:
+                securityContext: {runAsNonRoot: true, runAsUser: 65534, seccompProfile: {type: RuntimeDefault}}
+                containers:
+                  - name: store
+                    image: ghcr.io/zyvorai/gryvia-elastic-train:dev
+                    imagePullPolicy: IfNotPresent
+                    command: [python, /app/rendezvous_store.py]
+                    ports: [{containerPort: 29400}]
+                    readinessProbe: {tcpSocket: {port: 29400}, periodSeconds: 2}
+                    resources: {requests: {cpu: 50m, memory: 128Mi}, limits: {memory: 512Mi}}
+                    securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}
+          ---
+          apiVersion: v1
+          kind: Service
+          metadata: {name: e2e-rdzv, namespace: gryvia-system}
+          spec:
+            selector: {app: e2e-rdzv}
+            ports: [{port: 29400, targetPort: 29400}]
+          EOF
+          kubectl -n gryvia-system rollout status deploy/e2e-rdzv --timeout=180s
+          kubectl -n gryvia-system get pods -l app=e2e-rdzv -o wide
+
+      - name: Three-member etcd cluster with the v2 API (torch's etcd-v2 rendezvous)
+        if: matrix.rdzv == 'etcd'
+        # Parallel pod management: a member is Ready only with quorum, so OrderedReady would never start the second.
+        # Not on a training node (they are tainted). etcd 3.5 is the last release with the v2 API torch uses.
+        run: |
+          peers=""
+          for i in 0 1 2; do peers="${peers:+$peers,}e2e-etcd-$i=http://e2e-etcd-$i.e2e-etcd-peer.gryvia-system.svc:2380"; done
+          cat <<EOF | kubectl apply -f -
+          apiVersion: v1
+          kind: Service
+          metadata: {name: e2e-etcd-peer, namespace: gryvia-system}
+          spec:
+            clusterIP: None
+            publishNotReadyAddresses: true
+            selector: {app: e2e-etcd}
+            ports: [{name: peer, port: 2380}, {name: client, port: 2379}]
+          ---
+          apiVersion: v1
+          kind: Service
+          metadata: {name: e2e-etcd, namespace: gryvia-system}
+          spec:
+            selector: {app: e2e-etcd}
+            ports: [{port: 2379, targetPort: 2379}]
+          ---
+          apiVersion: apps/v1
+          kind: StatefulSet
+          metadata: {name: e2e-etcd, namespace: gryvia-system}
+          spec:
+            serviceName: e2e-etcd-peer
+            replicas: 3
+            podManagementPolicy: Parallel
+            selector: {matchLabels: {app: e2e-etcd}}
+            template:
+              metadata: {labels: {app: e2e-etcd}}
+              spec:
+                securityContext: {runAsNonRoot: true, runAsUser: 65534, seccompProfile: {type: RuntimeDefault}}
+                containers:
+                  - name: etcd
+                    image: quay.io/coreos/etcd:v3.5.34
+                    command: [/usr/local/bin/etcd]
+                    args:
+                      - --name=\$(POD_NAME)
+                      - --data-dir=/var/run/etcd/data
+                      - --enable-v2
+                      - --listen-client-urls=http://0.0.0.0:2379
+                      - --advertise-client-urls=http://\$(POD_NAME).e2e-etcd-peer.gryvia-system.svc:2379
+                      - --listen-peer-urls=http://0.0.0.0:2380
+                      - --initial-advertise-peer-urls=http://\$(POD_NAME).e2e-etcd-peer.gryvia-system.svc:2380
+                      - --initial-cluster=${peers}
+                      - --initial-cluster-state=new
+                      - --initial-cluster-token=e2e-etcd
+                    env: [{name: POD_NAME, valueFrom: {fieldRef: {fieldPath: metadata.name}}}]
+                    ports: [{containerPort: 2379}, {containerPort: 2380}]
+                    readinessProbe: {httpGet: {path: /health, port: 2379}, periodSeconds: 3}
+                    resources: {requests: {cpu: 50m, memory: 128Mi}, limits: {memory: 512Mi}}
+                    securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}
+                    volumeMounts: [{name: data, mountPath: /var/run/etcd}]
+                volumes: [{name: data, emptyDir: {}}]
+          EOF
+          kubectl -n gryvia-system rollout status sts/e2e-etcd --timeout=300s
+          kubectl -n gryvia-system get pods -l app=e2e-etcd -o wide
+          kubectl -n gryvia-system run e2e-etcd-v2 --rm -i --restart=Never --image=curlimages/curl:8.11.1 \
+            --overrides='{"spec":{"securityContext":{"runAsNonRoot":true,"runAsUser":100,"seccompProfile":{"type":"RuntimeDefault"}},"containers":[{"name":"c","image":"curlimages/curl:8.11.1","args":["-sf","http://e2e-etcd:2379/v2/members"],"securityContext":{"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]}}}]}}'
+
+      - name: Two workers on two nodes, one node is lost, the survivor finishes alone
+        run: |
+          source scripts/e2e-ml-lib.sh
+          export RDZV_BACKEND=c10d
+          case "$RDZV" in
+            store) export RDZV_ENDPOINT=e2e-rdzv.gryvia-system.svc.cluster.local:29400 RDZV_CONF=is_host=0,join_timeout=600 ;;
+            etcd) export RDZV_BACKEND=etcd-v2 RDZV_ENDPOINT=e2e-etcd.gryvia-system.svc.cluster.local:2379 RDZV_CONF=join_timeout=600 ;;
+            *)
+              # Literal: Kubernetes expands $(VAR) in args from the container env.
+              # shellcheck disable=SC2016
+              export RDZV_ENDPOINT='$(MASTER_ADDR):$(MASTER_PORT)' RDZV_CONF=join_timeout=600 ;;
+          esac
+          # Only these are substituted; $(NNODES) and friends stay for Kubernetes.
+          # shellcheck disable=SC2016
+          envsubst '$RDZV_BACKEND $RDZV_ENDPOINT $RDZV_CONF' <<'EOF' | tee /dev/stderr | kubectl apply -f -
+          apiVersion: gryvia.io/v1alpha1
+          kind: GryviaAIJob
+          metadata: {name: e2e-mn, namespace: gryvia-system}
+          spec:
+            type: training
+            gpus: 0
+            image: ghcr.io/zyvorai/gryvia-elastic-train:dev
+            imagePullPolicy: IfNotPresent
+            retryLimit: 3
+            timeout: 20m
+            distributed: {enabled: true, framework: pytorch, backend: gloo, nodes: 2, elastic: {minNodes: 1}}
+            command: [torchrun]
+            args:
+              - --nnodes=$(NNODES)
+              - --nproc_per_node=$(NPROC_PER_NODE)
+              - --rdzv_backend=${RDZV_BACKEND}
+              - --rdzv_endpoint=${RDZV_ENDPOINT}
+              - --rdzv_conf=${RDZV_CONF}
+              - --rdzv_id=e2e-mn
+              - --max_restarts=3
+              - /app/elastic_train.py
+            env:
+              - {name: CHECKPOINT_DIR, value: /ckpt}
+              - {name: TOTAL_STEPS, value: "60"}
+              - {name: STEP_SECONDS, value: "1"}
+              - {name: COLLECTIVE_TIMEOUT, value: "30"}
+            resources:
+              requests: {cpu: 200m, memory: 512Mi}
+              limits: {cpu: "1", memory: 2Gi}
+            nodeSelector: {e2e.gryvia.io/train: "true"}
+            tolerations: [{key: e2e.gryvia.io/train, operator: Equal, value: "true", effect: NoSchedule}]
+            affinity:
+              podAntiAffinity:
+                requiredDuringSchedulingIgnoredDuringExecution:
+                  - topologyKey: kubernetes.io/hostname
+                    labelSelector: {matchLabels: {batch.kubernetes.io/job-name: e2e-mn}}
+            volumes: [{name: ckpt, persistentVolumeClaim: {claimName: e2e-elastic-rwx}}]
+            volumeMounts: [{name: ckpt, mountPath: /ckpt}]
+          EOF
+          wait_for "Job created" 120 kubectl -n "$NS" get job/e2e-mn
+          assert_eq "success policy" "$(jp job/e2e-mn '{.spec.successPolicy.rules[0].succeededCount}')" 1
+          assert_eq "shared rendezvous store off" \
+            "$(jp job/e2e-mn '{.spec.template.spec.containers[0].env[?(@.name=="TORCH_DISABLE_SHARE_RDZV_TCP_STORE")].value}')" 1
+
+          logs() { kubectl -n "$NS" logs -l job-name=e2e-mn --tail=-1 --max-log-requests=10 2>/dev/null; }
+          committed() { logs | grep -q "committed step $1 "; }
+          grouped() { logs | grep -q "of 2: starting after step 0 "; }
+          wait_for "both workers in one group" 300 grouped
+          node_of() { jp "pod/$(kubectl -n "$NS" get pod -l "job-name=e2e-mn,batch.kubernetes.io/job-completion-index=$1" -o jsonpath='{.items[0].metadata.name}')" '{.spec.nodeName}'; }
+          n0="$(node_of 0)"; n1="$(node_of 1)"
+          echo "index 0 on $n0, index 1 on $n1"
+          [ -n "$n0" ] && [ -n "$n1" ] && [ "$n0" != "$n1" ] || { echo "ASSERT FAILED: the workers are not on two nodes"; exit 1; }
+          # A world-size-2 commit means rank 0 read rank 1's manifest, written from the other node.
+          wait_for "step 10 committed by both ranks" 180 committed 10
+          logs | grep -q "committed step 10 (world 2" || { echo "ASSERT FAILED: step 10 not committed with world 2"; exit 1; }
+
+          if [ "$RDZV" = etcd ]; then
+            # A store member is lost before the rendezvous has to re-form: the StatefulSet drops e2e-etcd-2, the
+            # cluster keeps quorum with two of its three members, and the Service only routes to those two.
+            kubectl -n "$NS" scale sts/e2e-etcd --replicas=2
+            wait_for "etcd member e2e-etcd-2 gone" 120 bash -c "! kubectl -n $NS get pod e2e-etcd-2 >/dev/null 2>&1"
+          fi
+
+          # Node failure: the node's container stops, then the node object is removed (as a cloud node controller
+          # would). The pod garbage collector deletes the pods bound to it.
+          lost="$(node_of "$LOSE")"; keep=$((1 - LOSE))
+          docker stop "$lost"
+          kubectl delete node "$lost"
+          echo "stopped and deleted node $lost (index $LOSE)"
+          replacement_pending() {
+            kubectl -n "$NS" get pod -l "job-name=e2e-mn,batch.kubernetes.io/job-completion-index=$LOSE" \
+              -o jsonpath='{range .items[*]}{.status.phase}/{.status.conditions[?(@.type=="PodScheduled")].reason}{"\n"}{end}' \
+              | grep -qx 'Pending/Unschedulable'
+          }
+          wait_for "replacement for index $LOSE Pending: no training node left" 180 replacement_pending
+          alone() {
+            kubectl -n "$NS" logs -l "job-name=e2e-mn,batch.kubernetes.io/job-completion-index=$keep" --tail=-1 2>/dev/null \
+              | grep -q "rank 0 of 1: starting after step "
+          }
+          wait_for "survivor (index $keep) re-formed the group alone" 300 alone
+
+          wait_for "AIJob Succeeded" 600 field_is gryviaaijob/e2e-mn '{.status.phase}' Succeeded
+          logs | grep -E "starting after|committed step|discarded|done:|Timed out|restart" || true
+
+          cat <<'EOF' | kubectl apply -f -
+          apiVersion: v1
+          kind: Pod
+          metadata: {name: e2e-mn-read, namespace: gryvia-system}
+          spec:
+            restartPolicy: Never
+            securityContext: {runAsNonRoot: true, runAsUser: 65534, seccompProfile: {type: RuntimeDefault}}
+            containers:
+              - name: read
+                image: ghcr.io/zyvorai/gryvia-elastic-train:dev
+                imagePullPolicy: IfNotPresent
+                command: [sh, -c, 'cat /ckpt/DONE && echo && cat /ckpt/COMMITTED']
+                securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}
+                volumeMounts: [{name: ckpt, mountPath: /ckpt}]
+            volumes: [{name: ckpt, persistentVolumeClaim: {claimName: e2e-elastic-rwx}}]
+          EOF
+          wait_for "reader done (a third node reads the volume)" 120 field_is pod/e2e-mn-read '{.status.phase}' Succeeded
+          echo "reader on $(jp pod/e2e-mn-read '{.spec.nodeName}')"
+          out="$(kubectl -n "$NS" logs pod/e2e-mn-read)"
+          echo "$out"
+          done_json="$(head -1 <<<"$out")"
+          assert_eq "trained every step" "$(jq -r .steps <<<"$done_json")" 60
+          assert_eq "finished alone" "$(jq -r .world <<<"$done_json")" 1
+          assert_eq "last commit is the final step" "$(tail -1 <<<"$out" | jq -r .step)" 60
+          jq -e '.resumedFrom >= 10' <<<"$done_json" >/dev/null || { echo "ASSERT FAILED: did not resume from a committed step"; exit 1; }
+          echo "ok: resumed from step $(jq -r .resumedFrom <<<"$done_json"), failure restarts $(jq -r .restarts <<<"$done_json")"
+          assert_eq "Job complete" "$(jp job/e2e-mn '{.status.conditions[?(@.type=="Complete")].status}')" True
+
+      - name: Dump state on failure
+        if: failure()
+        run: |
+          kubectl get nodes -o wide || true
+          kubectl get pods -A -o wide || true
+          kubectl -n gryvia-system get gryviaaijob/e2e-mn job/e2e-mn -o yaml || true
+          kubectl -n gryvia-system describe pods -l job-name=e2e-mn || true
+          kubectl -n gryvia-system logs -l job-name=e2e-mn --tail=200 --max-log-requests=10 || true
+          kubectl -n gryvia-system logs deploy/e2e-rdzv --tail=50 || true
+          kubectl -n gryvia-system logs -l app=e2e-etcd --tail=30 --prefix || true
+          kubectl -n gryvia-system logs -l app.kubernetes.io/component=ai-operator --tail=200 || true
+          kubectl get pv,pvc -A || true
+          kubectl -n gryvia-system get events --sort-by=.lastTimestamp | tail -60 || true
+          sudo ls -laR /srv/e2e-elastic | head -60 || true
+
+  node-loss:
+    name: node loss (non-elastic job, CheckpointGuard autoRestore)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - uses: azure/setup-helm@v5
+      - uses: helm/kind-action@v1
+        with:
+          install_only: true
+
+      - name: Create a 4-node kind cluster (two tainted training workers)
+        run: |
+          kind create cluster --name "$KIND_CLUSTER" --config scripts/kind-elastic.yaml --wait 120s
+          [ "$(kubectl get nodes -l e2e.gryvia.io/train=true -o name | wc -l)" -eq 2 ]
+
+      - name: NFS export on the runner, NFS client in the kind nodes
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq nfs-kernel-server >/dev/null
+          sudo mkdir -p /srv/e2e-ckpt /etc/exports.d
+          sudo chown 65534:65534 /srv/e2e-ckpt
+          echo '/srv/e2e-ckpt *(rw,sync,insecure,no_subtree_check,all_squash,anonuid=65534,anongid=65534)' \
+            | sudo tee /etc/exports.d/e2e-ckpt.exports >/dev/null
+          sudo exportfs -ra
+          sudo systemctl restart nfs-kernel-server
+          for node in $(kind get nodes --name "$KIND_CLUSTER"); do
+            docker exec "$node" sh -c 'apt-get update -qq && apt-get install -y -qq nfs-common >/dev/null'
+          done
+          echo "NFS_SERVER=$(hostname -I | awk '{print $1}')" >> "$GITHUB_ENV"
+
+      - name: Install Gryvia on kind with the checkpoint guard capability
+        run: |
+          GRYVIA_LOCAL_IMAGES=1 ./scripts/kind-demo.sh
+          helm upgrade gryvia ./helm/gryvia -n gryvia-system --reuse-values --set aiOperator.checkpointGuard=true --wait
+          kubectl -n gryvia-system rollout status deploy -l app.kubernetes.io/component=ai-operator --timeout=180s
+
+      - name: Trainer image and a static NFS volume for spec.storage
+        # The operator creates PVC <job>-data (ReadWriteMany, storageClassName = spec.storage); it binds to this
+        # pre-created PV of the same class, so /data is shared by both training nodes.
+        run: |
+          docker build -f examples/training/Dockerfile.elastic -t ghcr.io/zyvorai/gryvia-elastic-train:dev examples/training
+          kind load docker-image --name "$KIND_CLUSTER" ghcr.io/zyvorai/gryvia-elastic-train:dev
+          cat <<EOF | kubectl apply -f -
+          apiVersion: v1
+          kind: PersistentVolume
+          metadata: {name: e2e-ckpt-nfs}
+          spec:
+            capacity: {storage: 1Gi}
+            accessModes: [ReadWriteMany]
+            persistentVolumeReclaimPolicy: Retain
+            storageClassName: e2e-nfs
+            mountOptions: [nfsvers=4.2, noac, lookupcache=none]
+            nfs: {server: "${NFS_SERVER}", path: /srv/e2e-ckpt}
+          EOF
+
+      - name: Guarded job loses its node and resumes from the last committed step
+        run: |
+          source scripts/e2e-ml-lib.sh
+          cat <<'EOF' | tee /dev/stderr | kubectl apply -f -
+          apiVersion: gryvia.io/v1alpha1
+          kind: GryviaCheckpointGuard
+          metadata: {name: e2e-guard, namespace: gryvia-system}
+          spec:
+            jobSelector: {matchLabels: {e2e: node-loss}}
+            checkpointPolicy: {intervalMinutes: 1, everySteps: 5}
+            restore: {autoRestore: true, nodeLossGraceSeconds: 20}
+          ---
+          apiVersion: gryvia.io/v1alpha1
+          kind: GryviaAIJob
+          metadata: {name: e2e-nl, namespace: gryvia-system, labels: {e2e: node-loss}}
+          spec:
+            type: training
+            gpus: 0
+            image: ghcr.io/zyvorai/gryvia-elastic-train:dev
+            imagePullPolicy: IfNotPresent
+            retryLimit: 3
+            timeout: 20m
+            storage: e2e-nfs
+            storageRequest: 1Gi
+            command: [torchrun, --standalone, --nnodes=1, --nproc_per_node=1, /app/elastic_train.py]
+            env:
+              - {name: TOTAL_STEPS, value: "90"}
+              - {name: STEP_SECONDS, value: "1"}
+            resources:
+              requests: {cpu: 200m, memory: 512Mi}
+              limits: {cpu: "1", memory: 2Gi}
+            nodeSelector: {e2e.gryvia.io/train: "true"}
+            tolerations: [{key: e2e.gryvia.io/train, operator: Equal, value: "true", effect: NoSchedule}]
+          EOF
+          wait_for "Job created" 120 kubectl -n "$NS" get job/e2e-nl
+          env_of() { jp job/e2e-nl "{.spec.template.spec.containers[0].env[?(@.name==\"$1\")].value}"; }
+          assert_eq "checkpoint dir from the guard" "$(env_of GRYVIA_CHECKPOINT_DIR)" /data/checkpoints
+          assert_eq "checkpoint every from the guard" "$(env_of GRYVIA_CHECKPOINT_EVERY)" 5
+          assert_eq "status ConfigMap" "$(env_of GRYVIA_CHECKPOINT_STATUS_CONFIGMAP)" e2e-nl-checkpoint-status
+          kubectl -n "$NS" get role/e2e-nl-checkpoint-status rolebinding/e2e-nl-checkpoint-status configmap/e2e-nl-checkpoint-status
+
+          reported() { [ "$(jp gryviaaijob/e2e-nl '{.status.checkpoint.lastCommittedStep}')" -ge 15 ] 2>/dev/null; }
+          wait_for "trainer reported a committed step >= 15 into status.checkpoint" 300 reported
+          pod="$(kubectl -n "$NS" get pod -l job-name=e2e-nl -o jsonpath='{.items[0].metadata.name}')"
+          lost="$(jp "pod/$pod" '{.spec.nodeName}')"
+          committed_before="$(jp gryviaaijob/e2e-nl '{.status.checkpoint.lastCommittedStep}')"
+          echo "pod $pod on $lost, committed step $committed_before"
+
+          # The node's container stops; the Node object stays and goes NotReady. Without the guard the pod
+          # would sit on it until taint-based eviction (5 minutes) and then stay Terminating.
+          docker stop "$lost"
+          recovered() { [ "$(jp gryviaaijob/e2e-nl '{.status.conditions[?(@.type=="RecoveredFromNodeLoss")].status}')" = True ]; }
+          wait_for "operator replaced the pod after the node went NotReady" 300 recovered
+          assert_eq "lost node recorded" "$(jp gryviaaijob/e2e-nl '{.status.checkpoint.lastNodeLoss.node}')" "$lost"
+          assert_eq "one recovery" "$(jp gryviaaijob/e2e-nl '{.status.checkpoint.nodeLossRecoveries}')" 1
+          resume_step="$(jp gryviaaijob/e2e-nl '{.status.checkpoint.lastNodeLoss.resumeStep}')"
+          [ "$resume_step" -ge "$committed_before" ] || { echo "ASSERT FAILED: resume step $resume_step < $committed_before"; exit 1; }
+
+          moved() {
+            kubectl -n "$NS" get pod -l job-name=e2e-nl -o jsonpath='{range .items[*]}{.spec.nodeName}{" "}{.status.phase}{"\n"}{end}' \
+              | grep -v "^$lost " | grep -q " Running"
+          }
+          wait_for "replacement running on the other training node" 300 moved
+          resumed() { kubectl -n "$NS" logs -l job-name=e2e-nl --tail=-1 2>/dev/null | grep -qE "starting after step [1-9][0-9]* "; }
+          wait_for "replacement resumed from a committed step" 300 resumed
+          wait_for "AIJob Succeeded" 600 field_is gryviaaijob/e2e-nl '{.status.phase}' Succeeded
+          kubectl -n "$NS" logs -l job-name=e2e-nl --tail=-1 | grep -E "starting after|committed step|done:" || true
+          done_json="$(sudo cat /srv/e2e-ckpt/checkpoints/DONE)"
+          echo "$done_json"
+          assert_eq "trained every step" "$(jq -r .steps <<<"$done_json")" 90
+          jq -e --argjson s "$resume_step" '.resumedFrom >= $s and .resumedFrom > 0' <<<"$done_json" >/dev/null \
+            || { echo "ASSERT FAILED: did not resume from the committed step"; exit 1; }
+          guard_seen() { [ "$(jp gryviacheckpointguard/e2e-guard '{.status.jobs[0].nodeLossRecoveries}')" = 1 ]; }
+          wait_for "guard status shows the recovery" 120 guard_seen
+          echo "ok: lost $lost at committed step $committed_before, resumed from $(jq -r .resumedFrom <<<"$done_json")"
+
+      - name: Dump state on failure
+        if: failure()
+        run: |
+          kubectl get nodes -o wide || true
+          kubectl get pods -A -o wide || true
+          kubectl -n gryvia-system get gryviaaijob/e2e-nl gryviacheckpointguard/e2e-guard job/e2e-nl configmap/e2e-nl-checkpoint-status -o yaml || true
+          kubectl -n gryvia-system describe pods -l job-name=e2e-nl || true
+          kubectl -n gryvia-system logs -l job-name=e2e-nl --tail=200 --max-log-requests=10 || true
+          kubectl -n gryvia-system logs -l app.kubernetes.io/component=ai-operator --tail=200 || true
+          kubectl get pv,pvc -A || true
+          kubectl -n gryvia-system get events --sort-by=.lastTimestamp | tail -60 || true
+          sudo ls -laR /srv/e2e-ckpt | head -60 || true
+
+  resize:
+    name: live resize (grow 2 to 3, shrink 3 to 2)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - uses: azure/setup-helm@v5
+      - uses: helm/kind-action@v1
+        with:
+          install_only: true
+
+      - name: Create a 4-node kind cluster (two tainted training workers)
+        run: |
+          kind create cluster --name "$KIND_CLUSTER" --config scripts/kind-elastic.yaml --wait 120s
+          [ "$(kubectl get nodes -l e2e.gryvia.io/train=true -o name | wc -l)" -eq 2 ]
+
+      - name: NFS export on the runner, NFS client in the kind nodes
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq nfs-kernel-server >/dev/null
+          sudo mkdir -p /srv/e2e-resize /etc/exports.d
+          sudo chown 65534:65534 /srv/e2e-resize
+          echo '/srv/e2e-resize *(rw,sync,insecure,no_subtree_check,all_squash,anonuid=65534,anongid=65534)' \
+            | sudo tee /etc/exports.d/e2e-resize.exports >/dev/null
+          sudo exportfs -ra
+          sudo systemctl restart nfs-kernel-server
+          for node in $(kind get nodes --name "$KIND_CLUSTER"); do
+            docker exec "$node" sh -c 'apt-get update -qq && apt-get install -y -qq nfs-common >/dev/null'
+          done
+          echo "NFS_SERVER=$(hostname -I | awk '{print $1}')" >> "$GITHUB_ENV"
+
+      - name: Install Gryvia on kind (local images)
+        run: GRYVIA_LOCAL_IMAGES=1 ./scripts/kind-demo.sh
+
+      - name: Trainer image and the ReadWriteMany checkpoint volume
+        run: |
+          docker build -f examples/training/Dockerfile.elastic -t ghcr.io/zyvorai/gryvia-elastic-train:dev examples/training
+          kind load docker-image --name "$KIND_CLUSTER" ghcr.io/zyvorai/gryvia-elastic-train:dev
+          cat <<EOF | kubectl apply -f -
+          apiVersion: v1
+          kind: PersistentVolume
+          metadata: {name: e2e-resize-rwx}
+          spec:
+            capacity: {storage: 1Gi}
+            accessModes: [ReadWriteMany]
+            persistentVolumeReclaimPolicy: Retain
+            storageClassName: ""
+            mountOptions: [nfsvers=4.2, noac, lookupcache=none]
+            nfs: {server: "${NFS_SERVER}", path: /srv/e2e-resize}
+          ---
+          apiVersion: v1
+          kind: PersistentVolumeClaim
+          metadata: {name: e2e-resize-rwx, namespace: gryvia-system}
+          spec:
+            accessModes: [ReadWriteMany]
+            storageClassName: ""
+            volumeName: e2e-resize-rwx
+            resources: {requests: {storage: 1Gi}}
+          EOF
+          source scripts/e2e-ml-lib.sh
+          wait_for "PVC bound" 60 field_is pvc/e2e-resize-rwx '{.status.phase}' Bound
+
+      - name: Grow a running elastic job from 2 to 3 workers, then shrink it to 2
+        run: |
+          source scripts/e2e-ml-lib.sh
+          cat <<'EOF' | tee /dev/stderr | kubectl apply -f -
+          apiVersion: gryvia.io/v1alpha1
+          kind: GryviaAIJob
+          metadata: {name: e2e-rs, namespace: gryvia-system}
+          spec:
+            type: training
+            gpus: 0
+            image: ghcr.io/zyvorai/gryvia-elastic-train:dev
+            imagePullPolicy: IfNotPresent
+            retryLimit: 6
+            timeout: 25m
+            distributed: {enabled: true, framework: pytorch, backend: gloo, nodes: 3, elastic: {minNodes: 1, desiredNodes: 2}}
+            command: [torchrun]
+            args:
+              - --nnodes=$(NNODES)
+              - --nproc_per_node=$(NPROC_PER_NODE)
+              - --rdzv_backend=c10d
+              - --rdzv_endpoint=$(MASTER_ADDR):$(MASTER_PORT)
+              - --rdzv_conf=join_timeout=600
+              - --rdzv_id=e2e-rs
+              - --max_restarts=6
+              - /app/elastic_train.py
+            env:
+              - {name: CHECKPOINT_DIR, value: /ckpt}
+              - {name: TOTAL_STEPS, value: "240"}
+              - {name: STEP_SECONDS, value: "1"}
+              - {name: COLLECTIVE_TIMEOUT, value: "30"}
+            resources:
+              requests: {cpu: 200m, memory: 512Mi}
+              limits: {cpu: "1", memory: 2Gi}
+            nodeSelector: {e2e.gryvia.io/train: "true"}
+            tolerations: [{key: e2e.gryvia.io/train, operator: Equal, value: "true", effect: NoSchedule}]
+            volumes: [{name: ckpt, persistentVolumeClaim: {claimName: e2e-resize-rwx}}]
+            volumeMounts: [{name: ckpt, mountPath: /ckpt}]
+          EOF
+          wait_for "Job created" 120 kubectl -n "$NS" get job/e2e-rs
+          assert_eq "starts with desiredNodes workers" "$(jp job/e2e-rs '{.spec.parallelism}/{.spec.completions}')" 2/2
+          assert_eq "launcher bounds" \
+            "$(jp job/e2e-rs '{.spec.template.spec.containers[0].env[?(@.name=="NNODES")].value}')" 1:3
+
+          logs() { kubectl -n "$NS" logs -l job-name=e2e-rs --tail=-1 --max-log-requests=10 --prefix 2>/dev/null; }
+          index0() { kubectl -n "$NS" logs -l "job-name=e2e-rs,batch.kubernetes.io/job-completion-index=0" --tail=-1 2>/dev/null; }
+          last_start() { index0 | grep "starting after step" | tail -1; }
+          committed_with() { logs | grep -qE "committed step [0-9]+ \(world $1"; }
+          formed() { index0 | grep -q "of 2: starting after step"; }
+          wait_for "group of 2 formed" 300 formed
+          wait_for "a commit with world 2" 240 committed_with 2
+
+          kubectl -n "$NS" patch gryviaaijob/e2e-rs --type merge -p '{"spec":{"distributed":{"elastic":{"desiredNodes":3}}}}'
+          wait_for "Job grown to 3" 120 field_is job/e2e-rs '{.spec.parallelism}/{.spec.completions}' 3/3
+          index2_running() {
+            kubectl -n "$NS" get pod -l job-name=e2e-rs,batch.kubernetes.io/job-completion-index=2 \
+              -o jsonpath='{range .items[*]}{.status.phase}{"\n"}{end}' | grep -qx Running
+          }
+          wait_for "index 2 running" 180 index2_running
+          grown() { last_start | grep -qE "of 3: starting after step [1-9][0-9]* "; }
+          wait_for "group re-formed with 3 from a committed step" 300 grown
+          wait_for "a commit with world 3" 240 committed_with 3
+          assert_eq "Resized Grown" "$(jp gryviaaijob/e2e-rs '{.status.conditions[?(@.type=="Resized")].reason}')" Grown
+
+          kubectl -n "$NS" patch gryviaaijob/e2e-rs --type merge -p '{"spec":{"distributed":{"elastic":{"desiredNodes":2}}}}'
+          wait_for "Job shrunk to 2" 120 field_is job/e2e-rs '{.spec.parallelism}/{.spec.completions}' 2/2
+          gone() { [ -z "$(kubectl -n "$NS" get pod -l job-name=e2e-rs,batch.kubernetes.io/job-completion-index=2 \
+            --field-selector=status.phase=Running -o name)" ]; }
+          wait_for "index 2 (the highest) removed" 180 gone
+          shrunk() { last_start | grep -qE "of 2: starting after step [1-9][0-9]* "; }
+          wait_for "group re-formed with 2 from a committed step" 300 shrunk
+
+          wait_for "AIJob Succeeded" 900 field_is gryviaaijob/e2e-rs '{.status.phase}' Succeeded
+          logs | grep -E "starting after|done:|Timed out|restart" || true
+          assert_eq "two resizes" "$(jp gryviaaijob/e2e-rs '{.status.elastic.resizes}')" 2
+          assert_eq "Resized Shrunk" "$(jp gryviaaijob/e2e-rs '{.status.conditions[?(@.type=="Resized")].reason}')" Shrunk
+          done_json="$(sudo cat /srv/e2e-resize/DONE)"
+          echo "$done_json"
+          assert_eq "trained every step" "$(jq -r .steps <<<"$done_json")" 240
+          assert_eq "finished with 2 workers" "$(jq -r .world <<<"$done_json")" 2
+          assert_eq "resumed from a world-3 checkpoint" "$(jq -r .resumedFromWorld <<<"$done_json")" 3
+
+      - name: Dump state on failure
+        if: failure()
+        run: |
+          kubectl get nodes -o wide || true
+          kubectl get pods -A -o wide || true
+          kubectl -n gryvia-system get gryviaaijob/e2e-rs job/e2e-rs -o yaml || true
+          kubectl -n gryvia-system describe pods -l job-name=e2e-rs || true
+          kubectl -n gryvia-system logs -l job-name=e2e-rs --tail=200 --max-log-requests=10 --prefix || true
+          kubectl -n gryvia-system logs -l app.kubernetes.io/component=ai-operator --tail=200 || true
+          kubectl -n gryvia-system get events --sort-by=.lastTimestamp | tail -60 || true
+          sudo ls -laR /srv/e2e-resize | head -60 || true

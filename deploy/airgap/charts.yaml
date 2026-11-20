@@ -1,0 +1,9 @@
+# Add-on charts of the Sovereign AI OS, pinned. scripts/sovereign-aios-images.sh, scripts/airgap-mirror.sh,
+# deploy/airgap/zarf.yaml and deploy/argocd/sovereign-aios use these versions; the air-gap test keeps them in step.
+charts:
+  - {name: kyverno, repo: https://kyverno.github.io/kyverno, version: 3.9.1, namespace: kyverno}
+  - {name: external-secrets, repo: https://charts.external-secrets.io, version: 2.11.0, namespace: external-secrets}
+  - {name: openbao, repo: https://openbao.github.io/openbao-helm, version: 0.30.2, namespace: openbao}
+  - {name: spire-crds, repo: https://spiffe.github.io/helm-charts-hardened, version: 0.6.1, namespace: spire-server}
+  - {name: spire, repo: https://spiffe.github.io/helm-charts-hardened, version: 0.30.2, namespace: spire-server}
+  - {name: falco, repo: https://falcosecurity.github.io/charts, version: 9.2.0, namespace: falco}

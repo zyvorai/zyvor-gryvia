@@ -1,0 +1,186 @@
+# Fine-tune every new open chat model that passes the filters, quantize it to 4-bit AWQ, evaluate it, and let it
+# replace the served model when it scores better. Needs the ai-operator with --enable-model-watch (Helm: aiOperator.modelWatch.enabled=true),
+# the image built from this directory, a "models" PVC (ReadWriteMany) and a "datasets" PVC holding chat.jsonl and
+# eval.jsonl. All versions share the "chat-assistant" GryviaInferenceService: a better version is rolled out as its
+# canary and promoted after 30 healthy minutes. Unverified on GPUs; see docs/model-factory.md.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: hf-token
+  namespace: ml-team
+type: Opaque
+stringData:
+  token: hf_replace_me
+---
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaModelWatch
+metadata:
+  name: open-llms
+  namespace: ml-team
+spec:
+  sources:
+    - provider: huggingface
+      author: Qwen
+      nameRegex: '^Qwen[0-9.]+-[0-9.]+B-Instruct$'
+      pipelineTag: text-generation
+      minDownloads: 1000
+    - provider: huggingface
+      author: meta-llama
+      nameRegex: '^Llama-[0-9.]+-[0-9]+B-Instruct$'
+      pipelineTag: text-generation
+    - provider: huggingface
+      author: mistralai
+      nameRegex: 'Instruct'
+      pipelineTag: text-generation
+  licenseAllowlist: [apache-2.0, mit, llama3.1, llama3.2, llama3.3, llama4]
+  # The serving config below gives each version one 80GB GPU: keep candidates small enough for that.
+  maxParamsB: 14
+  tokenSecretRef:
+    name: hf-token
+  pollInterval: 6h
+  maxConcurrentRuns: 1
+  sizing:
+    gpuMemoryGB: 80
+    maxGPUs: 8
+    autoSizeSteps: [finetune]
+  workflowTemplate:
+    parameters:
+      DATASET: /data/chat.jsonl
+    steps:
+      - name: download
+        type: job
+        timeoutSeconds: 7200
+        retries: 2
+        jobTemplate:
+          type: training
+          model: "{{model.id}}"
+          image: registry.example.com/gryvia-model-factory:1.0
+          gpus: 0
+          command: [python3, /app/download.py]
+          args: ["--model-id={{model.id}}", "--revision={{model.revision}}"]
+          env:
+            - name: HF_TOKEN
+              valueFrom:
+                secretKeyRef: {name: hf-token, key: token}
+          resources:
+            requests: {cpu: "2", memory: 8Gi}
+          volumes:
+            - name: models
+              persistentVolumeClaim: {claimName: models}
+          volumeMounts:
+            - {name: models, mountPath: /models}
+      - name: finetune
+        type: job
+        dependsOn: [download]
+        timeoutSeconds: 86400
+        retries: 1
+        jobTemplate:
+          type: fine-tuning
+          model: "{{model.id}}"
+          image: registry.example.com/gryvia-model-factory:1.0
+          gpus: 0   # replaced by the sizing estimate (sizing.autoSizeSteps)
+          gpuType: H100
+          command: [torchrun]
+          args:
+            - "--nproc_per_node={{model.gpus}}"
+            - /app/finetune_lora.py
+            - "--base={{steps.download.outputs.path}}"
+            - "--dataset={{parameters.DATASET}}"
+            - "--name={{model.slug}}"
+            - "--revision={{model.revision}}"
+          resources:
+            requests: {cpu: "8", memory: 64Gi}
+          volumes:
+            - name: models
+              persistentVolumeClaim: {claimName: models}
+            - name: data
+              persistentVolumeClaim: {claimName: datasets, readOnly: true}
+          volumeMounts:
+            - {name: models, mountPath: /models}
+            - {name: data, mountPath: /data, readOnly: true}
+      # AWQ 4-bit weights: about a quarter of the GPU memory of bf16 when served. The evaluation below scores the
+      # quantized model, so the promotion decision includes the quantization loss.
+      - name: quantize
+        type: job
+        dependsOn: [finetune]
+        timeoutSeconds: 14400
+        jobTemplate:
+          type: fine-tuning
+          model: "{{model.id}}"
+          image: registry.example.com/gryvia-model-factory:1.0
+          gpus: 1
+          gpuType: H100
+          command: [python3, /app/quantize.py]
+          args:
+            - "--model={{steps.finetune.outputs.path}}"
+            - --method=awq
+            - "--calibration={{parameters.DATASET}}"
+            - --samples=256
+          volumes:
+            - name: models
+              persistentVolumeClaim: {claimName: models}
+            - name: data
+              persistentVolumeClaim: {claimName: datasets, readOnly: true}
+          volumeMounts:
+            - {name: models, mountPath: /models}
+            - {name: data, mountPath: /data, readOnly: true}
+      - name: evaluate
+        type: job
+        dependsOn: [quantize]
+        timeoutSeconds: 14400
+        jobTemplate:
+          type: evaluation
+          model: "{{model.id}}"
+          image: registry.example.com/gryvia-model-factory:1.0
+          gpus: 1
+          gpuType: H100
+          command: [python3, /app/evaluate.py]
+          args:
+            - "--model={{steps.quantize.outputs.path}}"
+            - "--tasks=arc_easy,hellaswag,gsm8k"
+            - "--limit=500"
+            - "--custom=/data/eval.jsonl"
+          volumes:
+            - name: models
+              persistentVolumeClaim: {claimName: models}
+            - name: data
+              persistentVolumeClaim: {claimName: datasets, readOnly: true}
+          volumeMounts:
+            - {name: models, mountPath: /models}
+            - {name: data, mountPath: /data, readOnly: true}
+      - name: register
+        type: register
+        dependsOn: [evaluate]
+        register:
+          modelName: chat-assistant
+          version: "{{model.slug}}-{{model.revision}}"
+          description: "LoRA fine-tune of {{model.id}}@{{model.revision}}"
+          artifacts:
+            pvcName: models
+            subPath: "{{steps.quantize.outputs.subPath}}"
+            format: "{{steps.quantize.outputs.format}}"
+          metadata:
+            eval_score: "{{steps.evaluate.outputs.score}}"
+            train_loss: "{{steps.finetune.outputs.train_loss}}"
+            quantization: "{{steps.quantize.outputs.method}}-{{steps.quantize.outputs.scheme}}"
+          autoServe: true
+          servingConfig:
+            backend: vllm
+            gpuCount: 1
+            gpuType: H100
+            serviceName: chat-assistant
+            canaryWeight: 10
+            promoteAfterSeconds: 1800
+            # The model PVC subPath is mounted at /models. servicePort must match --port: the operator serves and
+            # probes servicePort (vLLM's default is 8000).
+            args: ["--model=/models", "--served-model-name=chat-assistant", "--port=8080",
+                   "--quantization={{steps.quantize.outputs.quantization}}"]
+            servicePort: 8080
+          promotionPolicy:
+            metric: eval_score
+            direction: maximize
+            minDelta: "0.01"
+          # eval-schedule.yaml writes live_score nightly; below 0.5 the previous version comes back.
+          rollbackPolicy:
+            metric: live_score
+            threshold: "0.5"

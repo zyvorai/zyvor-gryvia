@@ -1,0 +1,37 @@
+Sovereign AI OS is installed in {{ .Release.Namespace }}.
+
+Consoles (port-forward, then open https://localhost:<port>):
+  Gryvia  kubectl -n {{ .Release.Namespace }} port-forward svc/gryvia-ui 8443:443
+{{- if .Values.zyntra.enabled }}
+  Zyntra  kubectl -n {{ .Release.Namespace }} port-forward svc/zyntra 8080:8080   (http)
+{{- end }}
+{{- if .Values.netra.enabled }}
+  Netra   kubectl -n {{ .Release.Namespace }} port-forward svc/netra 30870:30870
+{{- end }}
+
+Keys (Secret {{ .Values.credentials.secretName }}):
+  kubectl -n {{ .Release.Namespace }} get secret {{ .Values.credentials.secretName }} -o jsonpath='{.data.GRYVIA_API_KEY}' | base64 -d
+{{- if .Values.netra.enabled }}
+  kubectl -n {{ .Release.Namespace }} get secret {{ .Values.credentials.secretName }} -o jsonpath='{.data.ZYNTRA_NETRA_TOKEN}' | base64 -d
+{{- end }}
+{{- if .Values.zyntra.enabled }}
+
+Zyntra signs in as admin with the password in ZYNTRA_ADMIN_PASSWORD of its own Secret, or Admin@321 until you set
+zyntra.auth.adminPassword. Its AI answers need a model published on the Gryvia LLM gateway: set zyntra.ai.model.
+{{- if eq (toString .Values.zyntra.execute) "apply" }}
+Approved Gryvia changes (priorities, GPU sharing, job suspend) are applied by Zyntra through the Kubernetes API.
+{{- else }}
+Approved Gryvia changes are validated only (zyntra.execute={{ .Values.zyntra.execute }}).
+{{- end }}
+{{- if .Values.agentToken.enabled }}
+
+GryviaAgents reach Zyntra with a zyntra tool (docs/agents.md):
+  url: http://zyntra.{{ .Release.Namespace }}.svc:8080
+  tokenSecretRef: {name: {{ .Values.agentToken.secretName }}, key: token}
+{{- if .Values.agentToken.namespaces }}
+  The token Secret is in: {{ join ", " .Values.agentToken.namespaces }}
+{{- else }}
+  No namespace has the token Secret yet: list agent namespaces in agentToken.namespaces.
+{{- end }}
+{{- end }}
+{{- end }}

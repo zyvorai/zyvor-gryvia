@@ -1,0 +1,84 @@
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaAIJob
+metadata:
+  name: hyperparameter-tuning-sweep
+  namespace: default
+  labels:
+    team: ml-research
+    project: model-optimization
+    job-type: tuning
+spec:
+  type: training
+
+  # 8 trials run in parallel (--parallel_trials=8), one GPU each
+  gpus: 8
+  gpuType: A100-40G
+  resources:
+    requests:
+      cpu: "16"
+      memory: 64Gi
+
+  image: nvcr.io/nvidia/pytorch:24.01-py3
+
+  command:
+    - python
+    - hyperparameter_search.py
+    - --num_trials=100
+    - --parallel_trials=8
+    - --search_algorithm=bayesian
+    - --metric=accuracy
+    - --direction=maximize
+    - --search_space=/config/search_space.yaml
+
+  env:
+    - name: OPTUNA_STORAGE
+      value: postgresql://optuna:password@postgres:5432/optuna
+    - name: MLFLOW_TRACKING_URI
+      value: http://mlflow:5000
+
+  volumeMounts:
+    - name: data
+      mountPath: /data
+    - name: results
+      mountPath: /results
+    - name: search-space
+      mountPath: /config
+      readOnly: true
+
+  volumes:
+    - name: data
+      persistentVolumeClaim:
+        claimName: training-data-pvc
+    - name: results
+      persistentVolumeClaim:
+        claimName: tuning-results-pvc
+    - name: search-space
+      configMap:
+        name: hyperparameter-search-space
+---
+# Search space read by hyperparameter_search.py (GryviaAIJob has no searchSpace field)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hyperparameter-search-space
+  namespace: default
+data:
+  search_space.yaml: |
+      learning_rate:
+        type: loguniform
+        low: 1e-5
+        high: 1e-2
+      batch_size:
+        type: categorical
+        choices: [16, 32, 64, 128]
+      num_layers:
+        type: int
+        low: 2
+        high: 8
+      hidden_size:
+        type: categorical
+        choices: [256, 512, 1024, 2048]
+      dropout:
+        type: uniform
+        low: 0.1
+        high: 0.5

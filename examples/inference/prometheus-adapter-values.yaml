@@ -1,0 +1,24 @@
+# Example values for prometheus-community/prometheus-adapter.
+# Verify namespace/pod labels in your DCGM exporter and request instrumentation.
+# No adapter or model-server metrics are installed by Gryvia itself.
+rules:
+  default: false
+  custom:
+    - seriesQuery: 'DCGM_FI_DEV_GPU_UTIL{namespace!="",pod!=""}'
+      resources:
+        overrides:
+          namespace: {resource: namespace}
+          pod: {resource: pod}
+      name:
+        matches: '^DCGM_FI_DEV_GPU_UTIL$'
+        as: gryvia_gpu_utilization
+      metricsQuery: 'avg(<<.Series>>{<<.LabelMatchers>>}) by (<<.GroupBy>>)'
+    - seriesQuery: 'gryvia_inference_requests_total{namespace!="",pod!=""}'
+      resources:
+        overrides:
+          namespace: {resource: namespace}
+          pod: {resource: pod}
+      name:
+        matches: '^gryvia_inference_requests_total$'
+        as: gryvia_inference_requests_per_second
+      metricsQuery: 'sum(rate(<<.Series>>{<<.LabelMatchers>>}[2m])) by (<<.GroupBy>>)'

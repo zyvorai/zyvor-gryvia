@@ -1,0 +1,103 @@
+# Renders the rke2_hardened templates on localhost for a first server, a joining server and an agent, and checks the
+# hardening settings. No hosts are changed:  ansible-playbook ansible/tests/rke2_hardened_templates.yaml
+- name: Render the rke2_hardened templates
+  hosts: localhost
+  connection: local
+  gather_facts: true
+  vars:
+    out: "{{ lookup('env', 'TMPDIR') | default('/tmp', true) }}/rke2-hardened-test"
+    role_dir: "{{ playbook_dir }}/../roles/rke2_hardened"
+    rke2_token: "{{ 'a' * 64 }}"
+    rke2_server_address: api.sovereign.internal
+    rke2_registry_mirror: harbor.sovereign.internal
+    rke2_registry_ca: "-----BEGIN CERTIFICATE-----"
+    cases:
+      - {name: first, rke2_type: server, rke2_first_server: true}
+      - {name: join, rke2_type: server, rke2_first_server: false}
+      - {name: agent, rke2_type: agent, rke2_first_server: false}
+  tasks:
+    - name: Load the role defaults
+      ansible.builtin.include_vars:
+        file: "{{ role_dir }}/defaults/main.yaml"
+        name: defaults
+
+    - name: Output directory
+      ansible.builtin.file:
+        path: "{{ out }}"
+        state: directory
+        mode: "0700"
+
+    - name: Render config.yaml for each node
+      ansible.builtin.template:
+        src: "{{ role_dir }}/templates/config.yaml.j2"
+        dest: "{{ out }}/config-{{ item.name }}.yaml"
+        mode: "0600"
+      vars:
+        rke2_type: "{{ item.rke2_type }}"
+        rke2_first_server: "{{ item.rke2_first_server }}"
+        rke2_cis: "{{ defaults.rke2_cis }}"
+        rke2_selinux: "{{ defaults.rke2_selinux }}"
+        rke2_cni: "{{ defaults.rke2_cni }}"
+        rke2_tls_san: "{{ defaults.rke2_tls_san }}"
+        rke2_node_labels: ["nvidia.com/gpu.present=true"]
+        rke2_node_taints: "{{ defaults.rke2_node_taints }}"
+        rke2_etcd_snapshot_cron: "{{ defaults.rke2_etcd_snapshot_cron }}"
+        rke2_etcd_snapshot_retention: "{{ defaults.rke2_etcd_snapshot_retention }}"
+        rke2_audit_log_maxage: "{{ defaults.rke2_audit_log_maxage }}"
+        rke2_audit_log_maxbackup: "{{ defaults.rke2_audit_log_maxbackup }}"
+        rke2_audit_log_maxsize: "{{ defaults.rke2_audit_log_maxsize }}"
+      loop: "{{ cases }}"
+
+    - name: Render the server-only files and the registry mirror
+      ansible.builtin.template:
+        src: "{{ role_dir }}/templates/{{ item }}.j2"
+        dest: "{{ out }}/{{ item }}"
+        mode: "0600"
+      vars:
+        rke2_psa_exempt_namespaces: "{{ defaults.rke2_psa_exempt_namespaces }}"
+        rke2_registry_mirrored: "{{ defaults.rke2_registry_mirrored }}"
+        rke2_registry_username: robot
+        rke2_registry_password: secret
+      loop: [psa.yaml, audit-policy.yaml, registries.yaml]
+
+    - name: Read them back
+      ansible.builtin.set_fact:
+        first: "{{ lookup('file', out ~ '/config-first.yaml') | from_yaml }}"
+        join: "{{ lookup('file', out ~ '/config-join.yaml') | from_yaml }}"
+        agent: "{{ lookup('file', out ~ '/config-agent.yaml') | from_yaml }}"
+        psa: "{{ lookup('file', out ~ '/psa.yaml') | from_yaml }}"
+        audit: "{{ lookup('file', out ~ '/audit-policy.yaml') | from_yaml }}"
+        registries: "{{ lookup('file', out ~ '/registries.yaml') | from_yaml }}"
+
+    - name: Check the servers
+      ansible.builtin.assert:
+        that:
+          - first.profile == 'cis' and first['protect-kernel-defaults'] and first['secrets-encryption']
+          - "'server' not in first"
+          - join.server == 'https://api.sovereign.internal:9345'
+          - first['write-kubeconfig-mode'] == '0600'
+          - first['pod-security-admission-config-file'] == '/etc/rancher/rke2/psa.yaml'
+          - first['audit-policy-file'] == '/etc/rancher/rke2/audit-policy.yaml'
+          - "'audit-log-maxage=30' in first['kube-apiserver-arg']"
+          - "'api.sovereign.internal' in first['tls-san']"
+          - first['node-label'] == ['nvidia.com/gpu.present=true']
+
+    - name: Check the agent
+      ansible.builtin.assert:
+        that:
+          - agent.profile == 'cis' and agent['protect-kernel-defaults']
+          - agent.server == 'https://api.sovereign.internal:9345'
+          - "'secrets-encryption' not in agent and 'cni' not in agent"
+
+    - name: Check Pod Security, the audit policy and the registry mirror
+      ansible.builtin.assert:
+        that:
+          - psa.plugins[0].configuration.defaults.enforce == 'restricted'
+          - "'gryvia-system' in psa.plugins[0].configuration.exemptions.namespaces"
+          - audit.rules | selectattr('level', 'equalto', 'RequestResponse') | map(attribute='resources') | flatten
+            | selectattr('group', 'equalto', 'gryvia.io') | list | length == 1
+          - (audit.rules | selectattr('resources', 'defined') | first).level == 'Metadata'
+          - registries.mirrors['ghcr.io'].endpoint == ['https://harbor.sovereign.internal']
+          - registries.mirrors | length == 7
+          - registries.configs['harbor.sovereign.internal'].tls.ca_file == '/etc/rancher/rke2/registry-ca.crt'
+          - registries.configs['harbor.sovereign.internal'].auth.username == 'robot'

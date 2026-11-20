@@ -1,0 +1,6 @@
+id: sovereign-aios
+title: Sovereign AI OS (Gryvia)
+industry: ai-infrastructure
+version: 0.1.0
+owners: [ml-platform, ml-serving, finops, network]
+timezone: UTC

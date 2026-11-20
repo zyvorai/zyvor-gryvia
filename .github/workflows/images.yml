@@ -1,0 +1,87 @@
+name: Image builds
+
+# Builds every release image for both architectures (no push) so Dockerfile problems, such as an
+# architecture pinned to amd64 or a header missing on arm64, are caught in the pull request and not
+# while cutting a release.
+
+on:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'operators/**'
+      - 'collector/**'
+      - 'ebpf/**'
+      - 'services/api-gateway/**'
+      - 'docker/**'
+      - 'web-ui/**'
+      - 'examples/rag/**'
+      - 'examples/agents/**'
+      - '.github/workflows/images.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: ${{ matrix.name }} (${{ matrix.platform }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [linux/amd64, linux/arm64]
+        include:
+          - {platform: linux/amd64, runner: ubuntu-latest}
+          - {platform: linux/arm64, runner: ubuntu-24.04-arm}
+        name:
+          - gpu-operator
+          - ai-operator
+          - quota-operator
+          - storage-operator
+          - network-operator
+          - network-intelligence-operator
+          - ebpf-collector
+          - api-gateway
+          - ui
+          - rag-ingest
+          - agent-runtime
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v4
+      - name: Resolve build context
+        id: ctx
+        run: |
+          case "${{ matrix.name }}" in
+            gpu-operator|ai-operator|quota-operator|storage-operator|network-operator)
+              echo "context=operators/${{ matrix.name }}" >> "$GITHUB_OUTPUT"
+              echo "file=operators/${{ matrix.name }}/Dockerfile" >> "$GITHUB_OUTPUT" ;;
+            network-intelligence-operator)
+              echo "context=operators/network-intelligence" >> "$GITHUB_OUTPUT"
+              echo "file=operators/network-intelligence/Dockerfile" >> "$GITHUB_OUTPUT" ;;
+            ebpf-collector)
+              echo "context=." >> "$GITHUB_OUTPUT"
+              echo "file=collector/Dockerfile" >> "$GITHUB_OUTPUT" ;;
+            api-gateway)
+              echo "context=services/api-gateway" >> "$GITHUB_OUTPUT"
+              echo "file=services/api-gateway/Dockerfile" >> "$GITHUB_OUTPUT" ;;
+            ui)
+              echo "context=." >> "$GITHUB_OUTPUT"
+              echo "file=docker/Dockerfile.ui" >> "$GITHUB_OUTPUT" ;;
+            rag-ingest)
+              echo "context=examples/rag" >> "$GITHUB_OUTPUT"
+              echo "file=examples/rag/Dockerfile" >> "$GITHUB_OUTPUT" ;;
+            agent-runtime)
+              echo "context=examples/agents" >> "$GITHUB_OUTPUT"
+              echo "file=examples/agents/Dockerfile" >> "$GITHUB_OUTPUT" ;;
+          esac
+      - name: Build (no push)
+        uses: docker/build-push-action@v7
+        with:
+          context: ${{ steps.ctx.outputs.context }}
+          file: ${{ steps.ctx.outputs.file }}
+          platforms: ${{ matrix.platform }}
+          push: false

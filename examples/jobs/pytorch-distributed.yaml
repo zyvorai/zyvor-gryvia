@@ -1,0 +1,95 @@
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaAIJob
+metadata:
+  name: pytorch-distributed-training
+  namespace: default
+  labels:
+    team: ml-research
+    project: llama-training
+    environment: production
+spec:
+  type: training
+
+  # Distributed training configuration
+  distributed:
+    framework: pytorch
+    enabled: true
+    nodes: 1       # Number of nodes
+    gpusPerNode: 8 # GPUs per node (WORLD_SIZE = nodes * gpusPerNode)
+
+  # Resource requirements
+  gpus: 8    # 8 GPUs per pod
+  gpuType: H100
+  resources:
+    requests:
+      cpu: "64"
+      memory: 512Gi
+
+  # Container configuration
+  image: nvcr.io/nvidia/pytorch:24.01-py3
+
+  command:
+    - torchrun
+    - --nnodes=1
+    - --nproc_per_node=8
+    - --rdzv_backend=c10d
+    - --rdzv_endpoint=localhost:29400
+    - train.py
+    - --model=llama-70b
+    - --batch-size=4
+    - --gradient-accumulation-steps=8
+    - --learning-rate=3e-4
+    - --max-steps=10000
+    - --save-steps=1000
+    - --fp16
+    - --gradient-checkpointing
+
+  # Environment variables
+  env:
+    - name: NCCL_DEBUG
+      value: INFO
+    - name: NCCL_IB_DISABLE
+      value: "0"
+    - name: NCCL_NET_GDR_LEVEL
+      value: "5"
+    - name: NCCL_SOCKET_IFNAME
+      value: eth0
+    - name: PYTORCH_CUDA_ALLOC_CONF
+      value: "max_split_size_mb:512"
+    - name: CUDA_DEVICE_ORDER
+      value: PCI_BUS_ID
+    - name: OMP_NUM_THREADS
+      value: "8"
+
+  # Volume mounts for datasets and checkpoints
+  volumeMounts:
+    - name: datasets
+      mountPath: /datasets
+    - name: checkpoints
+      mountPath: /checkpoints
+    - name: logs
+      mountPath: /logs
+
+  volumes:
+    - name: datasets
+      persistentVolumeClaim:
+        claimName: vast-datasets-pvc
+    - name: checkpoints
+      persistentVolumeClaim:
+        claimName: vast-checkpoints-pvc
+    - name: logs
+      emptyDir: {}
+
+  # Retry policy
+  retryLimit: 3
+
+  # Node selection
+  nodeSelector:
+    gryvia.io/gpu-type: H100
+    gryvia.io/rdma-enabled: "true"
+
+  # Tolerations
+  tolerations:
+    - key: nvidia.com/gpu
+      operator: Exists
+      effect: NoSchedule

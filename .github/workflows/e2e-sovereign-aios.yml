@@ -1,0 +1,287 @@
+name: Sovereign AI OS end-to-end
+
+# Installs helm/sovereign-aios on kind (Gryvia and Zyntra built from source; Netra off, see below) and checks the
+# whole loop on a real API server:
+#   - Zyntra reads Gryvia's objects through the real api-gateway over TLS, with the shared key.
+#   - A GryviaAgent with a zyntra tool (token Secret from the chart, egress through its NetworkPolicy) searches the
+#     ontology and proposes raise-inference-priority; a stand-in model drives the tool calls deterministically.
+#   - The agent's token cannot approve; a person approves, and Zyntra creates the GryviaPriority through the
+#     Kubernetes API (no kubectl in its image), labelled as managed by Zyntra.
+#   - The console's /api/sovereign overview reads Zyntra over the chart's wiring.
+#   - A real model (Qwen2.5-0.5B on llama.cpp, CPU) behind the LLM gateway calls the Zyntra search tool itself.
+#
+# NOT proven here: Netra (its eBPF agent is not run on the CI runner's kind), GPUs, more than one node.
+on:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'helm/sovereign-aios/**'
+      - 'helm/gryvia/**'
+      - 'operators/ai-operator/**'
+      - 'services/api-gateway/**'
+      - 'examples/agents/**'
+      - 'scripts/sovereign-aios-deps.sh'
+      - 'scripts/e2e-ml-lib.sh'
+      - '.github/workflows/e2e-sovereign-aios.yml'
+  workflow_dispatch:
+    inputs:
+      zyntra_ref:
+        description: Zyntra branch or tag to build
+        default: main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  KIND_CLUSTER: sovereign-aios
+  TINY_PY_IMAGE: python:3.12-alpine
+  LLAMA_IMAGE: ghcr.io/ggml-org/llama.cpp:server-b11347
+  LLAMA_MODEL: Qwen/Qwen2.5-0.5B-Instruct-GGUF:Q4_K_M
+  ZYNTRA_REF: ${{ inputs.zyntra_ref || 'main' }}
+  E2E_NS: gryvia-system
+
+jobs:
+  sovereign-aios:
+    runs-on: ubuntu-latest
+    timeout-minutes: 80
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          path: gryvia
+      - uses: actions/checkout@v7
+        with:
+          repository: zyvorai/zyntra
+          ref: ${{ env.ZYNTRA_REF }}
+          path: zyntra
+      - uses: actions/checkout@v7
+        with:
+          repository: zyvorai/netra
+          path: netra
+      - uses: azure/setup-helm@v5
+      - uses: helm/kind-action@v1
+        with:
+          cluster_name: ${{ env.KIND_CLUSTER }}
+
+      - name: Build Gryvia, Zyntra and agent runtime images into kind
+        working-directory: gryvia
+        run: |
+          build() { docker build -q -f "$3" -t "$1" "$2" >/dev/null && kind load docker-image --name "$KIND_CLUSTER" "$1" && echo "built $1"; }
+          build ghcr.io/zyvorai/gryvia-gpu-operator:dev operators/gpu-operator operators/gpu-operator/Dockerfile &
+          build ghcr.io/zyvorai/gryvia-ai-operator:dev operators/ai-operator operators/ai-operator/Dockerfile &
+          build ghcr.io/zyvorai/gryvia-quota-operator:dev operators/quota-operator operators/quota-operator/Dockerfile &
+          build ghcr.io/zyvorai/gryvia-api-gateway:dev services/api-gateway services/api-gateway/Dockerfile &
+          build ghcr.io/zyvorai/gryvia-ui:dev . docker/Dockerfile.ui &
+          build ghcr.io/zyvorai/gryvia-agent-runtime:dev examples/agents examples/agents/Dockerfile &
+          build ghcr.io/zyvorai/zyntra:e2e ../zyntra ../zyntra/Dockerfile &
+          wait
+          for img in "$TINY_PY_IMAGE" "$LLAMA_IMAGE"; do docker pull -q "$img" && kind load docker-image --name "$KIND_CLUSTER" "$img"; done
+          for img in gpu-operator ai-operator quota-operator api-gateway ui agent-runtime; do
+            docker image inspect "ghcr.io/zyvorai/gryvia-$img:dev" >/dev/null
+          done
+          docker image inspect ghcr.io/zyvorai/zyntra:e2e >/dev/null
+
+      - name: Install the Sovereign AI OS release
+        working-directory: gryvia
+        run: |
+          ZYNTRA_DIR=../zyntra NETRA_DIR=../netra scripts/sovereign-aios-deps.sh
+          kubectl create namespace gryvia-system
+          helm upgrade --install sovereign-aios helm/sovereign-aios -n gryvia-system --wait --timeout 600s \
+            --set global.imageTag=dev --set global.imagePullPolicy=Never \
+            --set gryvia.namespace.create=false --set gryvia.nvidiaDevicePlugin.enabled=false \
+            --set gryvia.dcgmExporter.enabled=false --set gryvia.monitoring.enabled=false \
+            --set gryvia.aiOperator.agents.image=ghcr.io/zyvorai/gryvia-agent-runtime:dev \
+            --set netra.enabled=false --set gryvia.apiGateway.netra.url= \
+            --set zyntra.image.repository=ghcr.io/zyvorai/zyntra --set zyntra.image.tag=e2e \
+            --set zyntra.image.pullPolicy=Never \
+            --set 'agentToken.namespaces={gryvia-system}'
+          kubectl -n gryvia-system get pods
+          kubectl apply -f examples/demo/demo.yaml
+
+      - name: Stand-in tool-calling model and the real model behind the LLM gateway
+        working-directory: gryvia
+        run: |
+          source scripts/e2e-ml-lib.sh
+          cat <<'EOF' > /tmp/ops-llm.yaml
+          apiVersion: gryvia.io/v1alpha1
+          kind: GryviaInferenceService
+          metadata:
+            name: e2e-ops-llm
+            namespace: gryvia-system
+            annotations:
+              gryvia.io/llm-model: ops-stand-in
+              gryvia.io/llm-served-model: ops-stand-in
+          spec:
+            modelRef: e2e-ops-llm
+            backend: torchserve
+            image: TINY_PY_IMAGE
+            replicas: 1
+            servicePort: 8080
+            healthCheck: {path: /}
+            args:
+              - python3
+              - -u
+              - -c
+              - |
+                # Search the ontology for inference services, propose raising the first one's priority, then report.
+                import http.server, json
+                class H(http.server.BaseHTTPRequestHandler):
+                    def reply(self, obj):
+                        body = json.dumps(obj).encode()
+                        self.send_response(200)
+                        self.send_header("Content-Type", "application/json")
+                        self.send_header("Content-Length", str(len(body)))
+                        self.end_headers()
+                        self.wfile.write(body)
+                    def do_GET(self):
+                        self.reply({})
+                    def do_POST(self):
+                        req = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+                        last = req["messages"][-1]
+                        msg, call = {"role": "assistant", "content": None}, None
+                        if last["role"] == "tool":
+                            text = last["content"]
+                            if text.startswith("Proposal ") or text.startswith("error:"):
+                                msg["content"] = text
+                            else:
+                                svc = text.split(" ", 1)[0]
+                                call = ("ops_propose", {"action": "raise-inference-priority", "inputs": {"service": svc}})
+                        elif req.get("tools"):
+                            call = ("ops_search", {"type": "InferenceService", "query": "e2e-qwen"})
+                        else:
+                            msg["content"] = "no tools offered"
+                        if call:
+                            msg["tool_calls"] = [{"id": "c1", "type": "function",
+                                                  "function": {"name": call[0], "arguments": json.dumps(call[1])}}]
+                        self.reply({"object": "chat.completion", "model": req["model"],
+                                    "choices": [{"index": 0, "message": msg, "finish_reason": "tool_calls" if call else "stop"}],
+                                    "usage": {"prompt_tokens": 5, "completion_tokens": 5, "total_tokens": 10}})
+                http.server.ThreadingHTTPServer(("", 8080), H).serve_forever()
+          EOF
+          sed -i "s|TINY_PY_IMAGE|${TINY_PY_IMAGE}|" /tmp/ops-llm.yaml
+          kubectl apply -f /tmp/ops-llm.yaml
+          cat <<EOF | kubectl apply -f -
+          apiVersion: gryvia.io/v1alpha1
+          kind: GryviaInferenceService
+          metadata:
+            name: e2e-qwen
+            namespace: gryvia-system
+            annotations: {gryvia.io/llm-model: real-qwen}
+          spec:
+            modelRef: e2e-qwen
+            backend: torchserve
+            image: ${LLAMA_IMAGE}
+            replicas: 1
+            servicePort: 8080
+            healthCheck: {path: /health}
+            args: [-hf, "${LLAMA_MODEL}", --host, 0.0.0.0, --port, "8080", --jinja, --temp, "0", -c, "4096", -t, "2"]
+          EOF
+          wait_for "stand-in model Ready" 300 field_is gryviainferenceservice/e2e-ops-llm '{.status.phase}' Ready
+          wait_for "llama.cpp Ready (model downloaded and loaded)" 900 field_is gryviainferenceservice/e2e-qwen '{.status.phase}' Ready
+
+      - name: Zyntra reads Gryvia through the api-gateway
+        working-directory: gryvia
+        run: |
+          source scripts/e2e-ml-lib.sh
+          # The inference services were created after Zyntra's first ingest; a restart reads them now.
+          kubectl -n "$NS" rollout restart deploy/zyntra
+          kubectl -n "$NS" rollout status deploy/zyntra --timeout=180s
+          kubectl -n "$NS" port-forward svc/zyntra 18080:8080 &
+          sleep 3
+          ZKEY="$(kubectl -n "$NS" get secret zyntra-auth -o jsonpath='{.data.ZYNTRA_API_KEY}' | base64 -d)"
+          assert_nonempty "Zyntra API key" "$ZKEY"
+          echo "ZKEY=$ZKEY" >> "$GITHUB_ENV"
+          z() { curl -sf -H "Authorization: Bearer $ZKEY" "http://localhost:18080$1"; }
+          has() { z "/api/v1/ontology/objects?type=$1&limit=50" | jq -e --arg n "$2" '.objects[] | select(.props.name.v == $n)' >/dev/null; }
+          wait_for "Zyntra holds the inference service e2e-qwen" 240 has InferenceService e2e-qwen
+          for t in GpuNode Tenant AIJob; do
+            n="$(z "/api/v1/ontology/objects?type=$t&limit=50" | jq '.objects | length')"
+            [ "$n" -gt 0 ] || { echo "ASSERT FAILED: no $t objects"; kubectl -n "$NS" logs deploy/zyntra --tail=50; exit 1; }
+            echo "ok: $n $t objects from Gryvia"
+          done
+          z "/api/v1/ontology/objects?type=GpuNode&limit=1" | jq -e '.objects[0].props.gpuType.prov.source != null' >/dev/null \
+            && echo "ok: properties carry provenance"
+
+      - name: An agent searches Zyntra and proposes; a person approves; Zyntra creates the GryviaPriority
+        working-directory: gryvia
+        run: |
+          E2E_KEY="$(kubectl -n "$E2E_NS" get secret sovereign-aios-credentials -o jsonpath='{.data.GRYVIA_API_KEY}' | base64 -d)"
+          export E2E_KEY
+          source scripts/e2e-ml-lib.sh
+          kubectl -n "$NS" port-forward svc/gryvia-ui 8443:443 &
+          sleep 3
+          z() { curl -s -H "Authorization: Bearer $ZKEY" -H 'Content-Type: application/json' "$@"; }
+          ZURL=http://zyntra.gryvia-system.svc:8080
+          api /api/agents -X POST -d "{\"name\":\"e2e-ops\",\"model\":\"ops-stand-in\",\"maxSteps\":4,
+            \"tools\":[{\"name\":\"ops\",\"type\":\"zyntra\",\"url\":\"$ZURL\",\"tokenSecret\":\"zyntra-agent-token\",
+            \"propose\":true,\"actions\":[\"raise-inference-priority\"]}]}" | jq -e '.metadata.name == "e2e-ops"'
+          wait_for "agent Ready" 240 field_is gryviaagent/e2e-ops '{.status.phase}' Ready
+          assert_eq "token from the chart's Secret" \
+            "$(jp deploy/e2e-ops-agent '{.spec.template.spec.containers[0].env[?(@.name=="ZYNTRA_TOKEN_OPS")].valueFrom.secretKeyRef.name}')" \
+            zyntra-agent-token
+
+          out="$(api /api/agents/e2e-ops/chat -X POST -d '{"messages":[{"role":"user","content":"Inference is queueing; act."}]}')"
+          echo "$out" | jq .
+          assert_eq "tool calls" "$(echo "$out" | jq -c '[.gryvia.toolCalls[] | {tool, ok}]')" \
+            '[{"tool":"ops_search","ok":true},{"tool":"ops_propose","ok":true}]'
+          pid="$(echo "$out" | jq -r '.choices[0].message.content' | sed -n 's/^Proposal \([^ ]*\) .*/\1/p')"
+          assert_nonempty "proposal id" "$pid"
+
+          p="$(z "http://localhost:18080/api/v1/proposals/$pid")"
+          assert_eq "proposed by" "$(echo "$p" | jq -r .created_by)" service:gryvia-agents
+          assert_eq "status" "$(echo "$p" | jq -r .status)" pending
+          echo "$p" | jq -e '.objects[0].id | startswith("InferenceService:")' >/dev/null && echo "ok: the proposal names the inference service"
+
+          tok="$(kubectl -n "$NS" get secret zyntra-agent-token -o jsonpath='{.data.token}' | base64 -d)"
+          code="$(curl -s -o /dev/null -w '%{http_code}' -X POST -H "Authorization: Bearer $tok" "http://localhost:18080/api/v1/proposals/$pid/approve")"
+          assert_eq "the agent's token cannot approve" "$code" 403
+          gone gryviapriority/zyntra-inference-critical || { echo "ASSERT FAILED: priority exists before approval"; exit 1; }
+
+          out="$(z -X POST "http://localhost:18080/api/v1/proposals/$pid/approve" -d '{"reason":"e2e"}')"
+          echo "$out" | jq '{status, execution: (.execution // .result // null)}'
+          assert_eq "managed by" "$(kubectl get gryviapriority zyntra-inference-critical -o jsonpath='{.metadata.labels.app\.kubernetes\.io/managed-by}')" zyntra
+          assert_eq "priority value" "$(kubectl get gryviapriority zyntra-inference-critical -o jsonpath='{.spec.value}')" 900000
+          echo "ok: approval in Zyntra created the GryviaPriority through the Kubernetes API"
+
+          sov="$(api /api/sovereign)"
+          echo "$sov" | jq .
+          assert_eq "console sees Zyntra" "$(echo "$sov" | jq -r '.products[] | select(.name=="Zyntra") | "\(.state) \(.executeMode)"')" "healthy apply"
+          assert_eq "console sees Netra off" "$(echo "$sov" | jq -r '.products[] | select(.name=="Netra") | .state')" "not installed"
+          echo "$sov" | jq -e '.products[] | select(.name=="Zyntra") | .openGaps != null and .pendingProposals != null' >/dev/null \
+            && echo "ok: the console's overview reads Zyntra's gaps and proposals with the viewer token"
+
+      - name: A real model calls the Zyntra search tool
+        working-directory: gryvia
+        run: |
+          E2E_KEY="$(kubectl -n "$E2E_NS" get secret sovereign-aios-credentials -o jsonpath='{.data.GRYVIA_API_KEY}' | base64 -d)"
+          export E2E_KEY
+          source scripts/e2e-ml-lib.sh
+          ZURL=http://zyntra.gryvia-system.svc:8080
+          api /api/agents -X POST -d "{\"name\":\"e2e-real-ops\",\"model\":\"real-qwen\",\"maxSteps\":3,
+            \"systemPrompt\":\"Answer questions about the GPU platform by calling ops_search first.\",
+            \"tools\":[{\"name\":\"ops\",\"type\":\"zyntra\",\"url\":\"$ZURL\",\"tokenSecret\":\"zyntra-agent-token\"}]}" \
+            | jq -e '.metadata.name == "e2e-real-ops"'
+          wait_for "real agent Ready" 240 field_is gryviaagent/e2e-real-ops '{.status.phase}' Ready
+          q='{"messages":[{"role":"user","content":"Which GPU nodes are there? Call ops_search with type GpuNode, then list their names."}]}'
+          out="$(api /api/agents/e2e-real-ops/chat -X POST -d "$q")"
+          echo "$out" | jq .
+          echo "$out" | jq -e '[.gryvia.toolCalls[] | select(.tool == "ops_search" and .ok)] | length > 0' >/dev/null \
+            || { echo "ASSERT FAILED: the real model did not call ops_search"; exit 1; }
+          echo "ok: the real model called ops_search"
+          nodes="$(kubectl get gryviagpunodes -A -o jsonpath='{.items[*].metadata.name}')"
+          answer="$(echo "$out" | jq -r '.choices[0].message.content')"
+          for n in $nodes; do
+            if grep -qi "$n" <<<"$answer"; then echo "ok: the answer names $n from the ontology"; exit 0; fi
+          done
+          echo "ASSERT FAILED: the answer names none of: $nodes"; exit 1
+
+      - name: Diagnostics
+        if: failure()
+        run: |
+          kubectl -n gryvia-system get pods,gryviaagents,gryviainferenceservices -o wide || true
+          kubectl -n gryvia-system logs deploy/zyntra --tail=100 || true
+          kubectl -n gryvia-system logs -l gryvia.io/component=agent --tail=100 || true
+          kubectl -n gryvia-system logs deploy/gryvia-api-gateway --tail=60 || true

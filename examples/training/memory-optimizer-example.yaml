@@ -1,0 +1,93 @@
+# GPU Memory Optimizer - Training Example
+#
+# This example shows how to set up a cluster-wide GPU memory optimizer
+# that prevents OOM events and provides right-sizing recommendations.
+#
+# Apply with:
+#   kubectl apply -f memory-optimizer-example.yaml
+#
+---
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaGpuMemoryOptimizer
+metadata:
+  name: training-memory-optimizer
+spec:
+  scope:
+    type: cluster
+
+  # OOM prevention: predict and prevent out-of-memory events
+  oomPrevention:
+    enabled: true
+    memoryGrowthProfiling:
+      profileSteps: 20          # Collect 20 samples before projecting
+      projectionMethod: linear  # Use linear regression for prediction
+    preemptiveAction:
+      type: auto-mitigate       # Automatically apply mitigation
+      warningThresholdPercent: 85
+      autoEnableGradientCheckpointing: true
+      autoEnableMixedPrecision: true
+      autoReduceBatchSize: false  # Disabled: may affect training quality
+
+  # Right-sizing: recommend optimal GPU configuration
+  rightSizing:
+    enabled: true
+    analysisWindow: "24h"
+    recommendations:
+      gpuTypeDowngrade: true    # Suggest cheaper GPUs when overprovisioned
+      gpuCountReduction: true   # Suggest fewer GPUs when underutilized
+    minimumGpuMemoryHeadroom: 15  # Keep 15% headroom above peak usage
+
+  # Inference packing: disabled for training workloads
+  inferencePacking:
+    enabled: false
+
+---
+# Example training job that the optimizer will monitor
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaAIJob
+metadata:
+  name: llm-finetune-with-optimizer
+  namespace: default
+spec:
+  type: training
+  model: llama-7b
+  gpus: 4
+  gpuType: A100
+  network: rdma
+  storage: vast-fast
+
+  image: nvcr.io/nvidia/pytorch:24.01-py3
+  imagePullPolicy: IfNotPresent
+
+  command:
+    - python
+    - train.py
+  args:
+    - "--model=llama-7b"
+    - "--batch-size=32"
+    - "--epochs=20"
+    - "--checkpoint-dir=/data/checkpoints"
+
+  env:
+    - name: GRADIENT_CHECKPOINTING
+      value: "0"  # Will be set to "1" by optimizer if OOM predicted
+    - name: MIXED_PRECISION
+      value: "0"  # Will be set to "1" by optimizer if OOM predicted
+
+  distributed:
+    enabled: true
+    framework: pytorch
+    nodes: 2
+    gpusPerNode: 2
+    backend: nccl
+
+  resources:
+    requests:
+      memory: "64Gi"
+      cpu: "16"
+    limits:
+      memory: "128Gi"
+      cpu: "32"
+
+  priority: 50
+  retryLimit: 3

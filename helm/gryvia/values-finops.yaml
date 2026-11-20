@@ -1,0 +1,10 @@
+# Fairshare apply + Kueue fair sharing + billing ledger (no live Stripe).
+apiGateway:
+  fairshareApply: true
+  networkCost:
+    enabled: true
+platformCompletion:
+  kueueFairSharing: true
+billing:
+  ledger:
+    enabled: true

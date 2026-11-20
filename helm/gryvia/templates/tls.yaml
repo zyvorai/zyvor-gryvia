@@ -1,0 +1,56 @@
+{{- if eq .Values.tls.mode "selfSigned" }}
+{{- /* One self-signed certificate for UI and gateway, minted once and reused on upgrades. */ -}}
+{{- $existing := lookup "v1" "Secret" (include "gryvia.namespace" .) .Values.tls.secretName }}
+{{- $crt := "" }}
+{{- $key := "" }}
+{{- if and $existing $existing.data }}
+{{- $crt = index $existing.data "tls.crt" }}
+{{- $key = index $existing.data "tls.key" }}
+{{- else }}
+{{- $ns := include "gryvia.namespace" . }}
+{{- $dns := list "gryvia" "gryvia-ui" (printf "gryvia-ui.%s.svc" $ns) "gryvia-api-gateway" (printf "gryvia-api-gateway.%s.svc" $ns) "localhost" }}
+{{- $ips := list "127.0.0.1" }}
+{{- range .Values.tls.extraSANs }}
+{{- if regexMatch "^[0-9a-fA-F:.]+$" . }}{{ $ips = append $ips . }}{{ else }}{{ $dns = append $dns . }}{{ end }}
+{{- end }}
+{{- $cert := genSelfSignedCert "gryvia" $ips $dns 3650 }}
+{{- $crt = b64enc $cert.Cert }}
+{{- $key = b64enc $cert.Key }}
+{{- end }}
+apiVersion: v1
+kind: Secret
+type: kubernetes.io/tls
+metadata:
+  name: {{ .Values.tls.secretName }}
+  namespace: {{ include "gryvia.namespace" . }}
+  labels:
+    {{- include "gryvia.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/resource-policy: keep
+data:
+  tls.crt: {{ $crt }}
+  tls.key: {{ $key }}
+{{- else if eq .Values.tls.mode "certManager" }}
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ .Values.tls.secretName }}
+  namespace: {{ include "gryvia.namespace" . }}
+  labels:
+    {{- include "gryvia.labels" . | nindent 4 }}
+spec:
+  secretName: {{ .Values.tls.secretName }}
+  commonName: gryvia
+  dnsNames:
+    - gryvia-ui
+    - gryvia-ui.{{ include "gryvia.namespace" . }}.svc
+    - gryvia-api-gateway
+    - gryvia-api-gateway.{{ include "gryvia.namespace" . }}.svc
+    - localhost
+    {{- range .Values.tls.extraSANs }}
+    - {{ . | quote }}
+    {{- end }}
+  issuerRef:
+    name: {{ required "tls.certManager.issuerName is required when tls.mode=certManager" .Values.tls.certManager.issuerName }}
+    kind: {{ .Values.tls.certManager.issuerKind }}
+{{- end }}

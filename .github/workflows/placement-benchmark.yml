@@ -1,0 +1,40 @@
+name: Placement benchmark
+
+# Janus-format fixtures through the real node-selection code (operators/ai-operator/cmd/placement-sim), compared with
+# tests/placement/baseline.json. Placement quality only: nothing here measures NCCL, RDMA, eBPF or training speed.
+# See tests/placement/README.md. Update the baseline deliberately: scripts/placement-benchmark.sh --update.
+
+on:
+  pull_request:
+    paths:
+      - 'operators/ai-operator/pkg/scheduler/**'
+      - 'operators/ai-operator/pkg/placementsim/**'
+      - 'operators/ai-operator/cmd/placement-sim/**'
+      - 'tests/placement/**'
+      - 'scripts/placement-benchmark.sh'
+      - '.github/workflows/placement-benchmark.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'operators/ai-operator/pkg/scheduler/**'
+      - 'operators/ai-operator/pkg/placementsim/**'
+      - 'tests/placement/**'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  placement:
+    name: Placement benchmark vs baseline
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.27'
+          cache-dependency-path: operators/ai-operator/go.sum
+      - run: scripts/placement-benchmark.sh

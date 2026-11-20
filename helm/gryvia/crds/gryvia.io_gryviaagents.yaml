@@ -1,0 +1,355 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.22.0
+  name: gryviaagents.gryvia.io
+spec:
+  group: gryvia.io
+  names:
+    kind: GryviaAgent
+    listKind: GryviaAgentList
+    plural: gryviaagents
+    shortNames:
+    - gag
+    singular: gryviaagent
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.model
+      name: Model
+      type: string
+    - jsonPath: .status.phase
+      name: Phase
+      type: string
+    - jsonPath: .status.readyReplicas
+      name: Ready
+      type: integer
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          GryviaAgent is a tool-calling agent served as an OpenAI-compatible endpoint: a runtime Deployment that calls a
+          model through the LLM gateway with its own key, behind an egress-restricting NetworkPolicy
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: GryviaAgentSpec defines the desired state of GryviaAgent
+            properties:
+              image:
+                description: |-
+                  Image overrides the reference agent runtime. It must serve POST /v1/chat/completions and GET /healthz on
+                  port 8080 and read its configuration from AGENT_CONFIG
+                type: string
+              maxSteps:
+                default: 5
+                description: MaxSteps caps the model calls per request; the last step
+                  offers no tools, so the model must answer
+                format: int32
+                maximum: 20
+                minimum: 1
+                type: integer
+              model:
+                description: Model is the LLM gateway model the agent calls (a GryviaInferenceService
+                  name in the agent's namespace)
+                minLength: 1
+                type: string
+              replicas:
+                default: 1
+                description: Replicas of the agent runtime; 0 scales it down
+                format: int32
+                maximum: 20
+                minimum: 0
+                type: integer
+              resources:
+                description: Resources for the runtime container
+                properties:
+                  claims:
+                    description: |-
+                      Claims lists the names of resources, defined in spec.resourceClaims,
+                      that are used by this container.
+
+                      This field depends on the
+                      DynamicResourceAllocation feature gate.
+
+                      This field is immutable. It can only be set for containers.
+                    items:
+                      description: ResourceClaim references one entry in PodSpec.ResourceClaims.
+                      properties:
+                        name:
+                          description: |-
+                            Name must match the name of one entry in pod.spec.resourceClaims of
+                            the Pod where this field is used. It makes that resource available
+                            inside a container.
+                          type: string
+                        request:
+                          description: |-
+                            Request is the name chosen for a request in the referenced claim.
+                            If empty, everything from the claim is made available, otherwise
+                            only the result of this request.
+                          type: string
+                      required:
+                      - name
+                      type: object
+                    type: array
+                    x-kubernetes-list-map-keys:
+                    - name
+                    x-kubernetes-list-type: map
+                  limits:
+                    additionalProperties:
+                      anyOf:
+                      - type: integer
+                      - type: string
+                      pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                      x-kubernetes-int-or-string: true
+                    description: |-
+                      Limits describes the maximum amount of compute resources allowed.
+                      More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+                    type: object
+                  requests:
+                    additionalProperties:
+                      anyOf:
+                      - type: integer
+                      - type: string
+                      pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                      x-kubernetes-int-or-string: true
+                    description: |-
+                      Requests describes the minimum amount of compute resources required.
+                      If Requests is omitted for a container, it defaults to Limits if that is explicitly specified,
+                      otherwise to an implementation-defined value. Requests cannot exceed Limits.
+                      More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+                    type: object
+                type: object
+              systemPrompt:
+                description: SystemPrompt is prepended to every conversation
+                type: string
+              tools:
+                description: Tools the model may call
+                items:
+                  description: AgentTool is a function the agent's model may call
+                  properties:
+                    description:
+                      description: Description tells the model when to use the tool
+                      type: string
+                    http:
+                      description: HTTP configures an HTTP tool (type http)
+                      properties:
+                        method:
+                          default: GET
+                          description: Method is the HTTP method the tool uses; POST
+                            sends the model's body argument
+                          enum:
+                          - GET
+                          - POST
+                          type: string
+                        urls:
+                          description: |-
+                            URLs are the allowed URL prefixes (http:// or https://). The runtime refuses any other URL, and the agent's
+                            NetworkPolicy only opens egress to these hosts' ports
+                          items:
+                            type: string
+                          minItems: 1
+                          type: array
+                      required:
+                      - urls
+                      type: object
+                    name:
+                      description: Name is the function name shown to the model
+                      pattern: ^[a-zA-Z0-9_-]{1,64}$
+                      type: string
+                    retrieval:
+                      description: Retrieval configures a retrieval tool (type retrieval)
+                      properties:
+                        topK:
+                          default: 4
+                          description: TopK is the number of chunks returned to the
+                            model
+                          format: int32
+                          maximum: 20
+                          minimum: 1
+                          type: integer
+                        vectorIndexRef:
+                          description: VectorIndexRef is a GryviaVectorIndex in the
+                            agent's namespace
+                          minLength: 1
+                          type: string
+                      required:
+                      - vectorIndexRef
+                      type: object
+                    type:
+                      description: Type selects the tool implementation
+                      enum:
+                      - retrieval
+                      - http
+                      - zyntra
+                      type: string
+                    zyntra:
+                      description: Zyntra configures a Zyntra ontology tool (type
+                        zyntra)
+                      properties:
+                        actions:
+                          description: |-
+                            Actions limits the actions the model may propose (Zyntra action ids); empty allows any action the token may
+                            propose
+                          items:
+                            type: string
+                          type: array
+                        propose:
+                          description: Propose offers the model a tool that drafts
+                            a proposal for a Zyntra action
+                          type: boolean
+                        tokenSecretRef:
+                          description: |-
+                            TokenSecretRef is a key of a Secret in the agent's namespace holding a Zyntra service token (zyntra
+                            service-token) with the viewer role, plus proposer when Propose is set. Zyntra refuses approver and admin
+                            roles for service tokens, so the agent cannot approve what it proposes
+                          properties:
+                            key:
+                              description: The key of the secret to select from.  Must
+                                be a valid secret key.
+                              type: string
+                            name:
+                              default: ""
+                              description: |-
+                                Name of the referent.
+                                This field is effectively required, but due to backwards compatibility is
+                                allowed to be empty. Instances of this type with an empty value here are
+                                almost certainly wrong.
+                                More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                              type: string
+                            optional:
+                              description: Specify whether the Secret or its key must
+                                be defined
+                              type: boolean
+                          required:
+                          - key
+                          type: object
+                          x-kubernetes-map-type: atomic
+                        url:
+                          description: URL is Zyntra's base URL (http:// or https://).
+                            The agent's NetworkPolicy opens egress to its host and
+                            port
+                          minLength: 1
+                          type: string
+                      required:
+                      - tokenSecretRef
+                      - url
+                      type: object
+                  required:
+                  - name
+                  - type
+                  type: object
+                maxItems: 16
+                type: array
+            required:
+            - model
+            type: object
+          status:
+            description: GryviaAgentStatus defines the observed state of GryviaAgent
+            properties:
+              conditions:
+                description: 'Conditions: ToolsResolved, Available'
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+              endpoint:
+                description: Endpoint is the in-cluster OpenAI-compatible base URL
+                  of the agent
+                type: string
+              keySecret:
+                description: KeySecret is the Secret in the agent's namespace holding
+                  its LLM gateway key
+                type: string
+              message:
+                description: Message explains the phase
+                type: string
+              observedGeneration:
+                description: ObservedGeneration is the spec generation the status
+                  reflects
+                format: int64
+                type: integer
+              phase:
+                description: 'Phase: Pending, Ready or Failed'
+                type: string
+              readyReplicas:
+                description: ReadyReplicas of the runtime Deployment
+                format: int32
+                type: integer
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

@@ -1,0 +1,13 @@
+# Example: Fabric signals for a training job
+#
+# status is filled from the collector's fabric signals (GET /api/v1/fabric);
+# spec only names the job. observeOnly defaults to true: the signals are
+# advisory and nothing is enforced based on them.
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaFabricSignal
+metadata:
+  name: llama-70b-pretrain
+  namespace: ml-training
+spec:
+  jobRef: llama-70b-pretrain
+  observeOnly: true

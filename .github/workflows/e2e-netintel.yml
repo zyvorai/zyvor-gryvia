@@ -1,0 +1,208 @@
+name: Network intelligence e2e (fake collector)
+
+# Installs helm/network-intelligence with the operator on a kind cluster and checks that its controllers fill
+# their objects from real sources. The real collector needs privileges and BPF, so a FAKE collector
+# (scripts/tests/netintel-e2e/fake_collector.py, canned JSON with the collector's real field names, HMAC-verified)
+# stands in for it. THIS PROVES THE OPERATOR SIDE ONLY: pod discovery by label, request signing with a mounted
+# token Secret, merging across collector pods, statuses, conditions, GryviaFlowPolicy suggestions, and the
+# kube-native sources (usage records, network rates, fabric signals). It says nothing about the eBPF collector,
+# Hubble or Netra. Passes in CI on kind.
+
+on:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'operators/network-intelligence/**'
+      - 'helm/network-intelligence/**'
+      - 'crds/**'
+      - 'scripts/tests/netintel-e2e/**'
+      - '.github/workflows/e2e-netintel.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CLUSTER: netintel
+  NS: gryvia-network
+  IMAGE: gryvia-network-intelligence-operator:e2e
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+      - uses: azure/setup-helm@v5
+      - uses: helm/kind-action@v1
+        with:
+          cluster_name: ${{ env.CLUSTER }}
+
+      - name: Build the operator image and load it into kind
+        run: |
+          docker build -t "$IMAGE" operators/network-intelligence
+          kind load docker-image --name "$CLUSTER" "$IMAGE"
+
+      - name: Install the CRDs and the fake collector (two pods, HMAC-verified)
+        run: |
+          kubectl apply --server-side -f crds/
+          kubectl create namespace "$NS"
+          # The operator signs with the client Secret, the fake verifies with the server Secret: equal now,
+          # made different later to prove that a wrong token is reported instead of silently swallowed.
+          tok="$(head -c 48 /dev/urandom | base64 | tr -d '=+/' | head -c 40)"
+          kubectl -n "$NS" create secret generic collector-token-server --from-literal=token="$tok"
+          kubectl -n "$NS" create secret generic collector-token-client --from-literal=token="$tok"
+          kubectl -n "$NS" create configmap fake-collector --from-file=fake_collector.py=scripts/tests/netintel-e2e/fake_collector.py \
+            --from-literal=start.txt="$(date -u +%Y-%m-%dT%H:%M:%SZ)"   # one detection time shared by both replicas
+          kubectl -n "$NS" apply -f - <<'YAML'
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata: {name: fake-collector}
+          spec:
+            replicas: 2
+            selector: {matchLabels: {app: fake-collector}}
+            template:
+              metadata:
+                labels:
+                  app: fake-collector
+                  app.kubernetes.io/component: collector   # what the operator's discovery selects
+              spec:
+                containers:
+                  - name: fake
+                    image: python:3.12-alpine
+                    command: [python3, /srv/fake_collector.py]
+                    ports: [{containerPort: 9090}]
+                    readinessProbe: {httpGet: {path: /readyz, port: 9090}, periodSeconds: 3}
+                    volumeMounts:
+                      - {name: code, mountPath: /srv}
+                      - {name: token, mountPath: /etc/collector-token}
+                volumes:
+                  - {name: code, configMap: {name: fake-collector}}
+                  - {name: token, secret: {secretName: collector-token-server}}
+          YAML
+          kubectl -n "$NS" rollout status deployment/fake-collector --timeout=180s
+
+      - name: Install the chart with the operator sources enabled
+        run: |
+          helm install ni helm/network-intelligence --namespace "$NS" --set namespace.create=false \
+            --set operator.image.repository=gryvia-network-intelligence-operator \
+            --set operator.image.tag=e2e \
+            --set operator.image.pullPolicy=Never \
+            --set ha.leaderElection=false \
+            --set operator.sources.enabled=true \
+            --set operator.sources.collector.tokenSecret=collector-token-client \
+            --set operator.sources.collector.timeout=3s
+          kubectl -n "$NS" rollout status deployment/ni-gryvia-network-intelligence-operator --timeout=180s
+          kubectl -n "$NS" logs deployment/ni-gryvia-network-intelligence-operator | grep "data sources"
+
+      - name: Create the objects the controllers reconcile
+        run: |
+          kubectl apply -f scripts/tests/netintel-e2e/fixtures.yaml
+          # Fabric signals: the collector fills .status; the fixture plays that role.
+          now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          kubectl -n shop patch gryviafabricsignal sig-train --subresource=status --type=merge -p \
+            "{\"status\":{\"stragglerRank\":3,\"ncclP99ms\":42.5,\"collectiveMaxSkewMs\":9,\"rdmaRetryRate\":0.002,\"scoreDelta\":0.4,\"updatedAt\":\"$now\"}}"
+          kubectl -n shop patch gryviafabricsignal sig-serve --subresource=status --type=merge -p \
+            "{\"status\":{\"engine\":\"vllm\",\"ttftP99ms\":120,\"itlP99ms\":15,\"queueTimeP99ms\":60,\"e2eP99ms\":100,\"updatedAt\":\"$now\"}}"
+
+      - name: ServiceGraph edges come from the merged collector graph
+        run: |
+          source scripts/tests/netintel-e2e/lib.sh
+          wait_for "servicegraph has edges" 120 py shop gryviaservicegraph g '
+          edges = {(e["source"], e["destination"], e["port"]): e for e in s.get("edges", [])}
+          e = edges[("web", "api", 8080)]
+          # two fake collector pods each report 4096 bytes / 40 flows: the operator must sum them
+          assert e["bytesTotal"] == 8192 and e["flowCount"] == 80 and e["latencyP50"] == "12.5ms", e
+          assert ("api", "db", 5432) in edges
+          assert not any(k[1] == "8.8.8.8" for k in edges), "external IP edge must be dropped without includeExternal"
+          c = {c["type"]: c for c in s["conditions"]}["SourceAvailable"]
+          assert c["status"] == "True", c'
+
+      - name: NetworkAnomaly and TrafficInsight
+        run: |
+          source scripts/tests/netintel-e2e/lib.sh
+          wait_for "anomaly from the collector" 120 py shop gryvianetworkanomaly a '
+          a = s["anomalies"]
+          assert len(a) == 1 and a[0]["type"] == "latency_spike" and "250ms" in a[0]["description"], a'
+          wait_for "traffic insight top talkers" 120 py shop gryviatrafficinsight ti '
+          t = s["topTalkers"]
+          assert t and t[0]["service"] == "web" and t[0]["bytes"] == 8192, t
+          assert s["p50Latency"] == "12.5ms", s.get("p50Latency")'
+
+      - name: SecurityPolicy counts the collector alert once
+        run: |
+          source scripts/tests/netintel-e2e/lib.sh
+          wait_for "security alert counted" 120 py shop gryviasecuritypolicy sp '
+          assert s["phase"] == "Active" and s["alertsTriggered"] == 1 and s["detectionCounts"] == {"mining": 1}, s'
+          sleep 75   # at least two more 30 s polls of the same alert: it must not be counted again
+          py_now shop gryviasecuritypolicy sp '
+          assert s["alertsTriggered"] == 1, s'
+
+      - name: NetworkCost is built from usage records and the cluster rate
+        run: |
+          source scripts/tests/netintel-e2e/lib.sh
+          wait_for "network cost report" 120 py shop gryvianetworkcost cost '
+          r = [x for x in s["reports"] if x["namespace"] == "tenant-e2e"]
+          assert len(r) == 1 and r[0]["period"] == "2026-03-01", s.get("reports")
+          # 2 GB internet at 0.09 + 5 GB cross-zone at 0.02 = 0.28
+          assert r[0]["externalBytes"] == 2000000000 and r[0]["crossZoneBytes"] == 5000000000, r
+          assert abs(r[0]["totalCostUSD"] - 0.28) < 1e-6, r'
+
+      - name: Training and Inference insights come from fabric signals
+        run: |
+          source scripts/tests/netintel-e2e/lib.sh
+          wait_for "training insight" 120 py shop gryviatraininginsight train '
+          assert s["phase"] == "Active" and s["ncclP99ms"] == 42.5 and s["stragglers"][0]["rank"] == 3, s'
+          wait_for "inference insight" 120 py shop gryviainferenceinsight serve '
+          assert s["phase"] == "Active" and s["ttftP99ms"] == 120 and s["p99TotalNs"] == 100000000 and s["bottleneck"] == "queue", s'
+
+      - name: AutoPolicy suggests FlowPolicies and never applies them
+        run: |
+          source scripts/tests/netintel-e2e/lib.sh
+          wait_for "two suggested flow policies" 150 test "$(kubectl -n shop get gryviaflowpolicies -l gryvia.io/suggested=true -o name | wc -l)" = 2
+          kubectl -n shop get gryviaflowpolicies -o json | python3 -c '
+          import json, sys
+          items = json.load(sys.stdin)["items"]
+          pairs = sorted((i["spec"]["source"]["service"], i["spec"]["destination"]["service"], i["spec"]["destination"]["port"]) for i in items)
+          assert pairs == [("api", "db", 5432), ("web", "api", 8080)], pairs
+          for i in items:
+              assert i["metadata"]["labels"]["gryvia.io/suggested"] == "true" and i["metadata"]["labels"]["gryvia.io/auto-policy"] == "ap", i["metadata"]
+              assert i["metadata"]["ownerReferences"][0]["name"] == "ap", i["metadata"]
+              assert i["spec"]["action"] == "allow"
+          '
+          names="$(kubectl -n shop get gryviaflowpolicies -o name | sort)"
+          sleep 70   # a second AutoPolicy cycle must neither duplicate nor rename them (deterministic names)
+          test "$names" = "$(kubectl -n shop get gryviaflowpolicies -o name | sort)"
+          # never applied: the FlowPolicy controller reports Suggested and there is no CiliumNetworkPolicy
+          wait_for "flow policy reports Suggested" 60 test "$(kubectl -n shop get gryviaflowpolicies -o jsonpath='{.items[*].status.phase}')" = "Suggested Suggested"
+          ! kubectl get ciliumnetworkpolicies -A 2>/dev/null | grep -q shop
+
+      - name: A wrong token is reported, not swallowed; a missing collector is reported
+        run: |
+          source scripts/tests/netintel-e2e/lib.sh
+          # rotate only the operator's token (the Secret is re-read on every request; the kubelet syncs the mount within ~1 min)
+          kubectl -n "$NS" create secret generic collector-token-client --from-literal=token="$(head -c 48 /dev/urandom | base64 | tr -d '=+/' | head -c 40)" \
+            --dry-run=client -o yaml | kubectl apply -f -
+          wait_for "graph reports Unreachable with HTTP 401" 240 py shop gryviaservicegraph g '
+          c = {c["type"]: c for c in s["conditions"]}["SourceAvailable"]
+          assert c["status"] == "False" and c["reason"] == "Unreachable" and "401" in c["message"], c
+          assert s["edges"], "the last known edges must be kept while the source is unavailable"'
+          # no collector at all
+          kubectl -n "$NS" scale deployment/fake-collector --replicas=0
+          wait_for "graph reports NoCollectors" 240 py shop gryviaservicegraph g '
+          c = {c["type"]: c for c in s["conditions"]}["SourceAvailable"]
+          assert c["status"] == "False" and c["reason"] == "NoCollectors", c'
+          wait_for "security policy is Degraded" 120 py shop gryviasecuritypolicy sp '
+          assert s["phase"] == "Degraded", s["phase"]'
+
+      - name: Dump state on failure
+        if: failure()
+        run: |
+          kubectl -n "$NS" get pods -o wide || true
+          kubectl -n "$NS" logs deployment/ni-gryvia-network-intelligence-operator --tail=300 || true
+          kubectl -n shop get gryvia -o yaml || true
+          kubectl get gryvianetworkcosts,gryviaservicegraphs,gryvianetworkanomalies,gryviasecuritypolicies,gryviaflowpolicies -A -o yaml || true

@@ -1,0 +1,423 @@
+---
+# Job Dependencies and DAG Workflows
+# Define complex job workflows with dependencies
+#
+# STATUS: design sketch. GryviaWorkflow has a CRD but no controller wired yet, and these examples use fields
+# (e.g. spec.jobs, schedule) that do not match crds/gryvia.io_gryviaworkflows.yaml. See features/README.md.
+
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaWorkflow
+metadata:
+  name: ml-training-workflow
+  namespace: default
+spec:
+  # Workflow-level settings
+  maxParallelJobs: 10
+  retryStrategy:
+    limit: 3
+    backoff:
+      duration: 5m
+      factor: 2
+
+  # Define jobs with dependencies
+  jobs:
+    # Job 1: Data validation
+    - name: validate-data
+      template:
+        framework: pytorch
+        resources:
+          gpuType: T4
+          gpuCount: 1
+          memory: 16Gi
+          cpu: 4
+        image: python:3.11
+        command:
+          - python
+          - validate_data.py
+          - --input=/data/raw
+          - --output=/data/validated
+      # No dependencies, runs first
+
+    # Job 2: Data preprocessing (depends on validation)
+    - name: preprocess-data
+      dependsOn:
+        - validate-data
+      condition: "{{jobs.validate-data.status}} == 'Succeeded'"
+      template:
+        framework: pytorch
+        resources:
+          gpuType: A100-40G
+          gpuCount: 2
+          memory: 64Gi
+          cpu: 16
+        image: nvcr.io/nvidia/pytorch:24.01-py3
+        command:
+          - python
+          - preprocess.py
+          - --input=/data/validated
+          - --output=/data/processed
+
+    # Job 3: Model training (depends on preprocessing)
+    - name: train-model
+      dependsOn:
+        - preprocess-data
+      template:
+        framework: pytorch
+        distributed:
+          enabled: true
+          strategy: ddp
+          nodes: 4
+          gpusPerNode: 8
+        resources:
+          gpuType: A100-80G
+          gpuCount: 8
+          memory: 2Ti
+          cpu: 256
+        image: nvcr.io/nvidia/pytorch:24.01-py3
+        command:
+          - torchrun
+          - --nproc_per_node=8
+          - --nnodes=4
+          - train.py
+          - --data=/data/processed
+          - --checkpoint-dir=/checkpoints
+
+    # Job 4: Model evaluation (depends on training)
+    - name: evaluate-model
+      dependsOn:
+        - train-model
+      template:
+        framework: pytorch
+        resources:
+          gpuType: A100-80G
+          gpuCount: 1
+          memory: 128Gi
+          cpu: 16
+        image: nvcr.io/nvidia/pytorch:24.01-py3
+        command:
+          - python
+          - evaluate.py
+          - --checkpoint=/checkpoints/best.pt
+          - --test-data=/data/test
+          - --output=/results
+
+    # Job 5a: Export ONNX (parallel with 5b)
+    - name: export-onnx
+      dependsOn:
+        - evaluate-model
+      condition: "{{jobs.evaluate-model.metrics.accuracy}} > 0.90"
+      template:
+        framework: pytorch
+        resources:
+          gpuType: T4
+          gpuCount: 1
+          memory: 32Gi
+        command:
+          - python
+          - export_onnx.py
+          - --checkpoint=/checkpoints/best.pt
+          - --output=/models/model.onnx
+
+    # Job 5b: Export TensorRT (parallel with 5a)
+    - name: export-tensorrt
+      dependsOn:
+        - evaluate-model
+      condition: "{{jobs.evaluate-model.metrics.accuracy}} > 0.90"
+      template:
+        framework: pytorch
+        resources:
+          gpuType: A100-80G
+          gpuCount: 1
+        command:
+          - python
+          - export_tensorrt.py
+          - --checkpoint=/checkpoints/best.pt
+          - --output=/models/model.trt
+
+    # Job 6: Deploy model (depends on both exports)
+    - name: deploy-model
+      dependsOn:
+        - export-onnx
+        - export-tensorrt
+      template:
+        framework: pytorch
+        resources:
+          gpuType: T4
+          gpuCount: 1
+        command:
+          - python
+          - deploy.py
+          - --model=/models/model.onnx
+          - --endpoint=production
+
+  # Notifications
+  notifications:
+    - type: email
+      recipients: [ml-team@company.com]
+      on: [completed, failed]
+    - type: slack
+      channel: "#ml-notifications"
+      on: [failed]
+
+---
+# Fan-out/Fan-in Pattern
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaWorkflow
+metadata:
+  name: hyperparameter-sweep-workflow
+spec:
+  jobs:
+    # Generate configs
+    - name: generate-configs
+      template:
+        framework: pytorch
+        resources:
+          cpu: 2
+          memory: 4Gi
+        command:
+          - python
+          - generate_hp_configs.py
+          - --count=20
+          - --output=/configs
+
+    # Fan-out: Multiple parallel training jobs
+    - name: train-config-{{item}}
+      dependsOn:
+        - generate-configs
+      forEach:
+        items: "{{jobs.generate-configs.output.config_ids}}"
+        parallelism: 10  # Run 10 at a time
+      template:
+        framework: pytorch
+        resources:
+          gpuType: A100-80G
+          gpuCount: 8
+        command:
+          - python
+          - train.py
+          - --config=/configs/config-{{item}}.json
+
+    # Fan-in: Analyze all results
+    - name: analyze-results
+      dependsOn:
+        - train-config-*  # Wait for all training jobs
+      template:
+        command:
+          - python
+          - analyze_results.py
+          - --results-dir=/results
+          - --output=/analysis/best-config.json
+
+---
+# Conditional Workflows
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaWorkflow
+metadata:
+  name: conditional-workflow
+spec:
+  jobs:
+    - name: quick-test
+      template:
+        command: [python, quick_test.py]
+
+    # Only run full training if quick test passes
+    - name: full-training
+      dependsOn:
+        - quick-test
+      condition: |
+        {{jobs.quick-test.status}} == 'Succeeded' AND
+        {{jobs.quick-test.metrics.accuracy}} > 0.80
+      template:
+        framework: pytorch
+        resources:
+          gpuType: A100-80G
+          gpuCount: 8
+        command: [python, train.py]
+
+    # Run debugging if test fails
+    - name: debug-analysis
+      dependsOn:
+        - quick-test
+      condition: "{{jobs.quick-test.status}} == 'Failed'"
+      template:
+        command: [python, debug.py]
+
+---
+# Retry with Different Resources
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaWorkflow
+metadata:
+  name: adaptive-retry-workflow
+spec:
+  jobs:
+    - name: train-attempt-1
+      template:
+        framework: pytorch
+        resources:
+          gpuType: A100-40G
+          gpuCount: 4
+        command: [python, train.py]
+
+    # If first attempt OOMs, retry with more memory
+    - name: train-attempt-2
+      dependsOn:
+        - train-attempt-1
+      condition: |
+        {{jobs.train-attempt-1.status}} == 'Failed' AND
+        {{jobs.train-attempt-1.error}} contains 'CUDA out of memory'
+      template:
+        framework: pytorch
+        resources:
+          gpuType: A100-80G  # More memory
+          gpuCount: 4
+        command: [python, train.py, --reduce-batch-size]
+
+---
+# Scheduled Workflow
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaWorkflow
+metadata:
+  name: daily-retraining
+spec:
+  # Cron schedule
+  schedule: "0 2 * * *"  # Daily at 2 AM
+
+  # Concurrency policy
+  concurrencyPolicy: Forbid  # Don't run if previous still running
+
+  jobs:
+    - name: fetch-new-data
+      template:
+        command: [python, fetch_data.py]
+
+    - name: retrain-model
+      dependsOn:
+        - fetch-new-data
+      template:
+        framework: pytorch
+        resources:
+          gpuType: A100-80G
+          gpuCount: 8
+        command: [python, train.py]
+
+    - name: deploy-if-better
+      dependsOn:
+        - retrain-model
+      condition: |
+        {{jobs.retrain-model.metrics.accuracy}} >
+        {{production.model.accuracy}}
+      template:
+        command: [python, deploy.py]
+
+---
+# Dynamic DAG Generation
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaWorkflow
+metadata:
+  name: dynamic-dag
+spec:
+  jobs:
+    # Determine which jobs to run
+    - name: plan-workflow
+      template:
+        command:
+          - python
+          - plan_workflow.py
+          - --output=/plan/jobs.json
+
+    # Dynamically create jobs based on plan
+    - name: dynamic-job-{{item.name}}
+      dependsOn:
+        - plan-workflow
+      forEach:
+        items: "{{jobs.plan-workflow.output.jobs}}"
+      template:
+        framework: "{{item.framework}}"
+        resources:
+          gpuType: "{{item.gpu_type}}"
+          gpuCount: "{{item.gpu_count}}"
+        command: "{{item.command}}"
+
+---
+# Cross-Workflow Dependencies
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaWorkflow
+metadata:
+  name: workflow-b
+spec:
+  jobs:
+    # Wait for job from another workflow
+    - name: process-results
+      dependsOn:
+        - workflow: workflow-a
+          job: export-model
+      template:
+        command: [python, process.py]
+
+---
+# Workflow Status CRD
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaWorkflow
+metadata:
+  name: example-workflow
+status:
+  phase: Running
+  startTime: "2024-01-15T10:00:00Z"
+
+  # Job statuses
+  jobs:
+    validate-data:
+      status: Succeeded
+      startTime: "2024-01-15T10:00:00Z"
+      completionTime: "2024-01-15T10:05:00Z"
+      duration: 5m
+
+    preprocess-data:
+      status: Running
+      startTime: "2024-01-15T10:05:00Z"
+
+    train-model:
+      status: Pending
+      waiting: "Waiting for preprocess-data"
+
+  # Execution graph
+  executionGraph:
+    - validate-data → preprocess-data → train-model → evaluate-model
+    - evaluate-model → export-onnx
+    - evaluate-model → export-tensorrt
+    - [export-onnx, export-tensorrt] → deploy-model
+
+  # Metrics
+  metrics:
+    totalJobs: 7
+    completedJobs: 1
+    runningJobs: 1
+    pendingJobs: 5
+    failedJobs: 0
+
+---
+# CLI Usage
+#
+# Submit workflow:
+#   kfctl workflow submit workflow.yaml
+#
+# List workflows:
+#   kfctl workflow list
+#
+# Get workflow status:
+#   kfctl workflow status ml-training-workflow
+#
+# View workflow graph:
+#   kfctl workflow graph ml-training-workflow
+#
+# Cancel workflow:
+#   kfctl workflow cancel ml-training-workflow
+#
+# Retry failed jobs:
+#   kfctl workflow retry ml-training-workflow
+#
+# Pause workflow:
+#   kfctl workflow pause ml-training-workflow
+#
+# Resume workflow:
+#   kfctl workflow resume ml-training-workflow

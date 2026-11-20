@@ -1,0 +1,49 @@
+# GryviaSecurityPolicy - eBPF-based runtime security for GPU workloads
+# Monitors production and ml-training namespaces for container escapes,
+# crypto mining, data exfiltration, and privilege escalation. Automatically
+# blocks detected threats and sends alerts to a webhook.
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaSecurityPolicy
+metadata:
+  name: gpu-workload-security
+  namespace: gryvia-system
+spec:
+  # Namespaces to protect with eBPF-based runtime monitoring
+  targetNamespaces:
+    - production
+    - ml-training
+    - ml-inference
+
+  # Security detection rules - each rule targets a specific threat class
+  detectionRules:
+    # Detect container escape attempts (namespace breakouts, mount exploits)
+    - type: escape
+      enabled: true
+      sensitivity: high           # low, medium, high
+
+    # Detect crypto mining activity (unusual GPU patterns, known miner signatures)
+    - type: mining
+      enabled: true
+      sensitivity: high
+
+    # Detect data exfiltration (large outbound transfers, DNS tunneling)
+    - type: exfiltration
+      enabled: true
+      sensitivity: medium
+
+    # Detect privilege escalation attempts (setuid, capabilities abuse)
+    - type: privesc
+      enabled: true
+      sensitivity: high
+
+    # Detect GPU driver file integrity violations (tampering with NVIDIA drivers)
+    - type: driver_fim
+      enabled: true
+      sensitivity: medium
+
+  # Webhook for real-time security alerts
+  alertWebhook: "https://siem.internal/api/v1/security-events"
+
+  # Automatically block pods involved in detected threats
+  # When true, the operator will kill and prevent restart of compromised pods
+  autoBlock: true

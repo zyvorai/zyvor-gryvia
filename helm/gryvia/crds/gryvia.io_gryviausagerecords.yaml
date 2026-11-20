@@ -1,0 +1,148 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.22.0
+  name: gryviausagerecords.gryvia.io
+spec:
+  group: gryvia.io
+  names:
+    kind: GryviaUsageRecord
+    listKind: GryviaUsageRecordList
+    plural: gryviausagerecords
+    singular: gryviausagerecord
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.tenant
+      name: Tenant
+      type: string
+    - jsonPath: .spec.job
+      name: Job
+      type: string
+    - jsonPath: .spec.gpuHours
+      name: GPU-Hours
+      type: number
+    - jsonPath: .spec.cost
+      name: Cost
+      type: number
+    - jsonPath: .spec.final
+      name: Final
+      type: boolean
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: GryviaUsageRecord is the Schema for the gryviausagerecords API
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: |-
+              GryviaUsageRecordSpec is the metered usage of one GryviaAIJob. The quota operator
+              owns and rewrites it until final is true. Values are estimates from job wall-clock
+              time (start to end); they are not invoices. Records of kind tokens are written by the
+              LLM gateway instead (job "llm:<model>", gpus and gpuHours 0, cost from token prices).
+            properties:
+              cost:
+                description: Cost is gpuHours multiplied by rate
+                type: number
+              currency:
+                description: Currency of rate and cost
+                type: string
+              end:
+                description: End is when the run finished (the job ended or Kueue
+                  evicted it); nil while it is running
+                format: date-time
+                type: string
+              final:
+                description: Final is true once the run finished; a final record is
+                  never modified again
+                type: boolean
+              gpuHours:
+                description: GpuHours is wall-clock hours multiplied by gpus
+                type: number
+              gpuType:
+                description: GpuType of the job
+                type: string
+              gpus:
+                description: Gpus is the whole GPU unit count (TotalGPUs)
+                format: int32
+                type: integer
+              effectiveGpus:
+                description: EffectiveGpus is the physical GPU fraction billed (share or MIG)
+                type: number
+              inputTokens:
+                description: InputTokens is the prompt tokens of a tokens record
+                format: int64
+                type: integer
+              job:
+                description: Job is the GryviaAIJob name
+                type: string
+              jobUID:
+                description: |-
+                  JobUID is the GryviaAIJob UID (the record is named usage-<jobUID>, or usage-<jobUID>-<n> for
+                  the nth run after a Kueue eviction)
+                type: string
+              kind:
+                description: |-
+                  Kind is what the record meters: gpu (a GryviaAIJob; also when empty), tokens (the LLM gateway's requests
+                  of one tenant to one model during one hour, from start to end) or slurm (one finished Slurm job in the
+                  tenant's partition, named slurm-<cluster>-<job id>)
+                enum:
+                - gpu
+                - tokens
+                - slurm
+                type: string
+              model:
+                description: Model is the LLM gateway model of a tokens record
+                type: string
+              outputTokens:
+                description: OutputTokens is the completion tokens of a tokens record
+                format: int64
+                type: integer
+              rate:
+                description: Rate is the price per GPU-hour used for cost
+                type: number
+              sku:
+                description: Sku is the name of the matching GryviaGpuSku, empty when
+                  the default price table was used
+                type: string
+              start:
+                description: Start is when the run started (the job first ran, or
+                  Kueue admitted it again)
+                format: date-time
+                type: string
+              tenant:
+                description: Tenant the usage is attributed to
+                type: string
+            required:
+            - cost
+            - final
+            - gpuHours
+            - gpus
+            - job
+            - jobUID
+            - rate
+            - start
+            - tenant
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources: {}

@@ -1,0 +1,12 @@
+# Provider price list for network egress (per GB, 1 GB = 10^9 bytes). Used by the gateway for the estimate
+# next to the GPU lines of an invoice. Zone classes without a price (unknown-zone, same-node) are never charged.
+# See docs/network-cost-attribution.md.
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaNetworkRate
+metadata:
+  name: default
+spec:
+  sameZone: 0.01
+  crossZone: 0.02
+  internetEgress: 0.09
+  currency: USD

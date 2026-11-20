@@ -1,0 +1,105 @@
+{
+  "dashboard": {
+    "title": "Gryvia - GPU Cluster Overview",
+    "tags": ["gryvia", "gpu", "nvidia"],
+    "timezone": "browser",
+    "panels": [
+      {
+        "id": 1,
+        "title": "Total GPUs in Cluster",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "count(DCGM_FI_DEV_GPU_UTIL)"
+          }
+        ],
+        "gridPos": {"h": 4, "w": 6, "x": 0, "y": 0}
+      },
+      {
+        "id": 2,
+        "title": "Average GPU Utilization",
+        "type": "gauge",
+        "targets": [
+          {
+            "expr": "avg(DCGM_FI_DEV_GPU_UTIL)"
+          }
+        ],
+        "gridPos": {"h": 4, "w": 6, "x": 6, "y": 0}
+      },
+      {
+        "id": 3,
+        "title": "GPU Memory Usage",
+        "type": "gauge",
+        "targets": [
+          {
+            "expr": "avg(DCGM_FI_DEV_FB_USED / (DCGM_FI_DEV_FB_USED + DCGM_FI_DEV_FB_FREE) * 100)"
+          }
+        ],
+        "gridPos": {"h": 4, "w": 6, "x": 12, "y": 0}
+      },
+      {
+        "id": 4,
+        "title": "Active Training Jobs",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "count(kube_pod_labels{label_gryvia_ai_type=\"training\", phase=\"Running\"})"
+          }
+        ],
+        "gridPos": {"h": 4, "w": 6, "x": 18, "y": 0}
+      },
+      {
+        "id": 5,
+        "title": "GPU Utilization by Node",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "DCGM_FI_DEV_GPU_UTIL",
+            "legendFormat": "{{kubernetes_node}} - GPU{{gpu}}"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 4}
+      },
+      {
+        "id": 6,
+        "title": "GPU Temperature",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "DCGM_FI_DEV_GPU_TEMP",
+            "legendFormat": "{{kubernetes_node}} - GPU{{gpu}}"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 4}
+      },
+      {
+        "id": 7,
+        "title": "GPU Power Usage",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "DCGM_FI_DEV_POWER_USAGE",
+            "legendFormat": "{{kubernetes_node}} - GPU{{gpu}}"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 12}
+      },
+      {
+        "id": 8,
+        "title": "NVLink Bandwidth",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(DCGM_FI_PROF_NVLINK_RX_BYTES[5m])",
+            "legendFormat": "{{kubernetes_node}} - GPU{{gpu}} RX"
+          },
+          {
+            "expr": "rate(DCGM_FI_PROF_NVLINK_TX_BYTES[5m])",
+            "legendFormat": "{{kubernetes_node}} - GPU{{gpu}} TX"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 12}
+      }
+    ]
+  }
+}

@@ -1,0 +1,270 @@
+{{- if .Values.rbac.create -}}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "network-intelligence.fullname" . }}-operator-role
+  labels:
+    {{- include "network-intelligence.labels" . | nindent 4 }}
+rules:
+  # Manage GryviaNetwork resources
+  - apiGroups:
+      - gryvia.io
+    resources:
+      - gryvianetworks
+      - gryvianetworks/status
+      - gryvianetworks/finalizers
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+  # Manage NetworkPolicy resources
+  - apiGroups:
+      - networking.k8s.io
+    resources:
+      - networkpolicies
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+  # Read pods and services for network discovery
+  - apiGroups:
+      - ""
+    resources:
+      - pods
+      - services
+      - endpoints
+      - namespaces
+    verbs:
+      - get
+      - list
+      - watch
+  # Read nodes for topology awareness
+  - apiGroups:
+      - ""
+    resources:
+      - nodes
+    verbs:
+      - get
+      - list
+      - watch
+  # Manage ConfigMaps for operator state
+  - apiGroups:
+      - ""
+    resources:
+      - configmaps
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+      - update
+      - patch
+      - delete
+  # Events
+  - apiGroups:
+      - ""
+    resources:
+      - events
+    verbs:
+      - create
+      - patch
+  # Leader election
+  - apiGroups:
+      - coordination.k8s.io
+    resources:
+      - leases
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+  {{- if .Values.operator.sources.enabled }}
+  # operator.sources.enabled: the operator's own kinds (the rules above only cover gryvianetworks)
+  - apiGroups:
+      - gryvia.io
+    resources:
+      - gryviaflowpolicies
+      - gryviatrafficinsights
+      - gryviaautopolicies
+      - gryviatracesessions
+      - gryviaservicegraphs
+      - gryvianetworkanomalies
+      - gryviasecuritypolicies
+      - gryvianetworkcosts
+      - gryviatraininginsights
+      - gryviainferenceinsights
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+      - update
+      - patch
+      - delete
+  - apiGroups:
+      - gryvia.io
+    resources:
+      - gryviaflowpolicies/status
+      - gryviatrafficinsights/status
+      - gryviaautopolicies/status
+      - gryviatracesessions/status
+      - gryviaservicegraphs/status
+      - gryvianetworkanomalies/status
+      - gryviasecuritypolicies/status
+      - gryvianetworkcosts/status
+      - gryviatraininginsights/status
+      - gryviainferenceinsights/status
+    verbs:
+      - get
+      - update
+      - patch
+  # read-only sources: fabric signals (Training/InferenceInsight), network usage and rates (NetworkCost)
+  - apiGroups:
+      - gryvia.io
+    resources:
+      - gryviafabricsignals
+      - gryvianetworkusagerecords
+      - gryvianetworkrates
+    verbs:
+      - get
+      - list
+      - watch
+  # FlowPolicy -> CiliumNetworkPolicy (needs Cilium CRDs), anomaly mitigation
+  - apiGroups:
+      - cilium.io
+    resources:
+      - ciliumnetworkpolicies
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+  {{- end }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "network-intelligence.fullname" . }}-collector-role
+  labels:
+    {{- include "network-intelligence.labels" . | nindent 4 }}
+rules:
+  # Read pods and services for flow enrichment
+  - apiGroups:
+      - ""
+    resources:
+      - pods
+      - services
+      - endpoints
+      - namespaces
+    verbs:
+      - get
+      - list
+      - watch
+  # Read nodes for host-level correlation
+  - apiGroups:
+      - ""
+    resources:
+      - nodes
+    verbs:
+      - get
+      - list
+      - watch
+  # Events for anomaly reporting
+  - apiGroups:
+      - ""
+    resources:
+      - events
+    verbs:
+      - create
+      - patch
+  {{- if and .Values.ebpf.enabled .Values.ebpf.publishFabricStatus }}
+  # ebpf.publishFabricStatus: update the status of existing GryviaFabricSignal objects (never create)
+  - apiGroups:
+      - gryvia.io
+    resources:
+      - gryviafabricsignals
+    verbs:
+      - list
+  - apiGroups:
+      - gryvia.io
+    resources:
+      - gryviafabricsignals/status
+    verbs:
+      - patch
+  {{- end }}
+  {{- if and .Values.ebpf.enabled .Values.ebpf.publishNodeFabric }}
+  # ebpf.publishNodeFabric: each collector writes the GryviaNodeFabric named after its own node
+  - apiGroups:
+      - gryvia.io
+    resources:
+      - gryvianodefabrics
+    verbs:
+      - create
+      - patch
+  {{- end }}
+  {{- if and .Values.ebpf.enabled .Values.ebpf.attributeNetwork .Values.ebpf.publishNetworkUsage }}
+  # ebpf.publishNetworkUsage: write per-tenant network usage records (no update/delete of anything else)
+  - apiGroups:
+      - gryvia.io
+    resources:
+      - gryvianetworkusagerecords
+    verbs:
+      - get
+      - create
+      - patch
+  {{- end }}
+  {{- if and .Values.ebpf.enabled .Values.ebpf.quotaPace.enabled .Values.ebpf.quotaPace.sync }}
+  # ebpf.quotaPace.sync: read the egress caps of GryviaQuota objects (read-only)
+  - apiGroups:
+      - gryvia.io
+    resources:
+      - gryviaquotas
+    verbs:
+      - list
+  {{- end }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "network-intelligence.fullname" . }}-operator-rolebinding
+  labels:
+    {{- include "network-intelligence.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "network-intelligence.fullname" . }}-operator-role
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "network-intelligence.operatorServiceAccountName" . }}
+    namespace: {{ .Values.namespace.name }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "network-intelligence.fullname" . }}-collector-rolebinding
+  labels:
+    {{- include "network-intelligence.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "network-intelligence.fullname" . }}-collector-role
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "network-intelligence.collectorServiceAccountName" . }}
+    namespace: {{ .Values.namespace.name }}
+{{- end }}

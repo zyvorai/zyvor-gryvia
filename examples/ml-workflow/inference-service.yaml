@@ -1,0 +1,53 @@
+# GryviaInferenceService - Deploy an LLM with vLLM backend and canary rollout
+# Serves a model from the registry with autoscaling, health checks, and a 90/10
+# traffic split between the primary and canary versions.
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaInferenceService
+metadata:
+  name: llama-70b-serving
+  namespace: ml-serving
+spec:
+  # Reference to the GryviaModelRegistry entry to serve
+  modelRef: llama-70b-v2-0
+
+  # vLLM backend optimized for LLM serving with continuous batching
+  backend: vllm
+
+  # Primary deployment: 3 replicas, each with 4 A100 GPUs for tensor parallelism
+  replicas: 3
+  gpuCount: 4
+  gpuType: A100
+
+  # Override the default vLLM image with a specific version
+  image: vllm/vllm-openai:0.3.0
+
+  # Additional vLLM serving arguments
+  args:
+    - "--tensor-parallel-size=4"
+    - "--max-model-len=4096"
+    - "--gpu-memory-utilization=0.90"
+
+  servicePort: 8080
+
+  # Horizontal pod autoscaling based on GPU utilization and request rate
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 8
+    targetGPUUtilization: 75          # Scale up when GPU util exceeds 75%
+    targetRequestsPerSecond: 100      # Scale up beyond 100 RPS per replica
+
+  # Canary deployment: route 10% of traffic to the new version
+  canary:
+    enabled: true
+    weight: 10                        # 10% traffic to canary (90% to primary)
+    modelVersion: llama-70b-v2-1      # GryviaModelRegistry name for canary
+    autoPromote: true                 # Auto-promote if canary stays healthy
+    promoteAfterSeconds: 3600         # Wait 1 hour before auto-promoting
+
+  # Health checking with automatic rollback on failure
+  healthCheck:
+    path: /health
+    intervalSeconds: 30
+    failureThreshold: 3               # Roll back after 3 consecutive failures
+    autoRollback: true                # Automatically revert to previous version

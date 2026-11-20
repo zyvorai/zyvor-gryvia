@@ -1,0 +1,39 @@
+# Build stage
+FROM node:26-alpine AS builder
+
+WORKDIR /app
+
+# Copy package files
+COPY web-ui/package*.json ./
+
+# Install dependencies
+RUN npm ci
+
+# Copy source files
+COPY web-ui/ ./
+
+# Build the application
+RUN npm run build
+
+# Production stage
+FROM nginx:1.31-alpine
+
+# Copy custom nginx config
+COPY docker/nginx.conf /etc/nginx/nginx.conf
+
+# Copy built assets from builder stage
+COPY --from=builder /app/dist /usr/share/nginx/html
+
+# Configure nginx to run as non-root
+RUN chown -R nginx:nginx /var/cache/nginx /var/run /var/log/nginx /usr/share/nginx/html && \
+    chmod -R 755 /var/cache/nginx /var/run
+
+USER nginx
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+  CMD wget --quiet --tries=1 --spider --no-check-certificate https://localhost:8443/ || exit 1
+
+EXPOSE 8443
+
+CMD ["nginx", "-g", "daemon off;"]

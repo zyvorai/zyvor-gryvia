@@ -1,0 +1,161 @@
+# Gryvia resources as Zyntra business objects. Every connector reads the Gryvia API gateway with the gateway API key
+# (ZYNTRA_GRAVIA_TOKEN). The chart rewrites the gateway URL below when Gryvia runs in another namespace.
+# Zyntra's in-cluster Kubernetes client only reads built-in kinds, so Gryvia's custom resources come through the
+# gateway, which also applies Gryvia's own tenant scoping.
+name: sovereign-aios
+
+objects:
+  - name: Tenant
+    match: name
+    properties:
+      - {name: name, type: string, required: true}
+      - {name: displayName, type: string}
+      - {name: health, type: string}
+  - name: GpuNode
+    match: name
+    kpis: [gpu_utilization, gryvia_available_gpus]
+    properties:
+      - {name: name, type: string, required: true}
+      - {name: gpuType, type: string}
+      - {name: gpus, type: number}
+      - {name: phase, type: string}
+      - {name: interconnect, type: string}
+  - name: AIJob
+    kpis: [gryvia_pending_jobs, gpu_queue_wait_min]
+    properties:
+      - {name: name, type: string, required: true}
+      - {name: type, type: string}
+      - {name: gpus, type: number}
+      - {name: gpuType, type: string}
+      - {name: phase, type: string}
+  - name: Model
+    properties:
+      - {name: name, type: string, required: true}
+      - {name: version, type: string}
+      - {name: stage, type: string}
+      - {name: phase, type: string}
+  - name: InferenceService
+    kpis: [gpu_queue_wait_min]
+    properties:
+      - {name: name, type: string, required: true}
+      - {name: backend, type: string}
+      - {name: replicas, type: number}
+      - {name: phase, type: string}
+  - name: Dataset
+    properties:
+      - {name: name, type: string, required: true}
+      - {name: phase, type: string}
+
+links:
+  - {name: owned_by, from: AIJob, to: Tenant}
+  - {name: serves, from: InferenceService, to: Model}
+  - {name: dataset_of, from: Dataset, to: Tenant}
+
+refresh_interval: 1m
+
+connectors:
+  - name: gryvia-tenants
+    kind: rest
+    url: https://gryvia-api-gateway.gryvia-system.svc:8080/api/tenants
+    token_env: ZYNTRA_GRAVIA_TOKEN
+    items: items
+    interval: 5m
+    prune: true
+    fields: {ns: spec.namespace, name: metadata.name, displayName: spec.displayName, health: status.health}
+    mapping:
+      type: Tenant
+      namespace: gryvia
+      key: ns
+      props: {name: name, displayName: displayName, health: health}
+
+  - name: gryvia-nodes
+    kind: rest
+    url: https://gryvia-api-gateway.gryvia-system.svc:8080/api/nodes?limit=1000
+    token_env: ZYNTRA_GRAVIA_TOKEN
+    items: items
+    interval: 1m
+    prune: true
+    fields: {name: spec.nodeName, gpuType: spec.gpuType, gpus: spec.gpuCount, phase: status.phase, interconnect: spec.interconnect}
+    mapping:
+      type: GpuNode
+      namespace: gryvia
+      key: name
+      props: {name: name, gpuType: gpuType, gpus: gpus, phase: phase, interconnect: interconnect}
+
+  - name: gryvia-jobs
+    kind: rest
+    url: https://gryvia-api-gateway.gryvia-system.svc:8080/api/jobs?limit=1000
+    token_env: ZYNTRA_GRAVIA_TOKEN
+    items: items
+    interval: 1m
+    prune: true
+    fields: {ns: metadata.namespace, name: metadata.name, type: spec.type, gpus: spec.gpus, gpuType: spec.gpuType, phase: status.phase}
+    mapping:
+      type: AIJob
+      namespace: gryvia
+      key: name
+      props: {name: name, type: type, gpus: gpus, gpuType: gpuType, phase: phase}
+      links: [{type: owned_by, column: ns, to: Tenant, namespace: gryvia}]
+
+  - name: gryvia-models
+    kind: rest
+    url: https://gryvia-api-gateway.gryvia-system.svc:8080/api/models
+    token_env: ZYNTRA_GRAVIA_TOKEN
+    items: items
+    interval: 5m
+    prune: true
+    fields: {name: metadata.name, version: spec.version, stage: spec.stage, phase: status.phase}
+    mapping:
+      type: Model
+      namespace: gryvia
+      key: name
+      props: {name: name, version: version, stage: stage, phase: phase}
+
+  - name: gryvia-inference
+    kind: rest
+    url: https://gryvia-api-gateway.gryvia-system.svc:8080/api/inference
+    token_env: ZYNTRA_GRAVIA_TOKEN
+    items: items
+    interval: 1m
+    prune: true
+    fields: {name: metadata.name, backend: spec.backend, replicas: spec.replicas, phase: status.phase, model: spec.modelRef}
+    mapping:
+      type: InferenceService
+      namespace: gryvia
+      key: name
+      props: {name: name, backend: backend, replicas: replicas, phase: phase}
+      links: [{type: serves, column: model, to: Model, namespace: gryvia}]
+
+  - name: gryvia-datasets
+    kind: rest
+    url: https://gryvia-api-gateway.gryvia-system.svc:8080/api/datasets
+    token_env: ZYNTRA_GRAVIA_TOKEN
+    items: items
+    interval: 5m
+    prune: true
+    fields: {ns: metadata.namespace, name: metadata.name, phase: status.phase}
+    mapping:
+      type: Dataset
+      namespace: gryvia
+      key: name
+      props: {name: name, phase: phase}
+      links: [{type: dataset_of, column: ns, to: Tenant, namespace: gryvia}]
+
+actions:
+  - id: raise-inference-priority
+    inputs: [{name: service, object_type: InferenceService, required: true}]
+    evidence: [{input: service, properties: [phase], max_age: 10m}]
+    affects: [InferenceService]
+    outcome: [{object_type: InferenceService, must_be_safe: true}]
+  - id: enable-mig-sharing
+    inputs: [{name: node, object_type: GpuNode, required: true}]
+    requires: [{input: node, property: phase, equals: Ready}]
+    evidence: [{input: node, properties: [gpuType, phase], max_age: 10m}]
+    affects: [GpuNode]
+    permissions: [approver]
+    outcome: [{object_type: GpuNode, must_be_safe: true}]
+
+views:
+  - {id: jobs, title: GPU jobs, type: AIJob, columns: [name, type, gpus, gpuType, phase], exposed: true}
+  - {id: inference, title: Inference services, type: InferenceService, columns: [name, backend, replicas, phase], exposed: true, actions: [raise-inference-priority]}
+  - {id: nodes, title: GPU nodes, type: GpuNode, columns: [name, gpuType, gpus, phase], exposed: true, actions: [enable-mig-sharing]}

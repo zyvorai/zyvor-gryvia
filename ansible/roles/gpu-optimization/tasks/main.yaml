@@ -1,0 +1,85 @@
+---
+# GPU Performance Optimization
+
+- name: Set CPU governor to performance
+  shell: |
+    for cpu in /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor; do
+      echo performance > $cpu
+    done
+  changed_when: false
+
+- name: Disable CPU frequency scaling
+  copy:
+    dest: /etc/default/cpufrequtils
+    content: |
+      GOVERNOR="performance"
+
+- name: Configure NUMA for GPU workloads
+  sysctl:
+    name: "{{ item.key }}"
+    value: "{{ item.value }}"
+    state: present
+    sysctl_set: yes
+  loop:
+    - { key: 'vm.zone_reclaim_mode', value: '0' }
+    - { key: 'kernel.numa_balancing', value: '0' }
+
+- name: Increase file descriptor limits
+  pam_limits:
+    domain: '*'
+    limit_type: "{{ item.type }}"
+    limit_item: "{{ item.item }}"
+    value: "{{ item.value }}"
+  loop:
+    - { type: 'soft', item: 'nofile', value: '1048576' }
+    - { type: 'hard', item: 'nofile', value: '1048576' }
+    - { type: 'soft', item: 'nproc', value: '1048576' }
+    - { type: 'hard', item: 'nproc', value: '1048576' }
+    - { type: 'soft', item: 'memlock', value: 'unlimited' }
+    - { type: 'hard', item: 'memlock', value: 'unlimited' }
+
+- name: Configure huge pages for GPU memory
+  sysctl:
+    name: "{{ item.key }}"
+    value: "{{ item.value }}"
+    state: present
+    sysctl_set: yes
+  loop:
+    - { key: 'vm.nr_hugepages', value: '8192' }
+
+- name: Disable transparent huge pages (THP)
+  shell: |
+    echo never > /sys/kernel/mm/transparent_hugepage/enabled
+    echo never > /sys/kernel/mm/transparent_hugepage/defrag
+  changed_when: false
+
+- name: Make THP disable persistent
+  copy:
+    dest: /etc/rc.local
+    mode: '0755'
+    content: |
+      #!/bin/bash
+      echo never > /sys/kernel/mm/transparent_hugepage/enabled
+      echo never > /sys/kernel/mm/transparent_hugepage/defrag
+
+- name: Configure I/O scheduler for NVMe
+  shell: |
+    for disk in /sys/block/nvme*/queue/scheduler; do
+      echo none > $disk
+    done
+  changed_when: false
+
+- name: Install GPU monitoring tools
+  apt:
+    name:
+      - nvtop
+      - gpustat
+    state: present
+
+- name: Create GPU health check script
+  copy:
+    dest: /usr/local/bin/gpu-health-check
+    mode: '0755'
+    content: |
+      #!/bin/bash
+      nvidia-smi --query-gpu=index,name,temperature.gpu,utilization.gpu,utilization.memory,memory.used,memory.total --format=csv,noheader

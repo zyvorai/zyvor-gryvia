@@ -1,0 +1,22 @@
+# Managed by Ansible (role rke2_hardened). Who changed what: full bodies for Gryvia's resources (Zyntra's approved
+# changes land here), metadata only for Secrets and tokens, metadata for everything else.
+apiVersion: audit.k8s.io/v1
+kind: Policy
+omitStages: [RequestReceived]
+rules:
+  - level: None
+    users: ["system:kube-proxy"]
+    verbs: [watch]
+  - level: None
+    nonResourceURLs: ["/healthz*", "/livez*", "/readyz*", "/version"]
+  - level: Metadata
+    resources:
+      - group: ""
+        resources: [secrets, configmaps, serviceaccounts/token]
+      - group: authentication.k8s.io
+        resources: [tokenreviews]
+  - level: RequestResponse
+    verbs: [create, update, patch, delete, deletecollection]
+    resources:
+      - group: gryvia.io
+  - level: Metadata

@@ -1,0 +1,390 @@
+---
+# Gryvia Benchmarking Suite
+# Standard ML benchmarks for performance validation
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: benchmark-configs
+  namespace: gryvia-system
+data:
+  # MLPerf Training Benchmarks
+  mlperf_resnet.yaml: |
+    name: mlperf-resnet50
+    framework: pytorch
+    model: resnet50
+    dataset: imagenet
+    gpuTypes: [A100-80G, H100]
+    configurations:
+      - name: single-gpu
+        gpuCount: 1
+        batchSize: 256
+        expectedThroughput: 1200  # images/sec
+      - name: multi-gpu-8
+        gpuCount: 8
+        batchSize: 2048
+        expectedThroughput: 9000
+
+  mlperf_bert.yaml: |
+    name: mlperf-bert
+    framework: pytorch
+    model: bert-large
+    dataset: wikipedia
+    gpuTypes: [A100-80G, H100]
+    configurations:
+      - name: single-gpu
+        gpuCount: 1
+        batchSize: 24
+        expectedThroughput: 150  # samples/sec
+      - name: multi-gpu-8
+        gpuCount: 8
+        batchSize: 192
+        expectedThroughput: 1100
+
+  # NCCL Benchmarks
+  nccl_allreduce.yaml: |
+    name: nccl-allreduce
+    description: Test NCCL collective operations
+    sizes: [8MB, 32MB, 128MB, 512MB, 2GB]
+    operations: [allreduce, allgather, broadcast, reduce_scatter]
+    expectedBandwidth:
+      nvlink: 300GB/s
+      infiniband: 180GB/s
+      ethernet: 90GB/s
+
+  # GPU Memory Bandwidth
+  memory_bandwidth.yaml: |
+    name: gpu-memory-bandwidth
+    tool: nvidia-bandwidth-test
+    operations: [host-to-device, device-to-host, device-to-device]
+    expectedBandwidth:
+      H100: 3.35TB/s
+      A100-80G: 2.0TB/s
+      A100-40G: 1.6TB/s
+      V100: 900GB/s
+      T4: 320GB/s
+
+  # Distributed Training
+  distributed_training.yaml: |
+    name: distributed-training-scalability
+    framework: pytorch
+    model: gpt-2
+    nodes: [1, 2, 4, 8]
+    gpusPerNode: 8
+    expectedScalingEfficiency:
+      2nodes: 0.95   # 95% efficiency
+      4nodes: 0.90
+      8nodes: 0.85
+
+---
+# ResNet50 Benchmark Job
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaAIJob
+metadata:
+  name: bench-resnet50-8gpu
+  namespace: gryvia-system
+  labels:
+    benchmark: mlperf
+    model: resnet50
+spec:
+  type: training
+  gpus: 8
+  gpuType: A100-80G
+  distributed:
+    enabled: true
+    framework: pytorch
+    backend: nccl
+    nodes: 1
+    gpusPerNode: 8
+  resources:
+    requests:
+      memory: 512Gi
+      cpu: "64"
+  image: nvcr.io/nvidia/pytorch:24.01-py3
+  command:
+    - python
+    - -m
+    - torch.distributed.run
+    - --nproc_per_node=8
+    - benchmark_resnet50.py
+    - --batch-size=2048
+    - --epochs=5
+    - --benchmark
+  env:
+    - name: NCCL_DEBUG
+      value: "INFO"
+    - name: BENCHMARK_MODE
+      value: "true"
+  volumeMounts:
+    - name: benchmark-scripts
+      mountPath: /workspace
+  volumes:
+    - name: benchmark-scripts
+      configMap:
+        name: benchmark-scripts
+
+---
+# NCCL All-Reduce Benchmark
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: bench-nccl-allreduce
+  namespace: gryvia-system
+spec:
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: nccl-test
+          image: nvcr.io/nvidia/pytorch:24.01-py3
+          command:
+            - /usr/local/bin/all_reduce_perf
+            - -b
+            - "8M"
+            - -e
+            - "2G"
+            - -f
+            - "2"
+            - -g
+            - "8"
+          resources:
+            limits:
+              nvidia.com/gpu: "8"
+          volumeMounts:
+            - name: results
+              mountPath: /results
+      nodeSelector:
+        gryvia.io/gpu-type: A100-80G
+      volumes:
+        - name: results
+          emptyDir: {}
+
+---
+# GPU Memory Bandwidth Test
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: bench-memory-bandwidth
+  namespace: gryvia-system
+spec:
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: bandwidth-test
+          image: nvidia/cuda:12.3.0-devel-ubuntu22.04
+          command:
+            - /bin/bash
+            - -c
+            - |
+              # Download and build bandwidth test
+              git clone https://github.com/NVIDIA/cuda-samples.git
+              cd cuda-samples/Samples/1_Utilities/bandwidthTest
+              make
+              ./bandwidthTest --htod --dtoh --dtod --mode=range
+          resources:
+            limits:
+              nvidia.com/gpu: "1"
+          volumeMounts:
+            - name: results
+              mountPath: /results
+      nodeSelector:
+        gryvia.io/gpu-type: H100
+      volumes:
+        - name: results
+          emptyDir: {}
+
+---
+# Multi-Node Scaling Benchmark
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaAIJob
+metadata:
+  name: bench-scaling-4node
+  namespace: gryvia-system
+spec:
+  type: training
+  gpus: 32  # 4 nodes x 8 GPUs = 32 total
+  gpuType: A100-80G
+  distributed:
+    enabled: true
+    framework: pytorch
+    backend: nccl
+    nodes: 4
+    gpusPerNode: 8
+  resources:
+    requests:
+      memory: 512Gi
+      cpu: "64"
+  image: nvcr.io/nvidia/pytorch:24.01-py3
+  command:
+    - torchrun
+    - --nnodes=4
+    - --nproc_per_node=8
+    - --rdzv_backend=c10d
+    - --rdzv_endpoint=$MASTER_ADDR:$MASTER_PORT
+    - benchmark_scaling.py
+    - --model=gpt-2
+    - --measure-scaling
+
+---
+# Benchmark Results Aggregator
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: benchmark-scripts
+  namespace: gryvia-system
+data:
+  benchmark_resnet50.py: |
+    import torch
+    import torch.nn as nn
+    import torch.distributed as dist
+    import torchvision.models as models
+    import time
+    import argparse
+
+    def benchmark_training(args):
+        # Setup distributed
+        dist.init_process_group(backend='nccl')
+        rank = dist.get_rank()
+        world_size = dist.get_world_size()
+
+        # Model
+        model = models.resnet50().cuda()
+        model = nn.parallel.DistributedDataParallel(model)
+
+        # Synthetic data
+        data = torch.randn(args.batch_size, 3, 224, 224).cuda()
+        target = torch.randint(0, 1000, (args.batch_size,)).cuda()
+
+        optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
+        criterion = nn.CrossEntropyLoss().cuda()
+
+        # Warmup
+        for _ in range(10):
+            output = model(data)
+            loss = criterion(output, target)
+            loss.backward()
+            optimizer.step()
+            optimizer.zero_grad()
+
+        # Benchmark
+        torch.cuda.synchronize()
+        start = time.time()
+
+        iterations = 100
+        for i in range(iterations):
+            output = model(data)
+            loss = criterion(output, target)
+            loss.backward()
+            optimizer.step()
+            optimizer.zero_grad()
+
+        torch.cuda.synchronize()
+        elapsed = time.time() - start
+
+        # Results
+        images_per_sec = (args.batch_size * iterations * world_size) / elapsed
+
+        if rank == 0:
+            print(f"Throughput: {images_per_sec:.2f} images/sec")
+            print(f"Batch size: {args.batch_size * world_size}")
+            print(f"Time per iteration: {elapsed/iterations*1000:.2f} ms")
+
+            # Write results
+            with open('/results/benchmark.json', 'w') as f:
+                import json
+                json.dump({
+                    'throughput': images_per_sec,
+                    'batch_size': args.batch_size * world_size,
+                    'gpu_count': world_size,
+                    'time_per_iter_ms': elapsed/iterations*1000
+                }, f)
+
+  benchmark_scaling.py: |
+    import torch
+    import torch.nn as nn
+    import torch.distributed as dist
+    from transformers import GPT2LMHeadModel
+    import time
+
+    def measure_scaling():
+        dist.init_process_group(backend='nccl')
+        rank = dist.get_rank()
+        world_size = dist.get_world_size()
+
+        # Model
+        model = GPT2LMHeadModel.from_pretrained('gpt2').cuda()
+        model = nn.parallel.DistributedDataParallel(model)
+
+        # Synthetic data
+        batch_size = 32
+        seq_len = 512
+        input_ids = torch.randint(0, 50257, (batch_size, seq_len)).cuda()
+
+        optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
+
+        # Warmup
+        for _ in range(5):
+            outputs = model(input_ids, labels=input_ids)
+            loss = outputs.loss
+            loss.backward()
+            optimizer.step()
+            optimizer.zero_grad()
+
+        # Benchmark
+        torch.cuda.synchronize()
+        start = time.time()
+
+        iterations = 50
+        for _ in range(iterations):
+            outputs = model(input_ids, labels=input_ids)
+            loss = outputs.loss
+            loss.backward()
+            optimizer.step()
+            optimizer.zero_grad()
+
+        torch.cuda.synchronize()
+        elapsed = time.time() - start
+
+        samples_per_sec = (batch_size * iterations * world_size) / elapsed
+        scaling_efficiency = samples_per_sec / (world_size * (batch_size * iterations / elapsed))
+
+        if rank == 0:
+            print(f"GPUs: {world_size}")
+            print(f"Throughput: {samples_per_sec:.2f} samples/sec")
+            print(f"Scaling efficiency: {scaling_efficiency:.2%}")
+
+  analyze_results.py: |
+    import json
+    import sys
+
+    def analyze_benchmark(results_file):
+        with open(results_file) as f:
+            results = json.load(f)
+
+        print("=" * 60)
+        print("BENCHMARK RESULTS ANALYSIS")
+        print("=" * 60)
+
+        # Check against expected performance
+        expected = {
+            'resnet50_8gpu': 9000,
+            'bert_8gpu': 1100,
+        }
+
+        actual = results.get('throughput', 0)
+        benchmark_name = results.get('name', 'unknown')
+        expected_perf = expected.get(benchmark_name, 0)
+
+        if expected_perf > 0:
+            efficiency = (actual / expected_perf) * 100
+            print(f"Expected: {expected_perf:.2f}")
+            print(f"Actual: {actual:.2f}")
+            print(f"Efficiency: {efficiency:.1f}%")
+
+            if efficiency >= 95:
+                print("✓ EXCELLENT PERFORMANCE")
+            elif efficiency >= 85:
+                print("⚠ GOOD PERFORMANCE (some optimization possible)")
+            else:
+                print("✗ POOR PERFORMANCE (needs investigation)")

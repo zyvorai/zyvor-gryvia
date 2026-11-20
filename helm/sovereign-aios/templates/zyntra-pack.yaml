@@ -1,0 +1,15 @@
+{{- if .Values.zyntra.enabled }}
+{{- $ns := include "sovereign-aios.namespace" . }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: sovereign-aios-zyntra-pack
+  namespace: {{ $ns }}
+  labels:
+    {{- include "sovereign-aios.labels" . | nindent 4 }}
+data:
+  {{- range $path, $_ := .Files.Glob "files/zyntra-pack/*" }}
+  {{ base $path }}: |-
+    {{- $.Files.Get $path | replace "gryvia-api-gateway.gryvia-system.svc" (printf "gryvia-api-gateway.%s.svc" $ns) | nindent 4 }}
+  {{- end }}
+{{- end }}

@@ -1,0 +1,70 @@
+# Gryvia, Zyntra and Netra with deploy/airgap/values-airgap.yaml inlined (the test keeps them equal). Add
+# hardening.kyverno.verifyImages.publicKey (your cosign public key) before syncing; Kyverno enforces it.
+# Secrets: the chart generates keys on first install and keeps them; ignoreDifferences stops Argo CD from
+# regenerating them on every sync. With hardening.openbao the keys come from OpenBao instead.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: sovereign-aios
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: '0'
+  finalizers:
+  - resources-finalizer.argocd.argoproj.io
+spec:
+  project: sovereign-aios
+  source:
+    repoURL: harbor.sovereign.internal/charts
+    chart: sovereign-aios
+    targetRevision: 0.1.0
+    helm:
+      valuesObject:
+        global:
+          imageRegistry: harbor.sovereign.internal/zyvorai
+        gryvia:
+          aiOperator:
+            agents:
+              image: harbor.sovereign.internal/zyvorai/gryvia-agent-runtime:1.0.0
+          nvidiaDevicePlugin:
+            image:
+              repository: harbor.sovereign.internal/nvidia/k8s-device-plugin
+          dcgmExporter:
+            image:
+              repository: harbor.sovereign.internal/nvidia/k8s/dcgm-exporter
+        zyntra:
+          image:
+            repository: harbor.sovereign.internal/zyvorai/zyntra
+        netra:
+          image:
+            repository: harbor.sovereign.internal/zyvorai/netra
+          agentImage:
+            repository: harbor.sovereign.internal/zyvorai/netra-agent
+          tls:
+            opensslImage: harbor.sovereign.internal/alpine/openssl:3.3.2
+        hardening:
+          kyverno:
+            enabled: true
+            failureAction: Enforce
+            allowedRegistries:
+            - harbor.sovereign.internal/
+            verifyImages:
+              images:
+              - harbor.sovereign.internal/zyvorai/*
+              mode: key
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: gryvia-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true
+    - ServerSideApply=true
+    - RespectIgnoreDifferences=true
+  ignoreDifferences:
+  - group: ''
+    kind: Secret
+    jsonPointers:
+    - /data
+    - /stringData

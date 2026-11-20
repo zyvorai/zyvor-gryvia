@@ -1,0 +1,53 @@
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaAIJob
+metadata:
+  name: llama-inference
+  namespace: default
+spec:
+  type: inference
+  model: llama-70b
+  gpus: 8
+  gpuType: H100
+  network: rdma
+  storage: vast-fast
+
+  image: vllm/vllm-openai:v0.6.6
+  imagePullPolicy: IfNotPresent
+
+  command:
+    - python
+    - -m
+    - vllm.entrypoints.openai.api_server
+  args:
+    - --model
+    - /models/llama-70b
+    - --tensor-parallel-size
+    - "8"
+    - --dtype
+    - auto
+    - --max-model-len
+    - "8192"
+
+  env:
+    - name: NCCL_DEBUG
+      value: "WARN"
+
+  volumeMounts:
+    - name: models
+      mountPath: /models
+      readOnly: true
+
+  volumes:
+    - name: models
+      persistentVolumeClaim:
+        claimName: model-storage
+
+  resources:
+    requests:
+      memory: "512Gi"
+      cpu: "64"
+    limits:
+      memory: "1Ti"
+      cpu: "128"
+
+  priority: 100

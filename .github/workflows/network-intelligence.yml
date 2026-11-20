@@ -1,0 +1,81 @@
+name: Network Intelligence
+
+on:
+  push:
+    paths:
+      - 'operators/network-intelligence/**'
+      - 'collector/**'
+      - 'ebpf/**'
+  pull_request:
+    paths:
+      - 'operators/network-intelligence/**'
+      - 'collector/**'
+      - 'ebpf/**'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-operator:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.27'
+
+      - name: Cache Go modules
+        uses: actions/cache@v6
+        with:
+          path: ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('operators/network-intelligence/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+
+      - name: Build operator
+        run: cd operators/network-intelligence && go build ./...
+
+      - name: Vet operator
+        run: cd operators/network-intelligence && go vet ./...
+
+      - name: Test operator (controllers against a fake client and fake sources, collector client against httptest servers)
+        run: cd operators/network-intelligence && go test -race ./...
+
+  build-collector:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.27'
+
+      - name: Cache Go modules
+        uses: actions/cache@v6
+        with:
+          path: ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('collector/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+
+      - name: Build collector
+        run: cd collector && go build ./...
+
+      - name: Vet collector
+        run: cd collector && go vet ./...
+
+  lint-ebpf:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install eBPF build dependencies
+        run: sudo apt-get update && sudo apt-get install -y clang llvm libbpf-dev
+
+      - name: Build eBPF programs
+        run: cd ebpf && make all

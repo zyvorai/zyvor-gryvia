@@ -1,0 +1,48 @@
+# Example: Automatic GPU Profiler for all training jobs
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaTrainingProfiler
+metadata:
+  name: cluster-gpu-profiler
+  namespace: default
+spec:
+  target:
+    type: auto
+    jobSelector:
+      gryvia.io/type: training
+    autoProfile:
+      warmupSteps: 100
+      profileSteps: 50
+      cooldownMinutes: 30
+
+  metrics:
+    gpuCompute:
+      smUtilization: true
+      tensorCoreUtilization: true
+      flopsEfficiency: true
+    gpuMemory:
+      memoryBandwidthUtilization: true
+      peakMemoryUsage: true
+    dataPipeline:
+      ioWaitRatio: true
+      dataloaderThroughput: true
+    communication:
+      ncclBandwidth: true
+      allReduceTime: true
+      computeCommOverlap: true
+
+  analysis:
+    compareBaseline: true
+    baselineSource: builtin
+    recommendations:
+      batchSize: true
+      dataLoading: true
+      mixedPrecision: true
+      compilationOptimization: true
+      distributedStrategy: true
+      gpuTypeRecommendation: true
+    severityThreshold: warning
+
+  output:
+    storeInJobStatus: true
+    emitEvents: true
+    prometheusMetrics: true

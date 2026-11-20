@@ -1,0 +1,62 @@
+---
+# Pod Security Standards (replaces deprecated PodSecurityPolicy)
+# These are applied as namespace labels per the Pod Security Admission controller
+# https://kubernetes.io/docs/concepts/security/pod-security-standards/
+
+# Restricted profile for operator namespace
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: gryvia-system
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/audit-version: latest
+    pod-security.kubernetes.io/warn: restricted
+    pod-security.kubernetes.io/warn-version: latest
+---
+# Baseline profile for gryvia namespace (UI, API gateway)
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: gryvia
+  labels:
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/enforce-version: latest
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/audit-version: latest
+    pod-security.kubernetes.io/warn: restricted
+    pod-security.kubernetes.io/warn-version: latest
+---
+# Privileged profile for GPU workload namespaces (required for GPU device access)
+# GPU workloads need hostIPC for shared memory and device access
+# Apply this label to namespaces that run GPU training jobs
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: gpu-workloads
+  labels:
+    pod-security.kubernetes.io/enforce: privileged
+    pod-security.kubernetes.io/enforce-version: latest
+    pod-security.kubernetes.io/audit: baseline
+    pod-security.kubernetes.io/audit-version: latest
+    pod-security.kubernetes.io/warn: baseline
+    pod-security.kubernetes.io/warn-version: latest
+    gryvia.io/gpu-workloads: "true"
+---
+# ResourceQuota to limit privileged workloads in GPU namespace
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: gpu-workload-limits
+  namespace: gpu-workloads
+spec:
+  hard:
+    pods: "100"
+    requests.cpu: "400"
+    requests.memory: 2Ti
+    requests.nvidia.com/gpu: "64"
+    limits.cpu: "800"
+    limits.memory: 4Ti
+    limits.nvidia.com/gpu: "64"

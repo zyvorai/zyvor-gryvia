@@ -1,0 +1,155 @@
+---
+# Model Lineage: Track complete provenance for a fine-tuned LLM
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaModelLineage
+metadata:
+  name: llama-70b-finetune-v1
+  namespace: ml-training
+spec:
+  # Model identification
+  model:
+    name: llama-70b-domain-adapted
+    version: "1.0.0"
+    registry: "registry.company.com/models/llama-70b-domain"
+    format: safetensors
+
+  # Provenance tracking
+  provenance:
+    autoCapture: true
+
+    # Source code
+    code:
+      gitRepo: "https://github.com/company/llm-training"
+      gitCommit: "a1b2c3d4e5f6789012345678"
+      gitBranch: "main"
+      containerImage: "registry.company.com/training:v1.2.0"
+
+    # Training data
+    data:
+      datasets:
+        - datasetRef: "domain-corpus-v3"
+          version: "3.1.0"
+          checksum: "sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
+        - datasetRef: "instruction-dataset"
+          version: "2.0.0"
+          checksum: "sha256:0987654321fedcba0987654321fedcba0987654321fedcba0987654321fedcba"
+
+    # Training configuration
+    training:
+      jobRef: "llama-70b-finetune-job"
+      hyperparameters:
+        learning_rate: "2e-5"
+        batch_size: "32"
+        epochs: "3"
+        warmup_steps: "500"
+        weight_decay: "0.01"
+        optimizer: "adamw"
+        scheduler: "cosine"
+        max_seq_length: "4096"
+      distributedConfig: "8xH100, FSDP, NCCL over RDMA"
+
+    # Infrastructure (auto-captured from job if autoCapture=true)
+    infrastructure:
+      gpuNodes:
+        - gpu-node-01
+        - gpu-node-02
+      networkType: rdma
+      storageBackend: lustre-fast
+      totalGpuHours: 384
+      totalCost: 3072.00
+
+    # Events during training
+    events:
+      anomalies:
+        - timestamp: "2024-03-15T10:30:00Z"
+          type: "LossSpike"
+          description: "Training loss spiked at epoch 2, step 5000"
+      checkpointTimeline:
+        - timestamp: "2024-03-15T04:00:00Z"
+          epoch: 1
+          step: 10000
+          checkpointPath: "/checkpoints/llama-70b-finetune/epoch-1"
+        - timestamp: "2024-03-15T12:00:00Z"
+          epoch: 2
+          step: 20000
+          checkpointPath: "/checkpoints/llama-70b-finetune/epoch-2"
+        - timestamp: "2024-03-15T20:00:00Z"
+          epoch: 3
+          step: 30000
+          checkpointPath: "/checkpoints/llama-70b-finetune/epoch-3-final"
+
+    # Evaluation results
+    evaluation:
+      metrics:
+        accuracy: 0.952
+        f1: 0.934
+        perplexity: 12.5
+        bleu: 0.42
+      evaluationJob: "llama-70b-eval-job"
+      benchmarks:
+        - name: "MMLU"
+          score: 82.5
+          date: "2024-03-16T00:00:00Z"
+        - name: "HumanEval"
+          score: 67.3
+          date: "2024-03-16T00:00:00Z"
+        - name: "HellaSwag"
+          score: 85.1
+          date: "2024-03-16T00:00:00Z"
+
+  # Compliance and audit
+  compliance:
+    immutableRecord: true
+    cryptographicChain: true
+    signedBy: "ml-pipeline@company.com"
+    attestation:
+      format: in-toto
+      attachToRegistry: true
+    regulatoryFramework:
+      - EU-AI-Act
+      - NIST-AI-RMF
+    dataPrivacy:
+      piiScanned: true
+      piiFound: false
+      dpiaCompleted: true
+
+---
+# The training job referenced by the lineage above
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaAIJob
+metadata:
+  name: llama-70b-finetune-job
+  namespace: ml-training
+spec:
+  type: training
+  model: llama-70b
+  gpus: 8
+  gpuType: H100
+  network: rdma
+  storage: lustre-fast
+  storageRequest: "2Ti"
+  image: registry.company.com/training:v1.2.0
+  command:
+    - torchrun
+  args:
+    - --nproc_per_node=8
+    - --nnodes=2
+    - train.py
+    - --model=llama-70b
+    - --lr=2e-5
+    - --epochs=3
+  distributed:
+    enabled: true
+    framework: pytorch
+    nodes: 2
+    gpusPerNode: 4
+    backend: nccl
+  priority: 80
+  retryLimit: 2
+  resources:
+    requests:
+      memory: "256Gi"
+      cpu: "32"
+    limits:
+      memory: "512Gi"
+      cpu: "64"

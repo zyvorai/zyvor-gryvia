@@ -1,0 +1,794 @@
+{{- if .Values.rbac.create -}}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "gryvia.fullname" . }}-manager-role
+  labels:
+    {{- include "gryvia.labels" . | nindent 4 }}
+rules:
+  # Manage GryviaGpuNode resources
+  - apiGroups:
+      - gryvia.io
+    resources:
+      - gryviagpunodes
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+  - apiGroups:
+      - gryvia.io
+    resources:
+      - gryviagpunodes/status
+    verbs:
+      - get
+      - patch
+      - update
+  - apiGroups:
+      - gryvia.io
+    resources:
+      - gryviagpunodes/finalizers
+    verbs:
+      - update
+
+  # Manage GryviaAIJob resources
+  - apiGroups:
+      - gryvia.io
+    resources:
+      - gryviaaijobs
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+  - apiGroups:
+      - gryvia.io
+    resources:
+      - gryviaaijobs/status
+    verbs:
+      - get
+      - patch
+      - update
+  - apiGroups:
+      - gryvia.io
+    resources:
+      - gryviaaijobs/finalizers
+    verbs:
+      - update
+
+  # Priority classes are reconciled from cluster-scoped GryviaPriority.
+  - apiGroups: ["scheduling.k8s.io"]
+    resources: ["priorityclasses"]
+    verbs: ["get", "list", "watch", "create", "patch", "update"]
+  {{- if (dig "platformCompletion" "gpuRemediation" nil .Values.AsMap) }}
+  - apiGroups: [""]
+    resources: ["pods/eviction"]
+    verbs: ["create"]
+  {{- end }}
+
+  # Manage Kubernetes nodes
+  - apiGroups:
+      - ""
+    resources:
+      - nodes
+    verbs:
+      - get
+      - list
+      - watch
+      - update
+      - patch
+
+  # Manage GryviaQuota resources
+  - apiGroups:
+      - gryvia.io
+    resources:
+      - gryviaquotas
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+  - apiGroups:
+      - gryvia.io
+    resources:
+      - gryviaquotas/status
+    verbs:
+      - get
+      - patch
+      - update
+  - apiGroups:
+      - gryvia.io
+    resources:
+      - gryviaquotas/finalizers
+    verbs:
+      - update
+
+  # Manage GryviaNetwork resources
+  - apiGroups:
+      - gryvia.io
+    resources:
+      - gryvianetworks
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+  - apiGroups:
+      - gryvia.io
+    resources:
+      - gryvianetworks/status
+    verbs:
+      - get
+      - patch
+      - update
+  - apiGroups:
+      - gryvia.io
+    resources:
+      - gryvianetworks/finalizers
+    verbs:
+      - update
+
+  # Manage GryviaStorage resources
+  - apiGroups:
+      - gryvia.io
+    resources:
+      - gryviastorages
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+  - apiGroups:
+      - gryvia.io
+    resources:
+      - gryviastorages/status
+    verbs:
+      - get
+      - patch
+      - update
+  - apiGroups:
+      - gryvia.io
+    resources:
+      - gryviastorages/finalizers
+    verbs:
+      - update
+
+  # Manage pods (scoped to gryvia-managed pods)
+  - apiGroups:
+      - ""
+    resources:
+      - pods
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+      - delete
+
+  # Manage StatefulSets
+  - apiGroups:
+      - apps
+    resources:
+      - statefulsets
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+      - update
+      - delete
+
+  # Manage batch Jobs (run-to-completion GryviaAIJob workloads)
+  - apiGroups:
+      - batch
+    resources:
+      - jobs
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+      - update
+      - patch
+      - delete
+  - apiGroups:
+      - batch
+    resources:
+      - jobs/status
+    verbs:
+      - get
+
+  # Manage Services
+  - apiGroups:
+      - ""
+    resources:
+      - services
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+      - update
+      - delete
+
+  # Manage PVCs
+  - apiGroups:
+      - ""
+    resources:
+      - persistentvolumeclaims
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+      - update
+      - delete
+
+  # Manage GryviaCheckpointGuard resources
+  - apiGroups:
+      - gryvia.io
+    resources:
+      - gryviacheckpointguards
+      - gryviacheckpointguards/status
+      - gryviacheckpointguards/finalizers
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+
+  # Manage GryviaCostPredictor resources
+  - apiGroups:
+      - gryvia.io
+    resources:
+      - gryviacostpredictors
+      - gryviacostpredictors/status
+      - gryviacostpredictors/finalizers
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+
+  # Manage GryviaLiveExperiment resources
+  - apiGroups:
+      - gryvia.io
+    resources:
+      - gryvialiveexperiments
+      - gryvialiveexperiments/status
+      - gryvialiveexperiments/finalizers
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+
+  # Manage GryviaModelLineage resources
+  - apiGroups:
+      - gryvia.io
+    resources:
+      - gryviamodellineages
+      - gryviamodellineages/status
+      - gryviamodellineages/finalizers
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+
+  # Manage GryviaTrainingProfiler resources
+  - apiGroups:
+      - gryvia.io
+    resources:
+      - gryviatrainingprofilers
+      - gryviatrainingprofilers/status
+      - gryviatrainingprofilers/finalizers
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+
+  # Manage GryviaTrainingTimeMachine resources
+  - apiGroups:
+      - gryvia.io
+    resources:
+      - gryviatrainingtimemachines
+      - gryviatrainingtimemachines/status
+      - gryviatrainingtimemachines/finalizers
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+
+  # Manage GryviaGpuMemoryOptimizer resources
+  - apiGroups:
+      - gryvia.io
+    resources:
+      - gryviagpumemoryoptimizers
+      - gryviagpumemoryoptimizers/status
+      - gryviagpumemoryoptimizers/finalizers
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+
+  # Manage additional CRD resources
+  - apiGroups:
+      - gryvia.io
+    resources:
+      - gryviabudgets
+      - gryviabudgets/status
+      - gryviabudgets/finalizers
+      - gryviachargebacks
+      - gryviachargebacks/status
+      - gryviachargebacks/finalizers
+      - gryviagpusharingpolicies
+      - gryviagpusharingpolicies/status
+      - gryviajobhooks
+      - gryviajobhooks/status
+      - gryviapriorities
+      - gryviapriorities/status
+      - gryviatemplates
+      - gryviatemplates/status
+      - gryviadatasets
+      - gryviadatasets/status
+      - gryviafederations
+      - gryviafederations/status
+      - gryviafabricsignals
+      - gryviafabricsignals/status
+      - gryviareservations
+      - gryviareservations/status
+      - gryviahealthchecks
+      - gryviahealthchecks/status
+      - gryviatenants
+      - gryviatenants/status
+      - gryviatenants/finalizers
+      - gryviagpuskus
+      - gryviausagerecords
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+  {{- if (dig "billing" "ledger" "enabled" false .Values.AsMap) }}
+  # Append-only billing ledger: the quota-operator never updates or deletes an entry.
+  - apiGroups:
+      - gryvia.io
+    resources:
+      - gryvialedgerentries
+    verbs:
+      - create
+      - get
+      - list
+      - watch
+  {{- end }}
+
+  # ML controllers (GryviaWorkspace, GryviaInferenceService, GryviaModelRegistry, GryviaWorkflow, GryviaAutoTuner,
+  # GryviaModelWatch)
+  - apiGroups:
+      - gryvia.io
+    resources:
+      - gryviaworkspaces
+      - gryviainferenceservices
+      - gryviamodelregistries
+      - gryviaworkflows
+      - gryviaautotuners
+      - gryviamodelwatches
+      - gryviavectorindexes
+      - gryviaagents
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+  - apiGroups:
+      - gryvia.io
+    resources:
+      - gryviaworkspaces/status
+      - gryviainferenceservices/status
+      - gryviamodelregistries/status
+      - gryviaworkflows/status
+      - gryviaautotuners/status
+      - gryviamodelwatches/status
+      - gryviavectorindexes/status
+      - gryviaagents/status
+    verbs:
+      - get
+      - patch
+      - update
+  - apiGroups:
+      - gryvia.io
+    resources:
+      - gryviaworkspaces/finalizers
+      - gryviainferenceservices/finalizers
+      - gryviamodelregistries/finalizers
+      - gryviaworkflows/finalizers
+      - gryviaautotuners/finalizers
+      - gryviamodelwatches/finalizers
+      - gryviavectorindexes/finalizers
+      - gryviaagents/finalizers
+    verbs:
+      - update
+  {{- if .Values.aiOperator.inferenceGatewayRouting }}
+  - apiGroups: [gateway.networking.k8s.io]
+    resources: [httproutes]
+    verbs: [get, list, watch, create, patch, delete]
+  {{- end }}
+  # Inference services: a Deployment per service (and per canary), scaled by an HPA
+  - apiGroups:
+      - apps
+    resources:
+      - deployments
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+  - apiGroups:
+      - autoscaling
+    resources:
+      - horizontalpodautoscalers
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - watch
+  # The inference controller patches its Service (port changes); the pods, PVCs and Services it and the workspace
+  # controller create are covered by the pod/service/PVC rules above
+  - apiGroups:
+      - ""
+    resources:
+      - services
+    verbs:
+      - patch
+
+  {{- if (dig "aiOperator" "checkpointGuard" false .Values.AsMap) }}
+  # aiOperator.checkpointGuard: a per-job Role and RoleBinding that let the job's pods get/update only their
+  # checkpoint status ConfigMap (the operator holds get/update on configmaps, so it may grant them)
+  - apiGroups:
+      - rbac.authorization.k8s.io
+    resources:
+      - roles
+      - rolebindings
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+  {{- end }}
+
+  {{- if .Values.aiOperator.fabricAwareScheduling }}
+  # aiOperator.fabricAwareScheduling: read the per-node fabric health published by the collector
+  - apiGroups:
+      - gryvia.io
+    resources:
+      - gryvianodefabrics
+    verbs:
+      - get
+      - list
+      - watch
+  {{- end }}
+
+  {{- if .Values.aiOperator.kueueIntegration }}
+  # aiOperator.kueueIntegration: read Kueue's Workloads and LocalQueues, create the WorkloadPriorityClasses
+  - apiGroups:
+      - kueue.x-k8s.io
+    resources:
+      - workloads
+      - localqueues
+      - clusterqueues
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - kueue.x-k8s.io
+    resources:
+      - workloadpriorityclasses
+    verbs:
+      - get
+      - create
+  {{- end }}
+  {{- if (dig "aiOperator" "federation" "failover" false .Values.AsMap) }}
+  # aiOperator.federation.failover: deactivate and reactivate the Workloads dispatched to a failed member
+  - apiGroups:
+      - kueue.x-k8s.io
+    resources:
+      - workloads
+    verbs:
+      - get
+      - list
+      - watch
+      - patch
+  {{- end }}
+  {{- if (dig "quotaOperator" "kaiIntegration" false .Values.AsMap) }}
+  # quotaOperator.kaiIntegration: per-tenant KAI Scheduler queues
+  - apiGroups:
+      - scheduling.run.ai
+    resources:
+      - queues
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+      - update
+      - patch
+      - delete
+  {{- end }}
+  {{- if .Values.quotaOperator.kueueIntegration }}
+  # quotaOperator.kueueIntegration: per-tenant ClusterQueue, LocalQueue and ResourceFlavors
+  - apiGroups:
+      - kueue.x-k8s.io
+    resources:
+      - clusterqueues
+      - resourceflavors
+      - localqueues
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+      - update
+      - patch
+      - delete
+  {{- if and (dig "platformCompletion" "kueueTopologyName" nil $.Values.AsMap) (dig "platformCompletion" "kueueGenerateTopology" false $.Values.AsMap) }}
+  # platformCompletion.kueueGenerateTopology: create the named Kueue Topology when it is missing
+  - apiGroups:
+      - kueue.x-k8s.io
+    resources:
+      - topologies
+    verbs:
+      - get
+      - create
+      - update
+  {{- end }}
+  {{- end }}
+  {{- if .Values.quotaOperator.slurmIntegration }}
+  # quotaOperator.slurmIntegration: one Slinky NodeSet (Slurm partition) per tenant
+  - apiGroups:
+      - slinky.slurm.net
+    resources:
+      - nodesets
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+      - update
+      - patch
+      - delete
+  {{- end }}
+  {{- if .Values.quotaOperator.tenantRbac }}
+  # quotaOperator.tenantRbac: the tenant controller manages RoleBindings in tenant namespaces. RBAC escalation rules:
+  # the operator may only grant permissions it holds or is allowed to `bind`, so it gets `bind` on exactly the three
+  # tenant ClusterRoles (resourceNames, never a wildcard) and can grant nothing else.
+  - apiGroups:
+      - rbac.authorization.k8s.io
+    resources:
+      - rolebindings
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+      - update
+      - patch
+      - delete
+  - apiGroups:
+      - rbac.authorization.k8s.io
+    resources:
+      - clusterroles
+    verbs:
+      - bind
+    resourceNames:
+      - gryvia-tenant-viewer
+      - gryvia-tenant-member
+      - gryvia-tenant-admin
+  {{- end }}
+
+  # Manage Namespaces, ResourceQuotas and LimitRanges (tenant namespaces)
+  - apiGroups:
+      - ""
+    resources:
+      - namespaces
+      - resourcequotas
+      - limitranges
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+      - update
+      - patch
+      - delete
+
+  # Tenant network isolation
+  - apiGroups:
+      - networking.k8s.io
+    resources:
+      - networkpolicies
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+      - update
+      - patch
+      - delete
+
+  # Manage DaemonSets and ConfigMaps
+  - apiGroups:
+      - apps
+    resources:
+      - daemonsets
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+      - update
+      - delete
+  - apiGroups:
+      - ""
+    resources:
+      - configmaps
+      - secrets
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+      - update
+      - delete
+
+  # Manage StorageClasses
+  - apiGroups:
+      - storage.k8s.io
+    resources:
+      - storageclasses
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+      - update
+      - delete
+
+  # Manage NetworkAttachmentDefinitions (Multus)
+  - apiGroups:
+      - k8s.cni.cncf.io
+    resources:
+      - network-attachment-definitions
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+      - update
+      - delete
+
+  # Read pod logs for experiment scraping
+  - apiGroups:
+      - ""
+    resources:
+      - pods/log
+    verbs:
+      - get
+
+  # Manage ServiceAccounts and RBAC for CSI drivers
+  - apiGroups:
+      - ""
+    resources:
+      - serviceaccounts
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+      - update
+      - delete
+  - apiGroups:
+      - rbac.authorization.k8s.io
+    resources:
+      - clusterroles
+      - clusterrolebindings
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+      - update
+      - delete
+
+  # Leader election
+  - apiGroups:
+      - coordination.k8s.io
+    resources:
+      - leases
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+
+  # Events
+  - apiGroups:
+      - ""
+    resources:
+      - events
+    verbs:
+      - create
+      - get
+      - patch
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "gryvia.fullname" . }}-manager-rolebinding
+  labels:
+    {{- include "gryvia.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "gryvia.fullname" . }}-manager-role
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "gryvia.serviceAccountName" . }}
+    namespace: {{ .Values.namespace.name }}
+{{- end }}

@@ -1,0 +1,182 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: gryvia-collector
+  namespace: gryvia-system
+  labels:
+    app.kubernetes.io/name: gryvia-collector
+    app.kubernetes.io/component: network-intelligence
+    app.kubernetes.io/part-of: gryvia
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: gryvia-collector
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: gryvia-collector
+        app.kubernetes.io/component: network-intelligence
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+        prometheus.io/path: "/metrics"
+    spec:
+      hostNetwork: true
+      hostPID: true
+      dnsPolicy: ClusterFirstWithHostNet
+      serviceAccountName: gryvia-collector
+      tolerations:
+        - operator: Exists
+      containers:
+        - name: collector
+          image: ghcr.io/zyvorai/gryvia-collector:latest
+          args:
+            - --metrics-addr=:9090
+            - --ebpf-dir=/opt/gryvia/ebpf
+            - --iface=eth0
+          ports:
+            - name: metrics
+              containerPort: 9090
+              protocol: TCP
+          env:
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+          securityContext:
+            privileged: true
+            capabilities:
+              add:
+                - SYS_ADMIN
+                - NET_ADMIN
+                - BPF
+                - PERFMON
+          volumeMounts:
+            - name: sys-kernel-debug
+              mountPath: /sys/kernel/debug
+              readOnly: true
+            - name: proc
+              mountPath: /proc
+              readOnly: true
+            - name: host-proc
+              mountPath: /host/proc
+              readOnly: true
+            - name: sys-fs-bpf
+              mountPath: /sys/fs/bpf
+            - name: sys-kernel-btf
+              mountPath: /sys/kernel/btf
+              readOnly: true
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: metrics
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: metrics
+            initialDelaySeconds: 5
+            periodSeconds: 10
+      volumes:
+        - name: sys-kernel-debug
+          hostPath:
+            path: /sys/kernel/debug
+            type: Directory
+        - name: proc
+          hostPath:
+            path: /proc
+            type: Directory
+        - name: host-proc
+          hostPath:
+            path: /proc
+            type: Directory
+        - name: sys-fs-bpf
+          hostPath:
+            path: /sys/fs/bpf
+            type: DirectoryOrCreate
+        - name: sys-kernel-btf
+          hostPath:
+            path: /sys/kernel/btf
+            type: Directory
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: gryvia-collector
+  namespace: gryvia-system
+  labels:
+    app.kubernetes.io/name: gryvia-collector
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: gryvia-collector
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "services", "namespaces"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: gryvia-collector
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: gryvia-collector
+subjects:
+  - kind: ServiceAccount
+    name: gryvia-collector
+    namespace: gryvia-system
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: gryvia-collector
+  namespace: gryvia-system
+  labels:
+    app.kubernetes.io/name: gryvia-collector
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: gryvia-collector
+  endpoints:
+    - port: metrics
+      interval: 15s
+      path: /metrics
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gryvia-collector
+  namespace: gryvia-system
+  labels:
+    app.kubernetes.io/name: gryvia-collector
+spec:
+  clusterIP: None
+  selector:
+    app.kubernetes.io/name: gryvia-collector
+  ports:
+    - name: metrics
+      port: 9090
+      targetPort: metrics
+      protocol: TCP

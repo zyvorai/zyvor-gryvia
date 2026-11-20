@@ -1,0 +1,232 @@
+# Example: ML Research Team
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaTenant
+metadata:
+  name: ml-research
+spec:
+  displayName: "Machine Learning Research"
+  description: "Core ML research team"
+
+  members:
+    - username: alice
+      role: admin
+    - username: bob
+      role: member
+    - username: charlie
+      role: member
+    - username: david
+      role: viewer
+
+  quotas:
+    gpuHours:
+      monthly: 2000
+      burst: 500  # Can use 2500 hours total
+
+    costUSD:
+      monthly: 50000
+      burst: 10000
+
+    concurrentJobs: 50
+    concurrentGPUs: 128
+
+    perGPUType:
+      H100:
+        count: 32
+        hours: 200
+      A100-80G:
+        count: 64
+        hours: 1000
+      A100-40G:
+        count: 32
+        hours: 500
+
+  priorities:
+    default: normal
+    allowHighPriority: true
+    preemptionAllowed: false  # Don't allow preemption of this team's jobs
+
+  networkPolicy:
+    isolated: false  # Can communicate with all tenants
+
+  storageQuotas:
+    home: 10Ti
+    scratch: 50Ti
+    datasets: 100Ti
+    models: 20Ti
+
+  jobDefaults:
+    priorityClass: normal
+    checkpointing: true
+    retryPolicy: standard-retry
+
+  billing:
+    costCenter: "CC-ML-001"
+    billingContact: ml-lead@company.com
+    paymentMethod: credit
+
+  notifications:
+    email:
+      - ml-team@company.com
+    slack:
+      channel: "#ml-research"
+      webhook: "https://hooks.slack.com/..."
+
+  governance:
+    dataClassification: internal
+    complianceRequirements: [SOC2]
+    auditRetention: 1y
+---
+# Example: Production Inference Team
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaTenant
+metadata:
+  name: production-inference
+spec:
+  displayName: "Production Inference"
+  description: "Production model serving team"
+
+  members:
+    - username: ops-lead
+      role: admin
+    - username: sre-1
+      role: member
+
+  quotas:
+    costUSD:
+      monthly: 100000  # Higher budget for production
+
+    concurrentJobs: 200
+    concurrentGPUs: 256
+
+  priorities:
+    default: high  # Production gets high priority
+    allowHighPriority: true
+    preemptionAllowed: false
+
+  networkPolicy:
+    isolated: true  # Isolated for security
+    allowedTenants:
+      - ml-research  # Can communicate with ML team
+
+  jobDefaults:
+    priorityClass: production
+    checkpointing: false  # Stateless serving
+
+  billing:
+    costCenter: "CC-PROD-001"
+    paymentMethod: invoice
+
+  governance:
+    dataClassification: confidential
+    complianceRequirements: [SOC2, HIPAA]
+    auditRetention: 7y
+---
+# Example: Sub-Team (Hierarchical)
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaTenant
+metadata:
+  name: ml-research-cv
+spec:
+  displayName: "Computer Vision Sub-Team"
+  description: "Computer vision research within ML team"
+
+  parentTenant: ml-research  # Inherits from parent
+
+  members:
+    - username: cv-lead
+      role: admin
+    - username: vision-researcher-1
+      role: member
+
+  # Sub-quota from parent team
+  quotas:
+    gpuHours:
+      monthly: 500  # 500 of parent's 2000
+    costUSD:
+      monthly: 12000
+
+    concurrentJobs: 20
+    concurrentGPUs: 32
+---
+# Example: External Collaborator Tenant
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaTenant
+metadata:
+  name: university-collab
+spec:
+  displayName: "University Collaboration"
+  description: "External academic partners"
+
+  members:
+    - username: prof-smith
+      role: admin
+    - username: phd-student-1
+      role: member
+
+  quotas:
+    gpuHours:
+      monthly: 200  # Limited quota for external
+    costUSD:
+      monthly: 5000
+
+    concurrentJobs: 10
+    concurrentGPUs: 16
+
+    perGPUType:
+      T4:
+        count: 16  # Only access to T4 GPUs
+        hours: 200
+
+  priorities:
+    default: low
+    allowHighPriority: false
+    preemptionAllowed: true  # Can be preempted
+
+  networkPolicy:
+    isolated: true  # Isolated from internal teams
+    allowedTenants: []
+
+  storageQuotas:
+    home: 1Ti
+    scratch: 5Ti
+
+  governance:
+    dataClassification: public
+    auditRetention: 2y
+---
+# Tenant Status Example
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaTenant
+metadata:
+  name: ml-research
+status:
+  memberCount: 4
+
+  currentUsage:
+    gpuHours: 1450  # This month
+    costUSD: 37500
+    runningJobs: 23
+    usedGPUs: 64
+
+  quotaUtilization:
+    gpuHoursPercent: 72.5
+    costPercent: 75.0
+    jobsPercent: 46.0
+
+  health: healthy
+
+---
+# Example: GPU-as-a-Service tenant restricted to two catalog SKUs
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaTenant
+metadata:
+  name: acme
+spec:
+  displayName: "Acme Corp"
+  allowedSkus:
+    - h100-standard
+    - t4-economy
+  quotas:
+    concurrentGPUs: 16
+  networkPolicy:
+    isolated: true

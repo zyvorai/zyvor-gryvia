@@ -1,0 +1,30 @@
+# Objects the upgrade test creates on top of examples/demo/demo.yaml, so that the snapshot holds a
+# tenant and a quota that nothing else in the demo data touches.
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaTenant
+metadata:
+  name: upgrade-test
+spec:
+  displayName: Upgrade test tenant
+  allowedSkus: [l40]
+  quotas:
+    concurrentGPUs: 3
+  networkPolicy:
+    isolated: true
+---
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaQuota
+metadata:
+  name: upgrade-test
+spec:
+  team: upgrade-test
+  namespaces: [gryvia-system]
+  priority: 10
+  gpuQuota:
+    maxGPUs: 3
+    maxGPUsPerJob: 1
+    maxRunningJobs: 2
+    allowedGPUTypes: [L40]
+  budget:
+    monthlyBudget: 1234
+    alertThreshold: 70

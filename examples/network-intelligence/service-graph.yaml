@@ -1,0 +1,23 @@
+# GryviaServiceGraph - Auto-discovered service dependency map
+# Builds a real-time service dependency graph for the production namespace,
+# refreshed every 30 seconds, including external traffic endpoints.
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaServiceGraph
+metadata:
+  name: production-graph
+  namespace: production
+spec:
+  # Namespaces to include in the dependency graph
+  namespaces:
+    - production
+    - production-data
+
+  # How often to refresh the graph from live eBPF flow data
+  refreshInterval: "30s"
+
+  # Include traffic to/from external endpoints (APIs, SaaS, CDN, etc.)
+  includeExternal: true
+
+  # Maximum traversal depth for dependency chains (1-10)
+  # Higher values discover deeper transitive dependencies
+  depth: 5

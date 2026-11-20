@@ -1,0 +1,34 @@
+# Add-on spire; its images come through the nodes' registry mirror (ansible role rke2_hardened).
+# The version is the one pinned in deploy/airgap/charts.yaml (scripts/tests/sovereign-aios-airgap.test.sh).
+# trustDomain must equal hardening.spire.trustDomain in apps/sovereign-aios.yaml.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: spire
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: '-1'
+  finalizers:
+  - resources-finalizer.argocd.argoproj.io
+spec:
+  project: sovereign-aios
+  source:
+    repoURL: harbor.sovereign.internal/charts
+    chart: spire
+    targetRevision: 0.30.2
+    helm:
+      valuesObject:
+        global:
+          spire:
+            trustDomain: sovereign.local
+            clusterName: sovereign-aios
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: spire-server
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true
+    - ServerSideApply=true

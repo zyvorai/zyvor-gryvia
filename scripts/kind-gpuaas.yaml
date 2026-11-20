@@ -1,0 +1,7 @@
+# Two-node kind cluster for .github/workflows/e2e-gpuaas.yml: the reservation scenario taints the
+# worker and needs the control-plane node (which keeps its own NoSchedule taint) to stay out of the way.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+  - role: control-plane
+  - role: worker

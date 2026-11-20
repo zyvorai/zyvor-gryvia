@@ -1,0 +1,32 @@
+# Requires a same-namespace Gateway named public, listener https, a model registry
+# named llama, and a model registry named llama-v2. Pin real serving images yourself.
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaInferenceService
+metadata:
+  name: chat
+  namespace: ml
+  annotations:
+    gryvia.io/gateway-parent: public
+    gryvia.io/gateway-section: https
+    gryvia.io/gateway-hostname: chat.example.com
+spec:
+  modelRef: llama
+  backend: vllm
+  gpuCount: 1
+  replicas: 2
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 8
+    targetGPUUtilization: 70
+    targetRequestsPerSecond: 20
+  canary:
+    enabled: true
+    weight: 10
+    modelVersion: llama-v2
+    autoPromote: true
+    promoteAfterSeconds: 300
+  healthCheck:
+    autoRollback: true
+    intervalSeconds: 30
+    failureThreshold: 3

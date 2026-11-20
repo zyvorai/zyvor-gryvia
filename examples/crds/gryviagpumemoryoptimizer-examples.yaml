@@ -1,0 +1,64 @@
+# Example: Cluster-wide GPU Memory Optimizer
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaGpuMemoryOptimizer
+metadata:
+  name: cluster-memory-optimizer
+spec:
+  scope:
+    type: cluster
+
+  oomPrevention:
+    enabled: true
+    memoryGrowthProfiling:
+      profileSteps: 20
+      projectionMethod: linear
+    preemptiveAction:
+      type: auto-mitigate
+      warningThresholdPercent: 85
+      autoEnableGradientCheckpointing: true
+      autoEnableMixedPrecision: true
+      autoReduceBatchSize: false
+
+  rightSizing:
+    enabled: true
+    analysisWindow: "24h"
+    recommendations:
+      gpuTypeDowngrade: true
+      gpuCountReduction: true
+    minimumGpuMemoryHeadroom: 15
+
+  inferencePacking:
+    enabled: false
+---
+# Example: Namespace-scoped optimizer with inference packing
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaGpuMemoryOptimizer
+metadata:
+  name: inference-ns-optimizer
+spec:
+  scope:
+    type: namespace
+    namespace: inference-prod
+
+  oomPrevention:
+    enabled: true
+    memoryGrowthProfiling:
+      profileSteps: 10
+      projectionMethod: exponential
+    preemptiveAction:
+      type: warn
+      warningThresholdPercent: 90
+
+  rightSizing:
+    enabled: true
+    analysisWindow: "7d"
+    recommendations:
+      gpuTypeDowngrade: true
+      gpuCountReduction: false
+    minimumGpuMemoryHeadroom: 10
+
+  inferencePacking:
+    enabled: true
+    memoryUtilizationTarget: 80
+    compatibilityCheck: true
+    isolationLevel: mps

@@ -1,0 +1,279 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.22.0
+  name: gryviagpusharingpolicies.gryvia.io
+spec:
+  group: gryvia.io
+  names:
+    kind: GryviaGPUSharingPolicy
+    listKind: GryviaGPUSharingPolicyList
+    plural: gryviagpusharingpolicies
+    singular: gryviagpusharingpolicy
+  scope: Cluster
+  versions:
+  - name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: GryviaGPUSharingPolicy is the Schema for the gryviagpusharingpolicies
+          API
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: GryviaGPUSharingPolicySpec defines the desired state of GryviaGPUSharingPolicy
+            properties:
+              fractionalGPU:
+                description: FractionalGPU defines fractional GPU configuration
+                properties:
+                  enabled:
+                    description: Enabled enables fractional GPUs
+                    type: boolean
+                  granularity:
+                    description: Granularity of fractions (1/2, 1/4, 1/8, 1/16)
+                    type: string
+                  oversubscription:
+                    description: Oversubscription settings
+                    properties:
+                      enabled:
+                        description: Enabled enables oversubscription
+                        type: boolean
+                      maxRatio:
+                        description: MaxRatio is the max oversubscription ratio (e.g.,
+                          1.5 = 150%)
+                        type: number
+                    type: object
+                type: object
+              mig:
+                description: MIG defines Multi-Instance GPU configuration
+                properties:
+                  enabled:
+                    description: Enabled enables MIG
+                    type: boolean
+                  profiles:
+                    description: Profiles defines MIG profile distribution
+                    items:
+                      description: GPUMIGProfile defines a MIG profile
+                      properties:
+                        count:
+                          description: Count of this profile per GPU
+                          type: integer
+                        name:
+                          description: Name of the MIG profile (e.g., 1g.10gb, 3g.40gb)
+                          type: string
+                      type: object
+                    type: array
+                type: object
+              nodeSelector:
+                additionalProperties:
+                  type: string
+                description: NodeSelector defines which nodes this policy applies
+                  to
+                type: object
+              priority:
+                description: Priority defines priority-based allocation
+                properties:
+                  enabled:
+                    description: Enabled enables priority-based allocation
+                    type: boolean
+                  highPriorityShare:
+                    description: HighPriorityShare is the percentage for high priority
+                      jobs
+                    type: integer
+                  preemptLowPriority:
+                    description: PreemptLowPriority allows preempting low priority
+                      workloads
+                    type: boolean
+                type: object
+              qos:
+                description: QoS defines quality of service settings
+                properties:
+                  guaranteedCompute:
+                    description: GuaranteedCompute guarantees compute allocation
+                    type: boolean
+                  guaranteedMemory:
+                    description: GuaranteedMemory guarantees memory allocation
+                    type: boolean
+                  isolationLevel:
+                    description: IsolationLevel (none, memory, compute, full)
+                    type: string
+                type: object
+              strategy:
+                description: Strategy is the sharing strategy (time-slicing, mig,
+                  fractional, spatial)
+                type: string
+              tenantQuotas:
+                description: TenantQuotas defines per-tenant GPU sharing quotas
+                items:
+                  description: GPUTenantQuota defines per-tenant GPU sharing quota
+                  properties:
+                    maxFractionalGPUs:
+                      description: MaxFractionalGPUs is the max fractional GPU units
+                      type: integer
+                    maxMemoryGB:
+                      description: MaxMemoryGB is the max GPU memory in GB
+                      type: integer
+                    tenant:
+                      description: Tenant is the tenant or team name
+                      type: string
+                  required:
+                  - tenant
+                  type: object
+                type: array
+              timeSlicing:
+                description: TimeSlicing defines time-slicing configuration
+                properties:
+                  enabled:
+                    description: Enabled enables time-slicing
+                    type: boolean
+                  enforcement:
+                    description: Enforcement is soft or hard
+                    type: string
+                  maxPodsPerGPU:
+                    description: MaxPodsPerGPU is the max pods sharing each GPU
+                    type: integer
+                  memoryLimitPercent:
+                    description: MemoryLimitPercent is the memory limit per pod
+                    type: integer
+                  sliceDuration:
+                    description: SliceDuration is the time slice duration
+                    type: string
+                type: object
+            required:
+            - strategy
+            type: object
+          status:
+            description: GryviaGPUSharingPolicyStatus defines the observed state of
+              GryviaGPUSharingPolicy
+            properties:
+              affectedNodes:
+                description: AffectedNodes lists nodes where this policy is applied
+                items:
+                  type: string
+                type: array
+              conditions:
+                description: Conditions represent the latest available observations
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+              currentAllocations:
+                description: CurrentAllocations tracks current allocations
+                properties:
+                  fractional:
+                    description: Fractional is the number of fractional allocations
+                    type: integer
+                  physical:
+                    description: Physical is the number of physical GPUs allocated
+                    type: integer
+                  utilization:
+                    description: Utilization is the average GPU utilization (0-1)
+                    type: number
+                type: object
+              effectiveGPUs:
+                description: EffectiveGPUs is the total allocatable GPU units after
+                  sharing
+                type: integer
+              perPodUtilization:
+                description: PerPodUtilization tracks per-pod GPU utilization on shared
+                  GPUs
+                items:
+                  description: GPUPodUtilization tracks per-pod GPU utilization
+                  properties:
+                    gpuIndex:
+                      description: GPUIndex is the GPU index being used
+                      type: integer
+                    memoryUsedMB:
+                      description: MemoryUsedMB is the GPU memory used in MB
+                      type: integer
+                    namespace:
+                      description: Namespace of the pod
+                      type: string
+                    nodeName:
+                      description: NodeName is the node where the pod runs
+                      type: string
+                    podName:
+                      description: PodName is the name of the pod
+                      type: string
+                    utilization:
+                      description: Utilization is the GPU utilization percentage
+                      type: number
+                  type: object
+                type: array
+              totalGPUs:
+                description: TotalGPUs is the total physical GPUs
+                type: integer
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

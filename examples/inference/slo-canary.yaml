@@ -1,0 +1,26 @@
+# Requires the normalized metrics described in docs/inference-serving.md.
+apiVersion: gryvia.io/v1
+kind: GryviaInferenceService
+metadata:
+  name: chat
+  namespace: inference
+  annotations:
+    gryvia.io/gateway-parent: public
+    gryvia.io/canary-max-error-rate: "0.01"
+    gryvia.io/canary-max-p95-seconds: "0.5"
+    gryvia.io/canary-min-requests: "100"
+spec:
+  modelRef: llama
+  backend: vllm
+  replicas: 2
+  gpuCount: 1
+  canary:
+    enabled: true
+    modelVersion: llama-v2
+    weight: 10
+    autoPromote: true
+    promoteAfterSeconds: 300
+  healthCheck:
+    autoRollback: true
+    intervalSeconds: 30
+    failureThreshold: 3

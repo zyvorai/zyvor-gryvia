@@ -1,0 +1,112 @@
+# Zarf package for a disconnected cluster (after `zarf init`, which runs Zarf's registry and the agent that rewrites
+# image references to it). Built on the connected side, deployed on the other:
+#
+#   make sovereign-aios-deps
+#   zarf package create deploy/airgap --confirm          # pulls the charts and images below
+#   zarf package deploy zarf-package-sovereign-aios-*.tar.zst --components=kyverno,falco --confirm
+#
+# The image lists are deploy/airgap/images.txt split by component; scripts/tests/sovereign-aios-airgap.test.sh keeps
+# them, and the chart versions in deploy/airgap/charts.yaml, in step. With hardening.kyverno on, set
+# allowedRegistries and verifyImages.images to Zarf's registry, since its agent rewrites every image to it.
+kind: ZarfPackageConfig
+metadata:
+  name: sovereign-aios
+  description: 'Sovereign AI OS: Gryvia, Zyntra and Netra with optional hardening add-ons, for disconnected clusters.'
+  version: 0.1.0
+components:
+- name: external-secrets
+  description: External Secrets Operator, which writes the platform keys from OpenBao (hardening.openbao).
+  required: false
+  charts:
+  - name: external-secrets
+    url: https://charts.external-secrets.io
+    version: 2.11.0
+    namespace: external-secrets
+  images:
+  - ghcr.io/external-secrets/external-secrets:v2.11.0
+- name: openbao
+  description: OpenBao, the secrets store for the platform keys. Initialise and unseal it before enabling hardening.openbao.
+  required: false
+  charts:
+  - name: openbao
+    url: https://openbao.github.io/openbao-helm
+    version: 0.30.2
+    namespace: openbao
+  images:
+  - docker.io/hashicorp/vault-k8s:1.7.2
+  - quay.io/openbao/openbao:2.7.1
+- name: kyverno
+  description: 'Kyverno admission policies (hardening.kyverno): allowed registries and cosign signatures.'
+  required: false
+  charts:
+  - name: kyverno
+    url: https://kyverno.github.io/kyverno
+    version: 3.9.1
+    namespace: kyverno
+  images:
+  - ghcr.io/kyverno/readiness-checker:latest
+  - ghcr.io/kyverno/readiness-checker:v1.19.1
+  - reg.kyverno.io/kyverno/background-controller:v1.19.1
+  - reg.kyverno.io/kyverno/cleanup-controller:v1.19.1
+  - reg.kyverno.io/kyverno/kyverno-cli:v1.19.1
+  - reg.kyverno.io/kyverno/kyverno:v1.19.1
+  - reg.kyverno.io/kyverno/kyvernopre:v1.19.1
+  - reg.kyverno.io/kyverno/reports-controller:v1.19.1
+- name: spire
+  description: 'SPIRE and spire-controller-manager: X.509 SVIDs for platform pods and agents (hardening.spire).'
+  required: false
+  charts:
+  - name: spire-crds
+    url: https://spiffe.github.io/helm-charts-hardened
+    version: 0.6.1
+    namespace: spire-server
+  - name: spire
+    url: https://spiffe.github.io/helm-charts-hardened
+    version: 0.30.2
+    namespace: spire-server
+  images:
+  - cgr.dev/chainguard/bash:latest@sha256:90041f375e30f41aa7e0390075d8a69dc61900771d52fa98d63ee5d03d866a58
+  - cgr.dev/chainguard/min-toolkit-debug:latest@sha256:9e45e6836c28489a6e57ca1210ec66927e88eca2409e403616a1278e210e86c9
+  - docker.io/library/busybox:1.37.0-uclibc
+  - docker.io/smallstep/step-cli:0.30.2
+  - ghcr.io/spiffe/oidc-discovery-provider:1.15.3
+  - ghcr.io/spiffe/spiffe-csi-driver:0.2.7
+  - ghcr.io/spiffe/spiffe-helper:0.11.0
+  - ghcr.io/spiffe/spire-agent:1.15.3
+  - ghcr.io/spiffe/spire-controller-manager:0.7.0
+  - ghcr.io/spiffe/spire-server:1.15.3
+  - registry.k8s.io/kubectl:v1.31.0
+  - registry.k8s.io/sig-storage/csi-node-driver-registrar:v2.15.0
+- name: falco
+  description: Falco with the Sovereign AI OS rules (hardening.falco), modern eBPF driver, no rule downloads.
+  required: false
+  charts:
+  - name: falco
+    url: https://falcosecurity.github.io/charts
+    version: 9.2.0
+    namespace: falco
+    valuesFiles:
+    - ../hardening/falco-values.yaml
+  images:
+  - docker.io/falcosecurity/falco:0.45.0
+- name: sovereign-aios
+  description: Gryvia, Zyntra and Netra (helm/sovereign-aios). Run make sovereign-aios-deps before zarf package create.
+  required: true
+  charts:
+  - name: sovereign-aios
+    version: 0.1.0
+    namespace: gryvia-system
+    localPath: ../../helm/sovereign-aios
+  images:
+  - docker.io/alpine/openssl:3.3.2
+  - ghcr.io/zyvorai/gryvia-agent-runtime:1.0.0
+  - ghcr.io/zyvorai/gryvia-ai-operator:1.0.0
+  - ghcr.io/zyvorai/gryvia-api-gateway:1.0.0
+  - ghcr.io/zyvorai/gryvia-gpu-operator:1.0.0
+  - ghcr.io/zyvorai/gryvia-quota-operator:1.0.0
+  - ghcr.io/zyvorai/gryvia-ui:1.0.0
+  - ghcr.io/zyvorai/netra-agent:0.29.0
+  - ghcr.io/zyvorai/netra:0.29.0
+  - ghcr.io/zyvorai/zyntra:0.4.0-dev
+  - nvcr.io/nvidia/k8s-device-plugin:v0.17.0
+  - nvcr.io/nvidia/k8s/dcgm-exporter:3.3.9-3.6.1-ubuntu22.04

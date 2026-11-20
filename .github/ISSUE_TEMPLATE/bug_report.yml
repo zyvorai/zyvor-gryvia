@@ -1,0 +1,33 @@
+name: Bug report
+description: Something does not work as documented
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+    validations: {required: true}
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      placeholder: "1. helm install ...\n2. open ...\n3. ..."
+    validations: {required: true}
+  - type: input
+    id: version
+    attributes:
+      label: Gryvia version
+      description: Chart or image tag, or the git commit.
+    validations: {required: true}
+  - type: input
+    id: env
+    attributes:
+      label: Environment
+      description: Kubernetes version and distribution (kind, k3s, EKS...), GPU model if relevant.
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs and screenshots
+      description: Relevant operator, gateway or browser console output. Remove secrets first.
+      render: shell

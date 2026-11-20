@@ -1,0 +1,392 @@
+---
+# Advanced Scheduling Policies for Gryvia
+#
+# DESIGN SKETCH: `SchedulingPolicy` is not a CRD in this repository (see crds/), so this file
+# cannot be applied to a cluster. See policies/README.md for what is implemented.
+
+# Priority-based Scheduling
+apiVersion: gryvia.io/v1alpha1
+kind: SchedulingPolicy
+metadata:
+  name: priority-based
+spec:
+  type: priority
+  description: "Schedule jobs based on priority levels"
+  rules:
+    - priority: critical
+      weight: 100
+      preemptible: false
+      queueJumpAllowed: true
+      maxWaitTime: 0  # Schedule immediately
+
+    - priority: high
+      weight: 80
+      preemptible: false
+      queueJumpAllowed: true
+      maxWaitTime: 300  # 5 minutes
+
+    - priority: medium
+      weight: 50
+      preemptible: true
+      queueJumpAllowed: false
+      maxWaitTime: 1800  # 30 minutes
+
+    - priority: low
+      weight: 20
+      preemptible: true
+      queueJumpAllowed: false
+      maxWaitTime: 7200  # 2 hours
+
+---
+# Fair Share Scheduling
+apiVersion: gryvia.io/v1alpha1
+kind: SchedulingPolicy
+metadata:
+  name: fair-share
+spec:
+  type: fairshare
+  description: "Distribute GPU resources fairly among teams"
+  algorithm: DRF  # Dominant Resource Fairness
+
+  teams:
+    - name: ml-research
+      fairShareWeight: 40
+      minGPUs: 8
+      maxGPUs: 32
+
+    - name: computer-vision
+      fairShareWeight: 30
+      minGPUs: 4
+      maxGPUs: 24
+
+    - name: nlp
+      fairShareWeight: 20
+      minGPUs: 4
+      maxGPUs: 16
+
+    - name: general
+      fairShareWeight: 10
+      minGPUs: 0
+      maxGPUs: 8
+
+  rebalancing:
+    enabled: true
+    interval: 300  # seconds
+    minJobDuration: 600  # Don't preempt jobs running <10min
+
+---
+# Cost-Optimized Scheduling
+apiVersion: gryvia.io/v1alpha1
+kind: SchedulingPolicy
+metadata:
+  name: cost-optimized
+spec:
+  type: cost-optimized
+  description: "Minimize infrastructure costs"
+
+  strategies:
+    - name: spot-instances
+      enabled: true
+      maxSavings: 70  # Target 70% cost savings
+      fallbackToOnDemand: true
+      checkpointInterval: 600  # Checkpoint every 10min
+
+    - name: gpu-right-sizing
+      enabled: true
+      recommendations:
+        - condition: "memoryUtilization < 30%"
+          action: "suggest-smaller-gpu"
+        - condition: "gpuUtilization < 40%"
+          action: "suggest-cpu-only"
+
+    - name: time-based-scheduling
+      enabled: true
+      offPeakHours:
+        start: "22:00"
+        end: "06:00"
+        discount: 30  # 30% more quota during off-peak
+
+---
+# Locality-Aware Scheduling
+apiVersion: gryvia.io/v1alpha1
+kind: SchedulingPolicy
+metadata:
+  name: locality-aware
+spec:
+  type: locality
+  description: "Schedule near data sources"
+
+  dataLocality:
+    preferredOrder:
+      - node-local      # Same node as data
+      - rack-local      # Same rack
+      - zone-local      # Same zone
+      - region-local    # Same region
+      - remote          # Different region
+
+    penalties:
+      rack-local: 10    # 10% performance penalty
+      zone-local: 20
+      region-local: 50
+      remote: 100
+
+  networkTopology:
+    enabled: true
+    preferInfiniBand: true
+    minBandwidth: 100Gbps  # Minimum network bandwidth
+
+---
+# Gang Scheduling (All-or-Nothing)
+apiVersion: gryvia.io/v1alpha1
+kind: SchedulingPolicy
+metadata:
+  name: gang-scheduling
+spec:
+  type: gang
+  description: "Schedule all replicas together or none"
+
+  minMembers: 1
+  maxWaitTime: 1800  # Wait up to 30min for all resources
+
+  partialScheduling:
+    enabled: false  # Don't schedule partial jobs
+
+  # For distributed training
+  distributedTraining:
+    enabled: true
+    minNodes: 2
+    maxNodes: 16
+    allOrNothing: true
+
+---
+# Bin Packing (Resource Consolidation)
+apiVersion: gryvia.io/v1alpha1
+kind: SchedulingPolicy
+metadata:
+  name: bin-packing
+spec:
+  type: bin-packing
+  description: "Consolidate workloads to minimize nodes"
+
+  objective: minimize-nodes
+
+  resources:
+    - name: gpu
+      weight: 100
+    - name: memory
+      weight: 50
+    - name: cpu
+      weight: 30
+
+  fragmentation:
+    threshold: 0.3  # Trigger defrag when >30% fragmented
+    strategy: drain-and-rebalance
+
+---
+# Backfilling Scheduling
+apiVersion: gryvia.io/v1alpha1
+kind: SchedulingPolicy
+metadata:
+  name: backfilling
+spec:
+  type: backfill
+  description: "Fill gaps with small jobs"
+
+  aggressiveness: medium  # low, medium, high
+
+  criteria:
+    maxJobDuration: 3600  # Only backfill jobs <1 hour
+    maxGPUs: 4
+    priorities:
+      - low
+      - medium
+
+  reservation:
+    respectReservations: true
+    maxDelayForReservation: 900  # Delay reservation max 15min
+
+---
+# Quota-Based Scheduling
+apiVersion: gryvia.io/v1alpha1
+kind: SchedulingPolicy
+metadata:
+  name: quota-based
+spec:
+  type: quota
+  description: "Enforce team quotas strictly"
+
+  enforcement: strict  # strict, soft, advisory
+
+  quotaTypes:
+    - gpuHours: true
+    - maxConcurrentGPUs: true
+    - budget: true
+
+  overagePolicy:
+    action: queue  # queue, reject, warn
+    gracePeriod: 300  # 5 minutes to return under quota
+
+  borrowing:
+    enabled: true
+    maxBorrowPercent: 20  # Can borrow up to 20% from other teams
+    paybackPeriod: 86400  # 24 hours
+
+---
+# Preemption Policy
+apiVersion: gryvia.io/v1alpha1
+kind: SchedulingPolicy
+metadata:
+  name: preemption
+spec:
+  type: preemption
+  description: "Preempt lower-priority jobs for high-priority ones"
+
+  enabled: true
+
+  candidates:
+    - priority: low
+      preemptable: true
+      minDuration: 600  # Must run at least 10min
+    - priority: medium
+      preemptable: true
+      minDuration: 1800  # Must run at least 30min
+
+  protection:
+    checkpointing:
+      required: true
+      verifyCheckpoint: true
+    gracePeriod: 300  # 5 minutes to checkpoint
+
+  victims:
+    selectionPolicy: youngest-first  # or oldest-first, random
+    maxVictimsPerRequest: 5
+
+---
+# GPU Affinity Scheduling
+apiVersion: gryvia.io/v1alpha1
+kind: SchedulingPolicy
+metadata:
+  name: gpu-affinity
+spec:
+  type: affinity
+  description: "Schedule based on GPU characteristics"
+
+  gpuAffinity:
+    # Prefer NVLink-enabled nodes for multi-GPU jobs
+    - jobType: multi-gpu
+      requiredFeatures:
+        - nvlink
+      preferredFeatures:
+        - nvswitch
+        - infiniband
+
+    # Prefer high-memory GPUs for large models
+    - jobType: large-model
+      requiredGPUMemory: ">= 80GB"
+      preferredGPUs:
+        - H100
+        - A100-80G
+
+    # T4 for inference
+    - jobType: inference
+      preferredGPUs:
+        - T4
+        - L4
+
+---
+# Topology-Aware Scheduling
+apiVersion: gryvia.io/v1alpha1
+kind: SchedulingPolicy
+metadata:
+  name: topology-aware
+spec:
+  type: topology
+  description: "Consider network and PCIe topology"
+
+  topologyLevels:
+    - level: numa-node
+      preference: required  # All GPUs on same NUMA node
+
+    - level: pcie-switch
+      preference: preferred
+
+    - level: nvlink-domain
+      preference: preferred
+
+    - level: rack
+      preference: optional
+
+  metrics:
+    - name: gpu-to-gpu-bandwidth
+      weight: 50
+    - name: gpu-to-cpu-bandwidth
+      weight: 30
+    - name: network-latency
+      weight: 20
+
+---
+# Adaptive Scheduling
+apiVersion: gryvia.io/v1alpha1
+kind: SchedulingPolicy
+metadata:
+  name: adaptive
+spec:
+  type: adaptive
+  description: "Adapt scheduling based on cluster state"
+
+  modes:
+    - condition: "utilization > 90%"
+      policy: bin-packing
+
+    - condition: "utilization < 30%"
+      policy: spread
+
+    - condition: "queueLength > 50"
+      policy: fair-share
+
+    - condition: "time in offPeak"
+      policy: cost-optimized
+
+  learningEnabled: true
+  feedbackLoop:
+    metrics:
+      - jobCompletionTime
+      - gpuUtilization
+      - queueWaitTime
+    adjustmentInterval: 3600  # Adjust every hour
+
+---
+# SLA-Based Scheduling
+apiVersion: gryvia.io/v1alpha1
+kind: SchedulingPolicy
+metadata:
+  name: sla-based
+spec:
+  type: sla
+  description: "Guarantee SLA compliance"
+
+  slaLevels:
+    - name: platinum
+      maxWaitTime: 300  # 5 minutes
+      guaranteedGPUs: 16
+      availability: 99.9
+
+    - name: gold
+      maxWaitTime: 900  # 15 minutes
+      guaranteedGPUs: 8
+      availability: 99.0
+
+    - name: silver
+      maxWaitTime: 3600  # 1 hour
+      guaranteedGPUs: 4
+      availability: 95.0
+
+  violations:
+    actions:
+      - type: priority-boost
+      - type: resource-reservation
+      - type: notification
+
+    compensation:
+      enabled: true
+      creditPercent: 10  # 10% credit for violations

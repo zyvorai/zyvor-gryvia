@@ -1,0 +1,297 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.22.0
+  name: gryviahealthchecks.gryvia.io
+spec:
+  group: gryvia.io
+  names:
+    kind: GryviaHealthCheck
+    listKind: GryviaHealthCheckList
+    plural: gryviahealthchecks
+    singular: gryviahealthcheck
+  scope: Cluster
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.target.type
+      name: Target
+      type: string
+    - jsonPath: .status.overallHealth
+      name: Health
+      type: string
+    - jsonPath: .status.lastCheckTime
+      name: Last-Check
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: GryviaHealthCheck is the Schema for the gryviahealthchecks API
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: GryviaHealthCheckSpec defines the desired state of GryviaHealthCheck
+            properties:
+              checks:
+                description: Checks defines the health checks to run
+                items:
+                  description: HealthCheck defines a single health check
+                  properties:
+                    enabled:
+                      description: Enabled controls whether this check runs
+                      type: boolean
+                    name:
+                      description: Name of the health check
+                      type: string
+                    threshold:
+                      description: Threshold defines pass/fail thresholds
+                      properties:
+                        critical:
+                          description: Critical is the critical threshold
+                          type: number
+                        max:
+                          description: Max is the maximum acceptable value
+                          type: number
+                        min:
+                          description: Min is the minimum acceptable value
+                          type: number
+                        warning:
+                          description: Warning is the warning threshold
+                          type: number
+                      type: object
+                    type:
+                      description: Type of check (gpu-utilization, gpu-memory, gpu-temperature,
+                        etc.)
+                      type: string
+                  required:
+                  - name
+                  - type
+                  type: object
+                type: array
+              onFailure:
+                description: OnFailure defines actions on health check failure
+                properties:
+                  alert:
+                    description: Alert sends alerts on failure
+                    type: boolean
+                  autoRemediate:
+                    description: AutoRemediate attempts automatic remediation
+                    type: boolean
+                  cordon:
+                    description: Cordon cordons the node on failure
+                    type: boolean
+                  drain:
+                    description: Drain drains the node on failure
+                    type: boolean
+                type: object
+              remediation:
+                description: Remediation defines auto-remediation actions
+                properties:
+                  driverReload:
+                    description: DriverReload reloads the GPU driver
+                    type: boolean
+                  gpuReset:
+                    description: GpuReset attempts a GPU reset
+                    type: boolean
+                  maxAttempts:
+                    description: MaxAttempts limits remediation attempts
+                    format: int32
+                    type: integer
+                  nodeReboot:
+                    description: NodeReboot reboots the node
+                    type: boolean
+                type: object
+              schedule:
+                description: Schedule is the cron schedule for health checks
+                type: string
+              target:
+                description: Target defines what to health check
+                properties:
+                  selector:
+                    additionalProperties:
+                      type: string
+                    description: Selector restricts the target by labels
+                    type: object
+                  type:
+                    description: Type is the target type (node, gpu, job, cluster)
+                    type: string
+                required:
+                - type
+                type: object
+            required:
+            - target
+            type: object
+          status:
+            description: GryviaHealthCheckStatus defines the observed state of GryviaHealthCheck
+            properties:
+              affectedResources:
+                description: AffectedResources lists resources affected by health
+                  issues
+                items:
+                  description: AffectedResource describes a resource affected by health
+                    check failures
+                  properties:
+                    name:
+                      description: Name of the resource
+                      type: string
+                    status:
+                      description: Status of the resource
+                      type: string
+                    type:
+                      description: Type of the resource (node, gpu)
+                      type: string
+                  required:
+                  - name
+                  - status
+                  - type
+                  type: object
+                type: array
+              checkResults:
+                description: CheckResults are the results of individual checks
+                items:
+                  description: HealthCheckResult holds the result of a single health
+                    check
+                  properties:
+                    checkName:
+                      description: CheckName is the name of the check
+                      type: string
+                    message:
+                      description: Message is a human-readable description
+                      type: string
+                    status:
+                      description: Status is the check result (pass, warning, fail)
+                      type: string
+                    threshold:
+                      description: Threshold is the threshold that was checked
+                      type: string
+                    timestamp:
+                      description: Timestamp is when the check was performed
+                      format: date-time
+                      type: string
+                    value:
+                      description: Value is the measured value
+                      type: string
+                  required:
+                  - checkName
+                  - status
+                  type: object
+                type: array
+              conditions:
+                description: Conditions report runtime capability and remediation
+                  state.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+              lastCheckTime:
+                description: LastCheckTime is when the last health check ran
+                format: date-time
+                type: string
+              nextCheckTime:
+                description: NextCheckTime is when the next health check is scheduled
+                format: date-time
+                type: string
+              overallHealth:
+                description: OverallHealth is the aggregate health (healthy, degraded,
+                  unhealthy, unknown)
+                type: string
+              remediationHistory:
+                description: RemediationHistory records remediation attempts
+                items:
+                  description: RemediationEvent records a remediation attempt
+                  properties:
+                    action:
+                      description: Action is the remediation action taken
+                      type: string
+                    message:
+                      description: Message describes the result
+                      type: string
+                    success:
+                      description: Success indicates whether remediation succeeded
+                      type: boolean
+                    timestamp:
+                      description: Timestamp of the remediation attempt
+                      format: date-time
+                      type: string
+                  required:
+                  - action
+                  - success
+                  type: object
+                type: array
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

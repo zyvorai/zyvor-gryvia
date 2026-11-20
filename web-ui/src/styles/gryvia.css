@@ -1,0 +1,195 @@
+/* Gryvia-only classes: things netra's stylesheet has no equivalent for, written with
+   netra's tokens. Everything else comes verbatim from netra.css / netra-story.css. */
+
+/* Layout helpers */
+.stack { display: flex; flex-direction: column; gap: 20px; }
+.row { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.muted { color: var(--text-secondary); }
+.faint { color: var(--text-tertiary); }
+.mono { font-family: var(--font-mono); }
+.text-ok { color: var(--accent-green-text); }
+.text-warn { color: var(--accent-amber-text); }
+.text-bad { color: var(--danger); }
+.text-info { color: var(--accent-cyan-text); }
+.icon-sm { width: 16px; height: 16px; }
+.card-link { font-size: var(--fs-link); color: var(--apple-link); text-decoration: none; }
+.card-link:hover { text-decoration: underline; }
+
+/* Forms: a label above a control, and an auto-fit grid of them (netra's .buildergrid look). */
+.field { display: flex; flex-direction: column; align-items: stretch; gap: 6px; font-size: 12px; color: var(--text-tertiary); min-width: 0; }
+.field input, .field select, .field textarea { width: 100%; max-width: 100%; font-size: 15px; color: var(--text-primary); }
+.formgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+.formgrid .span-all { grid-column: 1 / -1; }
+
+/* Status pill: same shape and size as netra's .severity-badge. */
+.pill {
+  display: inline-flex; align-items: center; justify-self: start; align-self: center;
+  padding: 3px 10px; border-radius: var(--radius-pill);
+  font-size: 11px; font-weight: 600; letter-spacing: 0.02em;
+  line-height: 1.4; white-space: nowrap;
+  color: var(--text-tertiary); background: var(--bg-elevated-2); border: 1px solid var(--border);
+}
+.pill.ok { color: var(--success-text); background: var(--success-bg); border-color: var(--success-border); }
+.pill.warn { color: var(--warning-text); background: var(--warning-bg); border-color: var(--warning-border); }
+.pill.info { color: var(--accent-cyan-text); background: var(--info-bg); border-color: var(--info-border); }
+.pill.bad { color: #fff; background: #c9251b; border-color: transparent; }
+.dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--text-faint); flex: 0 0 auto; }
+.dot.ok { background: var(--accent-green); }
+.dot.warn { background: var(--accent-amber); }
+.dot.bad { background: var(--danger); }
+
+/* Progress bar */
+.progress { height: 6px; border-radius: 3px; background: var(--fill-tertiary); overflow: hidden; }
+.progress > span { display: block; height: 100%; border-radius: 3px; background: var(--apple-blue); transition: width 0.4s var(--ease-apple); }
+.progress.ok > span { background: var(--accent-green); }
+.progress.warn > span { background: var(--accent-amber); }
+.progress.bad > span { background: var(--danger); }
+
+/* Rows inside a card */
+.list-row {
+  display: flex; align-items: center; gap: 12px; padding: 12px 4px; min-height: var(--hit-min);
+  border-bottom: 1px solid var(--hairline-1); color: inherit; text-decoration: none;
+}
+.list-row:last-child { border-bottom: 0; }
+a.list-row:hover { background: var(--hover-fill); }
+.list-row .grow { flex: 1 1 auto; min-width: 0; }
+.list-row .grow b { display: block; font-weight: 500; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.list-row .grow small { color: var(--text-tertiary); font-size: 12px; }
+.table-row-hover:hover { background: var(--hover-fill); }
+
+/* Modal */
+.modal-backdrop {
+  position: fixed; inset: 0; z-index: 100; display: flex; align-items: center; justify-content: center; padding: 24px;
+  background: rgba(0, 0, 0, 0.4); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+}
+.modal-card {
+  width: min(560px, 100%); max-height: 90vh; overflow-y: auto; padding: 24px;
+  background: var(--bg-elevated); border: 1px solid var(--hairline-1); border-radius: var(--radius-2xl); box-shadow: var(--shadow-3);
+}
+
+/* Loading */
+@keyframes spin { to { transform: rotate(360deg); } }
+.spinner { width: 24px; height: 24px; border-radius: 50%; border: 2px solid var(--hairline-1); border-top-color: var(--apple-blue); animation: spin 0.8s linear infinite; }
+.loading { display: flex; align-items: center; justify-content: center; padding: 48px 0; }
+@media (prefers-reduced-motion: reduce) { .spinner { animation: none; } }
+
+/* Links styled as buttons (netra only uses <button>/<label> with .buttonlike). */
+a.buttonlike { text-decoration: none; }
+a.buttonlike:hover { text-decoration: none; }
+.buttonlike.primary { background: var(--apple-blue); color: #fff; border-color: transparent; }
+.buttonlike.primary:hover { background: var(--apple-blue-hover); filter: brightness(1.06); }
+[data-theme="dark"] .buttonlike.primary:hover { box-shadow: 0 8px 24px rgba(0, 113, 227, 0.35); }
+
+/* netra's `label:has(> select)` lays a select's label out inline; stack it in filter bars like `.toolbar` does. */
+.filters label:has(> select) { flex-direction: column; align-items: flex-start; gap: 6px; font-size: 11px; color: var(--text-tertiary); }
+
+/* netra's .codeedit is a 460px editor; a short variant for one-line values. */
+.codeedit.compact { min-height: 120px; }
+
+/* A toolbar right after body text inside a card (e.g. the workspace card actions) needs breathing room. */
+.card p + .toolbar, .card .list-row + .toolbar { margin-top: 14px; }
+
+/* Numbers line up: right-aligned, tabular figures. */
+.num { text-align: right; font-variant-numeric: tabular-nums; }
+th.num { text-align: right; }
+
+/* Skeleton loaders */
+.skeleton { border-radius: var(--radius-sm); background: var(--fill-tertiary); animation: skeletonPulse 1.4s ease-in-out infinite; }
+@keyframes skeletonPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+@media (prefers-reduced-motion: reduce) { .skeleton { animation: none; } }
+
+/* Skip link: first tab stop, visible only on focus. */
+.skip-link { position: absolute; left: 12px; top: -48px; z-index: 200; padding: 10px 16px; border-radius: var(--radius-pill); background: var(--apple-blue); color: #fff; text-decoration: none; }
+.skip-link:focus { top: 8px; }
+
+/* Interactive table rows */
+tr[data-clickable] { cursor: pointer; }
+tr[data-clickable]:focus-visible { outline: 2px solid var(--apple-blue); outline-offset: -2px; }
+
+/* Modals: full width on phones */
+@media (max-width: 600px) { .modal-backdrop { padding: 0; align-items: flex-end; } .modal-card { width: 100%; max-height: 92vh; border-radius: var(--radius-2xl) var(--radius-2xl) 0 0; } }
+
+/* Real links (not buttons) styled exactly like netra's nav buttons, so open-in-new-tab works. Generated from netra.css. */
+.navlinks > a,
+.nav .navlinks > a {
+  position: relative;
+  border: 0;
+  background: transparent;
+  padding: 0 10px;
+  min-height: 48px;
+  height: 48px;
+  border-radius: 0;
+  display: inline-flex;
+  align-items: center;
+  color: var(--nav-link);
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  opacity: 0.88;
+  transition: opacity 0.2s var(--ease-apple), color 0.2s var(--ease-apple); }
+.navlinks > a::after {
+  content: "";
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: 6px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--apple-blue);
+  transform: scaleX(0);
+  transition: transform 0.25s var(--ease-apple); }
+.navlinks > a:hover {
+  background: transparent;
+  opacity: 1;
+  color: var(--nav-link-active); }
+.navlinks > a.active {
+  background: transparent;
+  color: var(--nav-link-active);
+  opacity: 1;
+  font-weight: 500; }
+.navlinks > a.active::after {
+  transform: scaleX(1); }
+.mega-grid a {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  height: auto;
+  min-height: 0;
+  padding: 8px;
+  border-radius: var(--radius-xs, 6px);
+  text-align: left;
+  white-space: normal;
+  opacity: 1; }
+.mega-grid a:hover {
+  background: var(--hover-fill); }
+.mega-grid a::after {
+  content: none; }
+.navlinks > a, .mega-grid a { text-decoration: none; }
+.mega-grid a.active .mega-link-label { color: var(--apple-blue); }
+
+/* Visually hidden but available to assistive tech. */
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+
+/* Sortable column header button: looks like header text, keyboard focusable. */
+.th-sort { all: unset; cursor: pointer; font: inherit; color: inherit; display: inline-flex; align-items: center; gap: 2px; min-height: 28px; }  /* WCAG 2.2 target size: at least 24px */
+.th-sort:focus-visible { outline: 2px solid var(--apple-blue); outline-offset: 2px; border-radius: 4px; }
+th.num .th-sort { justify-content: flex-end; }
+
+/* Layout helpers (replace inline styles) */
+.toolbar-between { justify-content: space-between; }
+.toolbar-center { justify-content: center; }
+.mt-10 { margin-top: 10px; }
+.modal-card.modal-wide { width: min(760px, 100%); }
+.link-plain { color: inherit; text-decoration: none; }
+.log-view { max-height: 420px; overflow: auto; margin: 0; white-space: pre-wrap; word-break: break-all; }
+.list-plain { list-style: none; margin: 0; padding: 0; }
+.pill-raw { text-transform: none; }
+/* Contrast (WCAG AA, 4.5:1 for small text). netra's grays and blue measure 3.3-4.5:1 at 11-14px, so the
+   text tokens are darkened in light mode and brightened in dark mode. Measured in the browser on every page. */
+:root:not([data-theme="dark"]) { --text-secondary: #515154; --text-tertiary: #6b6b70; }
+[data-theme="dark"] { --text-secondary: #b8b8bd; --text-tertiary: #a1a1a6; }
+/* netra sets .eyebrow with !important, so the override needs it too */
+[data-theme="dark"] .eyebrow { color: #2997ff !important; }
+.severity-badge.critical { background: #c9251b; }

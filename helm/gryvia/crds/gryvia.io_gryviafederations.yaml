@@ -1,0 +1,404 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.22.0
+  name: gryviafederations.gryvia.io
+spec:
+  group: gryvia.io
+  names:
+    kind: GryviaFederation
+    listKind: GryviaFederationList
+    plural: gryviafederations
+    singular: gryviafederation
+  scope: Cluster
+  versions:
+  - name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: GryviaFederation is the Schema for the gryviafederations API
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: GryviaFederationSpec defines the desired state of GryviaFederation
+            properties:
+              clusters:
+                description: Clusters defines member clusters
+                items:
+                  description: FederationCluster defines a member cluster
+                  properties:
+                    apiServer:
+                      description: APIServer URL
+                      type: string
+                    capacity:
+                      description: Capacity of the cluster
+                      properties:
+                        gpuTypes:
+                          description: GPUTypes available in this cluster
+                          items:
+                            description: FederationGPUCapacity defines GPU capacity
+                              per type
+                            properties:
+                              available:
+                                description: Available GPUs of this type
+                                type: integer
+                              total:
+                                description: Total GPUs of this type
+                                type: integer
+                              type:
+                                description: Type of GPU
+                                type: string
+                            type: object
+                          type: array
+                      type: object
+                    credentials:
+                      description: Credentials to access the cluster
+                      properties:
+                        secretRef:
+                          description: SecretRef is the name of the secret containing
+                            credentials
+                          type: string
+                      type: object
+                    enabled:
+                      description: Enabled indicates if the cluster is active
+                      type: boolean
+                    multiKueueCluster:
+                      description: |-
+                        MultiKueueCluster is the name of the MultiKueueCluster on this (manager) cluster that dispatches to this
+                        member; failover evicts the Kueue Workloads assigned to it. Defaults to Name.
+                      type: string
+                    name:
+                      description: Name of the cluster
+                      type: string
+                    network:
+                      description: Network connectivity info
+                      properties:
+                        bandwidth:
+                          description: Bandwidth available
+                          type: string
+                        latency:
+                          description: Latency to other clusters
+                          type: string
+                      type: object
+                    pricing:
+                      description: Pricing for this cluster
+                      properties:
+                        currency:
+                          description: Currency for pricing
+                          type: string
+                        gpuHourlyRates:
+                          additionalProperties:
+                            type: number
+                          description: GPUHourlyRates per GPU type
+                          type: object
+                      type: object
+                    priority:
+                      description: Priority for scheduling preference
+                      type: integer
+                    region:
+                      description: Region of the cluster
+                      type: string
+                  required:
+                  - name
+                  type: object
+                type: array
+              costManagement:
+                description: CostManagement defines cost management policy
+                properties:
+                  enabled:
+                    description: Enabled enables cost management
+                    type: boolean
+                  maxCostPerHour:
+                    description: MaxCostPerHour limits cost
+                    type: number
+                  preferCheaper:
+                    description: PreferCheaper prefers cheaper clusters
+                    type: boolean
+                type: object
+              distribution:
+                description: Distribution defines job distribution policy
+                properties:
+                  affinity:
+                    description: Affinity rules
+                    properties:
+                      dataLocality:
+                        description: DataLocality prefers cluster where data is located
+                        type: boolean
+                      regionAffinity:
+                        description: RegionAffinity lists preferred regions
+                        items:
+                          type: string
+                        type: array
+                    type: object
+                  constraints:
+                    description: Constraints on distribution
+                    properties:
+                      dataSovereignty:
+                        description: DataSovereignty defines data sovereignty rules
+                        properties:
+                          allowedRegions:
+                            description: AllowedRegions lists allowed data regions
+                            items:
+                              type: string
+                            type: array
+                          enabled:
+                            description: Enabled enables data sovereignty checks
+                            type: boolean
+                        type: object
+                      maxLatency:
+                        description: MaxLatency between clusters
+                        type: string
+                    type: object
+                  strategy:
+                    description: Strategy for job distribution (cost-optimized, latency-optimized,
+                      locality-preferred, round-robin, capacity-based)
+                    type: string
+                type: object
+              failover:
+                description: Failover defines failover configuration
+                properties:
+                  automatic:
+                    description: Automatic enables automatic failover
+                    type: boolean
+                  enabled:
+                    description: Enabled enables failover
+                    type: boolean
+                  healthCheck:
+                    description: HealthCheck defines health check settings
+                    properties:
+                      failureThreshold:
+                        description: FailureThreshold before marking unhealthy
+                        type: integer
+                      interval:
+                        description: Interval between health checks
+                        type: string
+                      timeout:
+                        description: Timeout for health checks
+                        type: string
+                    type: object
+                  leaseTimeout:
+                    description: |-
+                      LeaseTimeout is how long a member must have been failing before its workloads count as fenced when its API
+                      server cannot be reached to delete them (Go duration, default 5m). Set it no shorter than the time after which
+                      the member stops its own workloads on its own (for example a node lease or self-fencing timeout): until then
+                      an unreachable member may still be running the job.
+                    type: string
+                type: object
+              loadBalancing:
+                description: LoadBalancing defines load balancing policy
+                properties:
+                  algorithm:
+                    description: Algorithm for load balancing (round-robin, least-loaded,
+                      weighted, random)
+                    type: string
+                  enabled:
+                    description: Enabled enables load balancing
+                    type: boolean
+                  weights:
+                    additionalProperties:
+                      type: integer
+                    description: Weights per cluster
+                    type: object
+                type: object
+              resourceSharing:
+                description: ResourceSharing defines resource sharing policy
+                properties:
+                  burstingEnabled:
+                    description: BurstingEnabled allows bursting to other clusters
+                    type: boolean
+                  enabled:
+                    description: Enabled enables resource sharing
+                    type: boolean
+                  maxSharedPercentage:
+                    description: MaxSharedPercentage is the max percentage to share
+                    type: integer
+                type: object
+            type: object
+          status:
+            description: GryviaFederationStatus defines the observed state of GryviaFederation
+            properties:
+              aggregateStats:
+                description: AggregateStats are aggregate statistics
+                properties:
+                  availableGPUs:
+                    description: AvailableGPUs across all clusters
+                    type: integer
+                  jobsRunning:
+                    description: JobsRunning across all clusters
+                    type: integer
+                  totalCostPerHour:
+                    description: TotalCostPerHour across all clusters
+                    type: number
+                  totalGPUs:
+                    description: TotalGPUs across all clusters
+                    type: integer
+                type: object
+              clusterStatus:
+                description: ClusterStatus is per-cluster status
+                items:
+                  description: FederationClusterStatus tracks per-cluster status
+                  properties:
+                    consecutiveFailures:
+                      description: ConsecutiveFailures counts failed health checks
+                        in a row; reset by a healthy check.
+                      type: integer
+                    fenceMethod:
+                      type: string
+                    fenced:
+                      description: |-
+                        Fenced is true once the member's workloads were deleted remotely (FenceMethod RemoteDelete) or its lease
+                        timeout expired (LeaseExpired); only then are its workloads evicted for redispatch. Cleared when it is healthy.
+                      type: boolean
+                    fencedAt:
+                      format: date-time
+                      type: string
+                    lastHealthCheck:
+                      description: LastHealthCheck timestamp
+                      format: date-time
+                      type: string
+                    name:
+                      description: Name of the cluster
+                      type: string
+                    state:
+                      description: State of the cluster (healthy, unhealthy, unreachable)
+                      type: string
+                    unhealthySince:
+                      description: UnhealthySince is the first failed check of the
+                        current failure streak.
+                      format: date-time
+                      type: string
+                    utilization:
+                      description: Utilization of the cluster
+                      properties:
+                        gpus:
+                          description: GPUs currently in use
+                          type: integer
+                        percentage:
+                          description: Percentage utilization
+                          type: number
+                      type: object
+                  type: object
+                type: array
+              conditions:
+                description: Conditions represent the latest available observations
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+              failovers:
+                description: Failovers lists the most recent workload moves (newest
+                  last, at most 20).
+                items:
+                  description: FederationFailoverRecord is one Kueue Workload moved
+                    off a failed member.
+                  properties:
+                    cluster:
+                      description: Cluster the workload was moved off.
+                      type: string
+                    evictedAt:
+                      description: EvictedAt is when the Workload was deactivated;
+                        RequeuedAt when it was reactivated for redispatch.
+                      format: date-time
+                      type: string
+                    fenceMethod:
+                      description: FenceMethod used for the member (RemoteDelete or
+                        LeaseExpired).
+                      type: string
+                    namespace:
+                      description: Namespace and Workload name on the manager.
+                      type: string
+                    requeuedAt:
+                      format: date-time
+                      type: string
+                    workload:
+                      type: string
+                  required:
+                  - cluster
+                  - evictedAt
+                  - namespace
+                  - workload
+                  type: object
+                type: array
+              jobDistribution:
+                additionalProperties:
+                  type: integer
+                description: JobDistribution tracks job distribution across clusters
+                type: object
+              state:
+                description: State is the overall federation state (healthy, degraded,
+                  unavailable)
+                type: string
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

@@ -1,0 +1,144 @@
+name: Sovereign AI OS
+
+# The umbrella chart's render tests, a GryviaAgent's zyntra tool against a real Zyntra, and the hardening and air-gap
+# artifacts (Kyverno policies run by the Kyverno CLI, Falco rules validated by Falco, the Zarf package linted by Zarf,
+# the RKE2 role linted and its templates rendered). Zyntra and Netra are checked out next to Gryvia, as
+# scripts/sovereign-aios-deps.sh expects.
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'helm/sovereign-aios/**'
+      - 'helm/gryvia/**'
+      - 'examples/agents/**'
+      - 'deploy/airgap/**'
+      - 'deploy/argocd/**'
+      - 'deploy/hardening/**'
+      - 'ansible/**'
+      - 'scripts/sovereign-aios-images.sh'
+      - 'scripts/airgap-mirror.sh'
+      - 'scripts/sovereign-aios-deps.sh'
+      - 'scripts/tests/sovereign-aios-*'
+      - 'scripts/tests/agent_zyntra_e2e.py'
+      - 'scripts/tests/fake_gryvia_gateway.py'
+      - '.github/workflows/sovereign-aios.yml'
+
+permissions:
+  contents: read
+
+env:
+  ZYNTRA_REF: main
+  KYVERNO_VERSION: v1.19.1
+  FALCO_IMAGE: falcosecurity/falco:0.45.0
+  ZARF_VERSION: v0.87.0
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  sovereign-aios:
+    name: Chart and agent against Zyntra
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          path: gryvia
+      - uses: actions/checkout@v7
+        with:
+          repository: zyvorai/zyntra
+          ref: ${{ env.ZYNTRA_REF }}
+          path: zyntra
+      - uses: actions/checkout@v7
+        with:
+          repository: zyvorai/netra
+          path: netra
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: zyntra/go.mod
+          cache-dependency-path: zyntra/go.sum
+      - uses: azure/setup-helm@v5
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - run: pip install -r gryvia/examples/agents/requirements.txt pyyaml cryptography
+      - name: Chart render tests
+        working-directory: gryvia
+        run: make sovereign-aios-test
+      - name: Agent zyntra tool against Zyntra
+        working-directory: gryvia
+        run: make sovereign-aios-agent-test
+
+  hardening-airgap:
+    name: Hardening and air gap
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          path: gryvia
+      - uses: actions/checkout@v7
+        with:
+          repository: zyvorai/zyntra
+          ref: ${{ env.ZYNTRA_REF }}
+          path: zyntra
+      - uses: actions/checkout@v7
+        with:
+          repository: zyvorai/netra
+          path: netra
+      - uses: azure/setup-helm@v5
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - run: pip install pyyaml ansible-core ansible-lint
+      - name: Charts
+        working-directory: gryvia
+        run: scripts/sovereign-aios-deps.sh
+      - name: Air-gap artifacts agree (images, values-airgap, Zarf, Argo CD)
+        working-directory: gryvia
+        run: make sovereign-aios-airgap-test
+      - name: images.txt lists every image, add-ons included
+        working-directory: gryvia
+        run: scripts/sovereign-aios-images.sh --check
+      - name: Kyverno CLI runs the registry policy on the chart's workloads
+        working-directory: gryvia
+        run: |
+          curl -fsSL "https://github.com/kyverno/kyverno/releases/download/${KYVERNO_VERSION}/kyverno-cli_${KYVERNO_VERSION}_linux_x86_64.tar.gz" | tar -xz kyverno
+          r() { helm template sa helm/sovereign-aios -n gryvia-system --kube-version 1.31.0 "$@"; }
+          r --set hardening.kyverno.enabled=true --set hardening.kyverno.failureAction=Enforce \
+            --set hardening.kyverno.verifyImages.enabled=false --show-only templates/hardening.yaml > /tmp/policy.yaml
+          r > /tmp/chart.yaml
+          ./kyverno apply /tmp/policy.yaml --resource /tmp/chart.yaml | tee /tmp/good.txt
+          grep -Eq 'pass: [1-9][0-9]*, fail: 0,' /tmp/good.txt || { echo "the chart's own workloads fail the policy"; exit 1; }
+          cat > /tmp/bad.yaml <<'EOF'
+          apiVersion: v1
+          kind: Pod
+          metadata: {name: bad, namespace: tenant-a}
+          spec:
+            containers: [{name: web, image: docker.io/library/nginx:1.27}]
+          EOF
+          ./kyverno apply /tmp/policy.yaml --resource /tmp/bad.yaml | tee /tmp/bad.txt || true
+          grep -Eq 'fail: 1,' /tmp/bad.txt || { echo "a Docker Hub image was not refused"; exit 1; }
+          echo "ok: the chart passes, docker.io/library/nginx is refused"
+      - name: Falco validates the rules (with its own default rules)
+        working-directory: gryvia
+        run: |
+          docker run --rm -v "$PWD/helm/sovereign-aios/files/falco:/rules:ro" --entrypoint falco "$FALCO_IMAGE" \
+            -V /etc/falco/falco_rules.yaml -V /rules/sovereign-aios-rules.yaml
+      - name: Zarf lints the package
+        working-directory: gryvia
+        run: |
+          curl -fsSL -o /tmp/zarf "https://github.com/zarf-dev/zarf/releases/download/${ZARF_VERSION}/zarf_${ZARF_VERSION}_Linux_amd64"
+          chmod +x /tmp/zarf
+          /tmp/zarf dev lint deploy/airgap
+      - name: RKE2 role (syntax, lint, rendered templates)
+        working-directory: gryvia/ansible
+        run: |
+          ansible-playbook -i inventory/sovereign-aios.example.ini playbooks/sovereign-aios-rke2.yaml --syntax-check
+          ansible-lint playbooks/sovereign-aios-rke2.yaml roles/rke2_hardened tests/rke2_hardened_templates.yaml
+          ansible-playbook tests/rke2_hardened_templates.yaml
+      - name: Scripts
+        working-directory: gryvia
+        run: shellcheck -S warning scripts/airgap-mirror.sh scripts/sovereign-aios-images.sh scripts/tests/sovereign-aios-airgap.test.sh scripts/tests/sovereign-aios-chart.test.sh

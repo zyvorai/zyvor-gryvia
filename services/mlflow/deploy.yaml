@@ -1,0 +1,260 @@
+---
+# MLflow PostgreSQL Backend
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mlflow-postgres-pvc
+  namespace: gryvia-system
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 50Gi
+  storageClassName: local-path
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mlflow-postgres-config
+  namespace: gryvia-system
+data:
+  POSTGRES_DB: mlflow
+  POSTGRES_USER: mlflow
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: mlflow-postgres-secret
+  namespace: gryvia-system
+type: Opaque
+data:
+  # IMPORTANT: Replace with a base64-encoded secure password before deploying
+  # Generate with: echo -n 'your-secure-password' | base64
+  POSTGRES_PASSWORD: "Q0hBTkdFLU1FLWJlZm9yZS1kZXBsb3k="
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mlflow-postgres
+  namespace: gryvia-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mlflow-postgres
+  template:
+    metadata:
+      labels:
+        app: mlflow-postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_DB
+              valueFrom:
+                configMapKeyRef:
+                  name: mlflow-postgres-config
+                  key: POSTGRES_DB
+            - name: POSTGRES_USER
+              valueFrom:
+                configMapKeyRef:
+                  name: mlflow-postgres-config
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: mlflow-postgres-secret
+                  key: POSTGRES_PASSWORD
+          volumeMounts:
+            - name: postgres-data
+              mountPath: /var/lib/postgresql/data
+          resources:
+            requests:
+              memory: 2Gi
+              cpu: 1
+            limits:
+              memory: 4Gi
+              cpu: 2
+      volumes:
+        - name: postgres-data
+          persistentVolumeClaim:
+            claimName: mlflow-postgres-pvc
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mlflow-postgres
+  namespace: gryvia-system
+spec:
+  selector:
+    app: mlflow-postgres
+  ports:
+    - port: 5432
+      targetPort: 5432
+
+---
+# MLflow Artifact Store
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mlflow-artifacts-pvc
+  namespace: gryvia-system
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 500Gi
+  storageClassName: vast-sc
+
+---
+# MLflow Server
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mlflow-server
+  namespace: gryvia-system
+  labels:
+    app: mlflow-server
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: mlflow-server
+  template:
+    metadata:
+      labels:
+        app: mlflow-server
+    spec:
+      initContainers:
+        - name: wait-for-postgres
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - |
+              until nc -z mlflow-postgres 5432; do
+                echo "Waiting for PostgreSQL..."
+                sleep 2
+              done
+              echo "PostgreSQL is ready"
+      containers:
+        - name: mlflow
+          image: ghcr.io/mlflow/mlflow:v2.10.0
+          ports:
+            - containerPort: 5000
+              name: http
+          env:
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: mlflow-postgres-secret
+                  key: POSTGRES_PASSWORD
+            - name: BACKEND_STORE_URI
+              value: "postgresql://mlflow:$(POSTGRES_PASSWORD)@mlflow-postgres:5432/mlflow"
+            - name: ARTIFACT_ROOT
+              value: "/mlflow/artifacts"
+            - name: WORKERS
+              value: "4"
+          command:
+            - mlflow
+            - server
+            - --backend-store-uri=$(BACKEND_STORE_URI)
+            - --default-artifact-root=$(ARTIFACT_ROOT)
+            - --host=0.0.0.0
+            - --port=5000
+            - --workers=$(WORKERS)
+          volumeMounts:
+            - name: artifacts
+              mountPath: /mlflow/artifacts
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 5000
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 5000
+            initialDelaySeconds: 15
+            periodSeconds: 5
+          resources:
+            requests:
+              memory: 4Gi
+              cpu: 2
+            limits:
+              memory: 8Gi
+              cpu: 4
+      volumes:
+        - name: artifacts
+          persistentVolumeClaim:
+            claimName: mlflow-artifacts-pvc
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mlflow
+  namespace: gryvia-system
+  labels:
+    app: mlflow-server
+spec:
+  type: ClusterIP
+  selector:
+    app: mlflow-server
+  ports:
+    - name: http
+      port: 5000
+      targetPort: 5000
+
+---
+# MLflow route (optional): Envoy Gateway `gryvia` (manifests/deploy/ui-deployment.yaml) with a `mlflow` listener
+# added to it, or any Gateway you attach to. Replaces the former nginx Ingress; no body-size limit and
+# a 10 minute request timeout are the Envoy defaults/equivalents of the old annotations.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: mlflow
+  namespace: gryvia-system
+spec:
+  parentRefs:
+  - name: gryvia
+  hostnames:
+  - mlflow.gryvia.local
+  rules:
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /
+    backendRefs:
+    - name: mlflow
+      port: 5000
+    timeouts:
+      request: "600s"
+
+---
+# ServiceMonitor for Prometheus
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: mlflow-metrics
+  namespace: gryvia-system
+  labels:
+    app: mlflow-server
+spec:
+  selector:
+    matchLabels:
+      app: mlflow-server
+  endpoints:
+    - port: http
+      interval: 30s
+      path: /metrics

@@ -1,0 +1,12 @@
+{{- if and .Values.ebpf.enabled .Values.ebpf.diagnosis.thresholds }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "network-intelligence.fullname" . }}-diagnosis-thresholds
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "network-intelligence.labels" . | nindent 4 }}
+    app.kubernetes.io/component: collector
+data:
+  thresholds.json: {{ .Values.ebpf.diagnosis.thresholds | toJson | quote }}
+{{- end }}

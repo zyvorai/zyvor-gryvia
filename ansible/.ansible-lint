@@ -1,0 +1,4 @@
+# Lint for the maintained playbook and role (the older roles are experimental, see README.md).
+# The role's variables keep the short rke2_ prefix users already know from RKE2's docs.
+skip_list:
+  - var-naming[no-role-prefix]

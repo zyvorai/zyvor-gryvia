@@ -1,0 +1,35 @@
+apiVersion: v2
+name: sovereign-aios
+description: Sovereign AI OS - Gryvia (GPU, models, agents), Zyntra (ontology and approved decisions) and Netra (network observability) in one release
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+kubeVersion: ">=1.30.0"
+keywords:
+  - sovereign-ai
+  - gpu
+  - ontology
+  - air-gapped
+home: https://github.com/zyvorai/gryvia
+sources:
+  - https://github.com/zyvorai/gryvia
+  - https://github.com/zyvorai/zyvor-zyntra-site
+  - https://github.com/zyvorai/netra
+dependencies:
+  - name: gryvia
+    version: 0.1.0
+    repository: file://../gryvia
+  # Zyntra publishes its chart to GHCR on release (zyntra .github/workflows/image.yml).
+  - name: zyntra
+    version: 0.4.0
+    repository: oci://ghcr.io/zyvorai/charts
+    condition: zyntra.enabled
+  # Netra does not publish its chart yet: `make sovereign-aios-deps` copies it (and Zyntra's) from sibling
+  # checkouts into charts/.
+  - name: netra
+    version: 0.29.0
+    repository: oci://ghcr.io/zyvorai/charts
+    condition: netra.enabled
+maintainers:
+  - name: Gryvia Team
+    email: team@gryvia.io

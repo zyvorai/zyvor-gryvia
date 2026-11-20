@@ -1,0 +1,29 @@
+# GryviaTraceSession - Live network debugging session for payment service
+# Captures L7 (HTTP) traffic for 2 minutes with header capture enabled,
+# filtered to TCP traffic on port 8080. Results are stored in a ConfigMap.
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaTraceSession
+metadata:
+  name: debug-payment-latency
+  namespace: production
+spec:
+  # Target service to trace
+  service: payment-service
+  namespace: production
+
+  # Session duration - traces are automatically cleaned up after expiry
+  duration: "2m"
+
+  # Trace depth level:
+  #   l3 - IP-level flow visibility (src/dst IPs, protocols)
+  #   l4 - Transport-level (TCP/UDP ports, connection states)
+  #   l7 - Application-level (HTTP methods, paths, status codes)
+  level: l7
+
+  # Capture HTTP request/response headers for deep debugging
+  captureHeaders: true
+
+  # Optional filters to narrow captured traffic
+  filters:
+    port: 8080
+    protocol: tcp

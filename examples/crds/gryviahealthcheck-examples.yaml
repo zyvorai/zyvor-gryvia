@@ -1,0 +1,244 @@
+# Example: Cluster-Wide GPU Health Monitoring
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaHealthCheck
+metadata:
+  name: cluster-gpu-health
+spec:
+  target:
+    type: cluster
+
+  schedule: "*/5 * * * *"  # Every 5 minutes
+
+  checks:
+    # GPU Utilization Check
+    - name: gpu-utilization
+      type: gpu-utilization
+      threshold:
+        max: 100  # Should never exceed 100%
+        warning: 95
+      enabled: true
+
+    # GPU Memory Health
+    - name: gpu-memory
+      type: gpu-memory
+      threshold:
+        max: 100
+        warning: 95
+      enabled: true
+
+    # Temperature Monitoring
+    - name: gpu-temperature
+      type: gpu-temperature
+      threshold:
+        max: 90  # Celsius
+        critical: 85
+        warning: 80
+      enabled: true
+
+    # ECC Error Detection
+    - name: ecc-errors
+      type: gpu-ecc-errors
+      threshold:
+        max: 0  # No ECC errors acceptable
+        warning: 0
+      enabled: true
+
+    # NVLink Health
+    - name: nvlink-health
+      type: gpu-nvlink
+      threshold:
+        min: 0  # All NVLinks should be up
+      enabled: true
+
+    # PCIe Bandwidth
+    - name: pcie-bandwidth
+      type: pcie-bandwidth
+      threshold:
+        min: 24  # GB/s minimum for PCIe Gen4 x16
+        warning: 28
+      enabled: true
+
+    # Power Draw
+    - name: power-draw
+      type: gpu-power
+      threshold:
+        max: 450  # Watts
+        warning: 420
+      enabled: true
+
+    # Clock Speeds
+    - name: clock-speeds
+      type: clock-speeds
+      threshold:
+        min: 1000  # MHz
+      enabled: true
+
+  onFailure:
+    cordon: true  # Cordon unhealthy nodes
+    alert: true   # Send alerts
+    autoRemediate: true  # Try auto-remediation
+
+  remediation:
+    gpuReset: true       # Try GPU reset first
+    driverReload: false  # Don't reload driver automatically
+    nodeReboot: false    # Don't reboot automatically
+    maxAttempts: 3
+---
+# Example: Per-Node Health Check
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaHealthCheck
+metadata:
+  name: dgx-node-health
+spec:
+  target:
+    type: node
+    selector:
+      gryvia.io/node-type: dgx-a100
+
+  schedule: "*/2 * * * *"  # Every 2 minutes (more frequent)
+
+  checks:
+    - name: gpu-temperature
+      type: gpu-temperature
+      threshold:
+        max: 85
+        critical: 82
+        warning: 78
+
+    - name: ecc-errors
+      type: gpu-ecc-errors
+      threshold:
+        max: 0
+
+    - name: nvlink-health
+      type: gpu-nvlink
+      threshold:
+        min: 12  # DGX A100 has 12 NVLink connections per GPU
+
+  onFailure:
+    cordon: true
+    drain: true  # Drain DGX nodes on failure
+    alert: true
+    autoRemediate: false  # Manual intervention for DGX
+---
+# Example: Job-Level Health Monitoring
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaHealthCheck
+metadata:
+  name: job-gpu-health
+spec:
+  target:
+    type: job
+    selector:
+      app: training
+
+  schedule: "*/1 * * * *"  # Every minute for running jobs
+
+  checks:
+    - name: cuda-errors
+      type: cuda-errors
+      threshold:
+        max: 0
+        warning: 0
+
+    - name: gpu-utilization
+      type: gpu-utilization
+      threshold:
+        min: 50  # Jobs should utilize >50%
+        warning: 70
+
+  onFailure:
+    alert: true
+---
+# Health Check Status Example
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaHealthCheck
+metadata:
+  name: cluster-gpu-health
+status:
+  lastCheckTime: "2024-01-21T12:00:00Z"
+  nextCheckTime: "2024-01-21T12:05:00Z"
+
+  overallHealth: degraded
+
+  checkResults:
+    - checkName: gpu-temperature
+      status: warning
+      value: "82"
+      threshold: "max: 90, warning: 80"
+      message: "GPU temperature above warning threshold"
+      timestamp: "2024-01-21T12:00:00Z"
+
+    - checkName: ecc-errors
+      status: fail
+      value: "3"
+      threshold: "max: 0"
+      message: "3 uncorrectable ECC errors detected"
+      timestamp: "2024-01-21T12:00:00Z"
+
+    - checkName: nvlink-health
+      status: pass
+      value: "12/12"
+      threshold: "min: 12"
+      message: "All NVLink connections healthy"
+      timestamp: "2024-01-21T12:00:00Z"
+
+  affectedResources:
+    - type: node
+      name: gpu-node-05
+      status: degraded
+
+    - type: gpu
+      name: gpu-node-05-gpu-3
+      status: unhealthy
+
+  remediationHistory:
+    - timestamp: "2024-01-21T12:00:30Z"
+      action: gpu-reset
+      success: false
+      message: "GPU reset failed, ECC errors persist"
+
+    - timestamp: "2024-01-21T12:01:00Z"
+      action: cordon-node
+      success: true
+      message: "Node gpu-node-05 cordoned"
+---
+# Automated Health Report
+apiVersion: v1
+kind: Event
+metadata:
+  name: health-check-alert
+type: Warning
+reason: HealthCheckFailed
+message: |
+  GPU Health Check Alert
+  =====================
+
+  Check: cluster-gpu-health
+  Overall Status: DEGRADED
+  Time: 2024-01-21 12:00:00 UTC
+
+  Failed Checks:
+  1. ECC Errors (CRITICAL)
+     Node: gpu-node-05, GPU: 3
+     Error Count: 3 uncorrectable errors
+     Action: Node cordoned, requires maintenance
+
+  2. GPU Temperature (WARNING)
+     Node: gpu-node-05, GPU: 3
+     Temperature: 82°C (warning threshold: 80°C)
+     Action: Monitoring
+
+  Affected Jobs:
+  - training-job-42: Migrated to gpu-node-06
+  - inference-job-15: Migrated to gpu-node-07
+
+  Recommendations:
+  1. Schedule maintenance for gpu-node-05
+  2. Replace GPU 3 (failing hardware)
+  3. Review cooling system
+
+  Auto-Remediation Attempted:
+  ✗ GPU reset - Failed
+  ✓ Node cordon - Success
+  ✓ Job migration - Success

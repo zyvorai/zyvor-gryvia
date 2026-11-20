@@ -1,0 +1,198 @@
+# Gryvia alert rules (plain Prometheus rule-file format: `promtool check rules` works on this file directly).
+# The Helm chart wraps these groups in a PrometheusRule (monitoring.rules.enabled); to use them without Helm, add the
+# file to `rule_files` or copy `groups` into a PrometheusRule `spec`.
+# Every metric referenced is checked by scripts/check-metrics-refs.py. Thresholds are starting points, not tuned on real
+# fleets: adjust them. Metrics from kube-state-metrics (crash looping) and controller-runtime are external to Gryvia.
+groups:
+  - name: gryvia.fabric
+    rules:
+      - alert: GryviaFabricScoreHigh
+        expr: max by (namespace, job) (gryvia_fabric_score_delta) > 0.6
+        for: 10m
+        labels:
+          severity: warning
+          component: fabric
+        annotations:
+          summary: "Fabric health degraded for {{ $labels.namespace }}/{{ $labels.job }}"
+          description: "gryvia_fabric_score_delta is {{ $value | humanize }} (0 healthy, 1 worst) for job {{ $labels.job }}; the topology scorer penalises this job's placement."
+          runbook_url: https://github.com/zyvorai/gryvia/blob/main/docs/runbooks/GryviaFabricScoreHigh.md
+      - alert: GryviaStragglerPersists
+        expr: gryvia_fabric_straggler_rank > 0
+        for: 15m
+        labels:
+          severity: warning
+          component: fabric
+        annotations:
+          summary: "NCCL straggler persists in {{ $labels.namespace }}/{{ $labels.job }}"
+          description: "Rank {{ $value }} has been flagged as the slowest NCCL participant for 15 minutes. Rank 0 also means unknown, so rank 0 stragglers are not alerted."
+          runbook_url: https://github.com/zyvorai/gryvia/blob/main/docs/runbooks/GryviaStragglerPersists.md
+      - alert: GryviaRdmaRetryHigh
+        expr: gryvia_fabric_rdma_retry_rate > 0.01
+        for: 10m
+        labels:
+          severity: warning
+          component: fabric
+        annotations:
+          summary: "RDMA retries high for {{ $labels.namespace }}/{{ $labels.job }}"
+          description: "{{ $value | humanizePercentage }} of posted RDMA sends completed with a retry or RNR error. Threshold 1% is a starting point; tune it for your fabric."
+          runbook_url: https://github.com/zyvorai/gryvia/blob/main/docs/runbooks/GryviaRdmaRetryHigh.md
+      - alert: GryviaCnpRateHigh
+        expr: gryvia_fabric_cnp_rate > 1000
+        for: 10m
+        labels:
+          severity: warning
+          component: fabric
+        annotations:
+          summary: "RoCE congestion notifications high ({{ $labels.job }})"
+          description: "{{ $value | humanize }} CNP/s seen on the node. Sustained congestion notifications mean ECN marking is throttling senders. Threshold is a placeholder: tune it."
+          runbook_url: https://github.com/zyvorai/gryvia/blob/main/docs/runbooks/GryviaCnpRateHigh.md
+      - alert: GryviaPfcRateHigh
+        expr: gryvia_fabric_pfc_rate > 100
+        for: 10m
+        labels:
+          severity: warning
+          component: fabric
+        annotations:
+          summary: "PFC pause frames high ({{ $labels.job }})"
+          description: "{{ $value | humanize }} PFC pause frames/s over the window. Sustained pausing risks head-of-line blocking and PFC storms. Threshold is a placeholder: tune it."
+          runbook_url: https://github.com/zyvorai/gryvia/blob/main/docs/runbooks/GryviaPfcRateHigh.md
+      - alert: GryviaNicErrors
+        expr: sum by (instance, device, port) (gryvia_nic_counter_rate{counter=~"symbol_error|link_downed|port_rcv_errors|port_xmit_discards|rx_discards_phy"}) > 1
+        for: 10m
+        labels:
+          severity: warning
+          component: fabric
+        annotations:
+          summary: "RDMA NIC errors on {{ $labels.device }} port {{ $labels.port }} ({{ $labels.instance }})"
+          description: "Link error/discard counters increase {{ $value | humanize }} per second. Suspect cabling, optics or a flapping port."
+          runbook_url: https://github.com/zyvorai/gryvia/blob/main/docs/runbooks/GryviaNicErrors.md
+  - name: gryvia.inference
+    rules:
+      - alert: GryviaInferenceQueueHigh
+        expr: gryvia_inference_latency_seconds{metric="queue_time_p99"} > 5
+        for: 10m
+        labels:
+          severity: warning
+          component: inference
+        annotations:
+          summary: "Inference queue time high for {{ $labels.namespace }}/{{ $labels.job }} ({{ $labels.engine }})"
+          description: "Engine-reported queue time p99 is {{ $value | humanizeDuration }}. Requests wait for a batch slot or KV cache."
+          runbook_url: https://github.com/zyvorai/gryvia/blob/main/docs/runbooks/GryviaInferenceQueueHigh.md
+      - alert: GryviaInferenceTTFTHigh
+        expr: gryvia_inference_latency_seconds{metric="ttft_p99"} > 2
+        for: 10m
+        labels:
+          severity: warning
+          component: inference
+        annotations:
+          summary: "Time to first token high for {{ $labels.namespace }}/{{ $labels.job }} ({{ $labels.engine }})"
+          description: "TTFT p99 is {{ $value | humanizeDuration }} (threshold 2s, tune per model)."
+          runbook_url: https://github.com/zyvorai/gryvia/blob/main/docs/runbooks/GryviaInferenceTTFTHigh.md
+      - alert: GryviaKVCacheSaturated
+        expr: gryvia_inference_kv_cache_usage_ratio > 0.95
+        for: 10m
+        labels:
+          severity: warning
+          component: inference
+        annotations:
+          summary: "KV cache saturated for {{ $labels.namespace }}/{{ $labels.job }} ({{ $labels.engine }})"
+          description: "KV cache usage is {{ $value | humanizePercentage }} on the worst replica; the engine will queue or preempt requests."
+          runbook_url: https://github.com/zyvorai/gryvia/blob/main/docs/runbooks/GryviaKVCacheSaturated.md
+  - name: gryvia.collector
+    rules:
+      - alert: GryviaEbpfProgramNotAttached
+        expr: gryvia_ebpf_program_attached == 0
+        for: 5m
+        labels:
+          severity: warning
+          component: collector
+        annotations:
+          summary: "eBPF program {{ $labels.program }} not attached on {{ $labels.instance }}"
+          description: "Program {{ $labels.program }} ({{ $labels.kind }}, object {{ $labels.object }}) failed to attach, so the signals it feeds are missing on that node."
+          runbook_url: https://github.com/zyvorai/gryvia/blob/main/docs/runbooks/GryviaEbpfProgramNotAttached.md
+      - alert: GryviaMeasurementDrops
+        expr: increase(gryvia_measurement_dropped_events[10m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+          component: collector
+        annotations:
+          summary: "Collector is dropping events from {{ $labels.source }}"
+          description: "{{ $value | humanize }} events lost in 10 minutes before analysis; numbers derived from this source under-count."
+          runbook_url: https://github.com/zyvorai/gryvia/blob/main/docs/runbooks/GryviaMeasurementDrops.md
+      - alert: GryviaUnattributedNetworkBytesHigh
+        expr: sum(rate(gryvia_netcost_unattributed_bytes_total[15m])) > 1e5 and sum(rate(gryvia_netcost_unattributed_bytes_total[15m])) / (sum(rate(gryvia_netcost_unattributed_bytes_total[15m])) + sum(rate(gryvia_network_cost_bytes_total[15m]))) > 0.5
+        for: 30m
+        labels:
+          severity: warning
+          component: collector
+        annotations:
+          summary: "Most network bytes are not attributed to a tenant"
+          description: "{{ $value | humanize1024 }}B/s of network traffic is unattributed, over half of all accounted bytes (unknown peer, hostNetwork, loopback, same-node). Network cost numbers under-count."
+          runbook_url: https://github.com/zyvorai/gryvia/blob/main/docs/runbooks/GryviaUnattributedNetworkBytesHigh.md
+  - name: gryvia.quota
+    rules:
+      - alert: GryviaQuotaNearLimit
+        expr: gryvia_quota_gpus_allocated / gryvia_quota_gpus_max > 0.9 and gryvia_quota_gpus_max > 0
+        for: 15m
+        labels:
+          severity: warning
+          component: quota
+        annotations:
+          summary: "Team {{ $labels.team }} is near its GPU quota"
+          description: "{{ $value | humanizePercentage }} of the team's GPU quota is allocated; new jobs will queue or be rejected."
+          runbook_url: https://github.com/zyvorai/gryvia/blob/main/docs/runbooks/GryviaQuotaNearLimit.md
+      - alert: GryviaBudgetNearLimit
+        expr: gryvia_quota_budget_percent_used > 90
+        for: 10m
+        labels:
+          severity: warning
+          component: quota
+        annotations:
+          summary: "Team {{ $labels.team }} has used {{ $value | printf \"%.0f\" }}% of its budget"
+          description: "The monthly budget of team {{ $labels.team }} is nearly spent. With hardLimit set, new jobs are refused at 100%."
+          runbook_url: https://github.com/zyvorai/gryvia/blob/main/docs/runbooks/GryviaBudgetNearLimit.md
+  - name: gryvia.gateway
+    rules:
+      - alert: GryviaGatewayHigh5xx
+        expr: sum(rate(gryvia_gateway_http_requests_total{status=~"5.."}[5m])) / sum(rate(gryvia_gateway_http_requests_total[5m])) > 0.05 and sum(rate(gryvia_gateway_http_requests_total[5m])) > 0.1
+        for: 10m
+        labels:
+          severity: warning
+          component: gateway
+        annotations:
+          summary: "API gateway returns many 5xx"
+          description: "{{ $value | humanizePercentage }} of gateway responses are 5xx. Usual causes: Kubernetes API errors, a CRD not installed, RBAC."
+          runbook_url: https://github.com/zyvorai/gryvia/blob/main/docs/runbooks/GryviaGatewayHigh5xx.md
+      - alert: GryviaGatewayAuthFailureSpike
+        expr: sum(rate(gryvia_gateway_auth_attempts_total{result="failure"}[5m])) > 1 and sum(rate(gryvia_gateway_auth_attempts_total{result="failure"}[5m])) / sum(rate(gryvia_gateway_auth_attempts_total[5m])) > 0.5
+        for: 10m
+        labels:
+          severity: warning
+          component: gateway
+        annotations:
+          summary: "API gateway authentication failures spiking"
+          description: "{{ $value | humanize }} failed authentications per second, more than half of all attempts. Could be a misconfigured client or credential guessing."
+          runbook_url: https://github.com/zyvorai/gryvia/blob/main/docs/runbooks/GryviaGatewayAuthFailureSpike.md
+  - name: gryvia.platform
+    rules:
+      - alert: GryviaOperatorReconcileErrors
+        expr: sum by (namespace, pod, controller) (rate(controller_runtime_reconcile_errors_total[10m])) > 0.05
+        for: 15m
+        labels:
+          severity: warning
+          component: platform
+        annotations:
+          summary: "Controller {{ $labels.controller }} keeps failing to reconcile"
+          description: "Controller {{ $labels.controller }} in {{ $labels.pod }} has {{ $value | humanize }} reconcile errors per second for 15 minutes."
+          runbook_url: https://github.com/zyvorai/gryvia/blob/main/docs/runbooks/GryviaOperatorReconcileErrors.md
+      - alert: GryviaPodCrashLooping
+        expr: increase(kube_pod_container_status_restarts_total{namespace=~"gryvia.*"}[15m]) > 3
+        for: 5m
+        labels:
+          severity: critical
+          component: platform
+        annotations:
+          summary: "Pod {{ $labels.namespace }}/{{ $labels.pod }} is crash looping"
+          description: "Container {{ $labels.container }} restarted {{ $value | printf \"%.0f\" }} times in 15 minutes. Requires kube-state-metrics."
+          runbook_url: https://github.com/zyvorai/gryvia/blob/main/docs/runbooks/GryviaPodCrashLooping.md

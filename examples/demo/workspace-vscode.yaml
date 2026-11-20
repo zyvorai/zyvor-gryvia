@@ -1,0 +1,15 @@
+# A small CPU VS Code (code-server) workspace for the kind demo. With the workspace proxy on, the default image runs
+# without its own password and the gateway authenticates: open it from the dashboard's Workspaces page or with
+# `gryvia workspace open demo-vscode -n gryvia-system`.
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaWorkspace
+metadata:
+  name: demo-vscode
+  namespace: gryvia-system
+spec:
+  type: vscode
+  storage: 1Gi
+  idleTimeoutMinutes: 30
+  cpuRequest: 250m
+  memRequest: 512Mi
+  memLimit: 2Gi

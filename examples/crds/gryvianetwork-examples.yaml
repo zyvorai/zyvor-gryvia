@@ -1,0 +1,92 @@
+# Examples: cluster networks. A GryviaNetwork creates the NetworkAttachmentDefinitions that jobs
+# attach to. networkType is one of rdma, sriov or standard.
+#
+# Example: InfiniBand (RDMA) network
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaNetwork
+metadata:
+  name: infiniband-hdr200
+spec:
+  networkType: rdma
+  targetNamespace: default
+  mtu: 4096
+  rdma:
+    mode: infiniband
+    devices: [mlx5_0, mlx5_1, mlx5_2, mlx5_3]
+    subnet: 10.100.0.0/16
+    gateway: 10.100.0.1
+  nodeSelector:
+    gryvia.io/rdma: "true"
+---
+# Example: RoCE v2 (RDMA over Ethernet) network
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaNetwork
+metadata:
+  name: roce-v2
+spec:
+  networkType: rdma
+  targetNamespace: default
+  mtu: 9000
+  rdma:
+    mode: roce
+    devices: [mlx5_0, mlx5_1]
+    subnet: 10.200.0.0/16
+  nodeSelector:
+    gryvia.io/roce: "true"
+---
+# Example: SR-IOV virtual functions on a physical NIC
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaNetwork
+metadata:
+  name: sriov-eth1
+spec:
+  networkType: sriov
+  targetNamespace: default
+  sriov:
+    physicalInterface: eth1
+    numVfs: 8
+    resourceName: gryvia.io/sriov_eth1
+    vfDriver: vfio-pci
+    subnet: 10.150.0.0/16
+
+---
+# Example: Job with Network Requirements
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaAIJob
+metadata:
+  name: distributed-training-ib
+spec:
+  type: training
+
+  # Network requirements
+  # RDMA network (see the GryviaNetwork "infiniband-hdr200" example above)
+  network: rdma
+
+  # Enable NCCL optimizations
+  env:
+    - name: NCCL_SOCKET_IFNAME
+      value: "ib0"
+    - name: NCCL_IB_GID_INDEX
+      value: "3"
+    - name: NCCL_IB_TC
+      value: "136"
+    - name: NCCL_IB_DISABLE
+      value: "0"
+    - name: NCCL_NET_GDR_LEVEL
+      value: "5"  # Enable GPUDirect RDMA
+
+  distributed:
+    framework: pytorch
+    enabled: true
+    nodes: 8
+    gpusPerNode: 8
+
+  gpus: 64   # 8 nodes x 8 GPUs
+  gpuType: A100-80G
+
+  image: nvcr.io/nvidia/pytorch:24.01-py3
+  command:
+    - torchrun
+    - --nproc_per_node=8
+    - --nnodes=8
+    - train.py

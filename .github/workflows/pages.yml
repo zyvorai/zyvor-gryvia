@@ -1,0 +1,54 @@
+# Requires GitHub Pages with Source = "GitHub Actions" (repo Settings > Pages),
+# enabled once via: gh api repos/zyvorai/gryvia/pages -X POST -f build_type=workflow
+# Publishes the docs site at / and the Helm chart repo at /charts.
+#
+# Runs on the self-hosted Mac mini runner "gryvia-mini" (label gryvia-pages), not the shared hosted pool. If that
+# runner is offline the run waits in the queue. Never add a pull_request trigger: fork code must not run on it.
+name: Deploy Docs Site
+on:
+  push:
+    branches: [main]
+    paths: ['website/**', 'docs/**', 'helm/**', 'README.md', '.github/workflows/pages.yml']
+  workflow_dispatch: {}
+concurrency:
+  group: pages
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  build:
+    if: github.repository == 'zyvorai/zyvor-gryvia'
+    runs-on: [self-hosted, macOS, ARM64, gryvia-pages]
+    steps:
+    # upload-pages-artifact needs GNU tar (gtar) on macOS: brew install gnu-tar.
+    - run: echo /opt/homebrew/bin >> "$GITHUB_PATH"
+    - uses: actions/checkout@v7
+    - uses: actions/setup-node@v7
+      with: {node-version: '22', cache: npm, cache-dependency-path: website/package-lock.json}
+    - run: npm --prefix website ci
+    - run: npm --prefix website run build
+    - uses: azure/setup-helm@v5
+    - name: Package Helm charts into the site
+      run: |
+        mkdir -p website/build/charts
+        helm repo add prometheus-community https://prometheus-community.github.io/helm-charts --force-update
+        helm repo add nvidia https://helm.ngc.nvidia.com/nvidia --force-update
+        for chart in helm/*/; do
+          # Its Zyntra and Netra dependencies come from sibling checkouts (scripts/sovereign-aios-deps.sh).
+          [ "$chart" = helm/sovereign-aios/ ] && continue
+          # Charts with dependencies (observability) need them fetched before packaging.
+          if grep -q '^dependencies:' "$chart/Chart.yaml"; then helm dependency build "$chart"; fi
+          # Charts here track main, so they pull the images images.yml pushes as :main (releases are on oci://ghcr.io).
+          helm package "$chart" --app-version main -d website/build/charts
+        done
+        helm repo index website/build/charts --url https://zyvorai.github.io/zyvor-gryvia/charts
+    - uses: actions/upload-pages-artifact@v5
+      with: {path: website/build}
+  deploy:
+    needs: build
+    runs-on: [self-hosted, macOS, ARM64, gryvia-pages]
+    environment: {name: github-pages, url: "${{ steps.deployment.outputs.page_url }}"}
+    permissions: {pages: write, id-token: write}
+    steps:
+    - id: deployment
+      uses: actions/deploy-pages@v5

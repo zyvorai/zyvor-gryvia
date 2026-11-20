@@ -1,0 +1,56 @@
+# HELP tgi_request_queue_duration Request queue duration (s)
+# TYPE tgi_request_queue_duration histogram
+tgi_request_queue_duration_bucket{le="0.001"} 170.0
+tgi_request_queue_duration_bucket{le="0.002"} 230.0
+tgi_request_queue_duration_bucket{le="0.005"} 280.0
+tgi_request_queue_duration_bucket{le="0.01"} 315.0
+tgi_request_queue_duration_bucket{le="0.02"} 338.0
+tgi_request_queue_duration_bucket{le="0.05"} 350.0
+tgi_request_queue_duration_bucket{le="0.1"} 355.0
+tgi_request_queue_duration_bucket{le="0.2"} 357.0
+tgi_request_queue_duration_bucket{le="0.5"} 358.0
+tgi_request_queue_duration_bucket{le="1.0"} 358.0
+tgi_request_queue_duration_bucket{le="2.0"} 358.0
+tgi_request_queue_duration_bucket{le="5.0"} 358.0
+tgi_request_queue_duration_bucket{le="10.0"} 358.0
+tgi_request_queue_duration_bucket{le="+Inf"} 358.0
+tgi_request_queue_duration_sum 1.8
+tgi_request_queue_duration_count 358.0
+# HELP tgi_request_mean_time_per_token_duration Request mean time per token (s)
+# TYPE tgi_request_mean_time_per_token_duration histogram
+tgi_request_mean_time_per_token_duration_bucket{le="0.005"} 10.0
+tgi_request_mean_time_per_token_duration_bucket{le="0.01"} 70.0
+tgi_request_mean_time_per_token_duration_bucket{le="0.02"} 190.0
+tgi_request_mean_time_per_token_duration_bucket{le="0.03"} 255.0
+tgi_request_mean_time_per_token_duration_bucket{le="0.05"} 290.0
+tgi_request_mean_time_per_token_duration_bucket{le="0.075"} 301.0
+tgi_request_mean_time_per_token_duration_bucket{le="0.1"} 305.0
+tgi_request_mean_time_per_token_duration_bucket{le="0.15"} 308.0
+tgi_request_mean_time_per_token_duration_bucket{le="0.2"} 308.0
+tgi_request_mean_time_per_token_duration_bucket{le="0.5"} 308.0
+tgi_request_mean_time_per_token_duration_bucket{le="+Inf"} 308.0
+tgi_request_mean_time_per_token_duration_sum 11.0
+tgi_request_mean_time_per_token_duration_count 308.0
+# HELP tgi_request_duration Request duration (s)
+# TYPE tgi_request_duration histogram
+tgi_request_duration_bucket{le="0.1"} 0.0
+tgi_request_duration_bucket{le="0.2"} 10.0
+tgi_request_duration_bucket{le="0.5"} 80.0
+tgi_request_duration_bucket{le="1.0"} 180.0
+tgi_request_duration_bucket{le="2.0"} 245.0
+tgi_request_duration_bucket{le="5.0"} 275.0
+tgi_request_duration_bucket{le="10.0"} 283.0
+tgi_request_duration_bucket{le="20.0"} 287.0
+tgi_request_duration_bucket{le="50.0"} 287.0
+tgi_request_duration_bucket{le="+Inf"} 287.0
+tgi_request_duration_sum 900.0
+tgi_request_duration_count 287.0
+# HELP tgi_queue_size Current queue size
+# TYPE tgi_queue_size gauge
+tgi_queue_size 7
+# HELP tgi_batch_current_size Current batch size
+# TYPE tgi_batch_current_size gauge
+tgi_batch_current_size 4
+# HELP tgi_request_success Number of successful requests
+# TYPE tgi_request_success counter
+tgi_request_success 300

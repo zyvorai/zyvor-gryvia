@@ -1,0 +1,120 @@
+{{- if and .Values.prometheus.enabled .Values.prometheus.serviceMonitor.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ printf "%s-operator-metrics" (include "network-intelligence.fullname" . | trunc 45 | trimSuffix "-") }}
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "network-intelligence.labels" . | nindent 4 }}
+    app.kubernetes.io/component: operator
+spec:
+  type: ClusterIP
+  ports:
+    - name: metrics
+      port: 8080
+      targetPort: metrics
+      protocol: TCP
+  selector:
+    {{- include "network-intelligence.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: operator
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ printf "%s-collector-metrics" (include "network-intelligence.fullname" . | trunc 45 | trimSuffix "-") }}
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "network-intelligence.labels" . | nindent 4 }}
+    app.kubernetes.io/component: collector
+spec:
+  type: ClusterIP
+  ports:
+    - name: metrics
+      port: 9090
+      targetPort: metrics
+      protocol: TCP
+  selector:
+    {{- include "network-intelligence.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: collector
+{{- /* ServiceMonitor is a Prometheus Operator CRD; skip the monitors on clusters without it. */ -}}
+{{- if .Capabilities.APIVersions.Has "monitoring.coreos.com/v1" }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "network-intelligence.fullname" . }}-operator
+  namespace: {{ .Values.prometheus.serviceMonitor.namespace | default .Values.namespace.name }}
+  labels:
+    {{- include "network-intelligence.labels" . | nindent 4 }}
+    app.kubernetes.io/component: operator
+    {{- with .Values.prometheus.serviceMonitor.additionalLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "network-intelligence.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: operator
+  namespaceSelector:
+    matchNames:
+      - {{ .Values.namespace.name }}
+  endpoints:
+    - port: metrics
+      interval: {{ .Values.prometheus.serviceMonitor.interval }}
+      path: /metrics
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "network-intelligence.fullname" . }}-collector
+  namespace: {{ .Values.prometheus.serviceMonitor.namespace | default .Values.namespace.name }}
+  labels:
+    {{- include "network-intelligence.labels" . | nindent 4 }}
+    app.kubernetes.io/component: collector
+    {{- with .Values.prometheus.serviceMonitor.additionalLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "network-intelligence.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: collector
+  namespaceSelector:
+    matchNames:
+      - {{ .Values.namespace.name }}
+  endpoints:
+    - port: metrics
+      interval: {{ .Values.prometheus.serviceMonitor.interval }}
+      path: /metrics
+      # gryvia_fabric_*, gryvia_training_* and gryvia_inference_* carry their own `job` label (the Gryvia job); without this
+      # Prometheus would rename it to exported_job and the dashboards and alerts would not match.
+      honorLabels: true
+      {{- $sec := .Values.ebpf.security }}
+      {{- if $sec.tls.enabled }}
+      scheme: https
+      tlsConfig:
+        serverName: {{ $sec.serviceMonitor.serverName | quote }}
+        {{- with $sec.serviceMonitor.caSecret.name }}
+        ca:
+          secret:
+            name: {{ . | quote }}
+            key: {{ $sec.serviceMonitor.caSecret.key | quote }}
+        {{- end }}
+        {{- with $sec.serviceMonitor.clientCertSecret.name }}
+        cert:
+          secret:
+            name: {{ . | quote }}
+            key: {{ $sec.serviceMonitor.clientCertSecret.certKey | quote }}
+        keySecret:
+          name: {{ . | quote }}
+          key: {{ $sec.serviceMonitor.clientCertSecret.keyKey | quote }}
+        {{- end }}
+      {{- end }}
+      {{- if $sec.metricsTokenSecret }}
+      # The Secret must exist in the ServiceMonitor's namespace.
+      bearerTokenSecret:
+        name: {{ $sec.metricsTokenSecret | quote }}
+        key: {{ $sec.metricsTokenKey | quote }}
+      {{- end }}
+{{- end }}
+{{- end }}

@@ -1,0 +1,4 @@
+[flake8]
+max-line-length = 120
+# black formats slices as x[a : b], which flake8 flags as E203
+extend-ignore = E203

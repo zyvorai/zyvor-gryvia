@@ -1,0 +1,42 @@
+# A text corpus downloaded over HTTPS and checked against its sha256 file. Needs the storage-operator with
+# storageOperator.datasets.enabled=true. The data lands in PVC dataset-corpus (namespace ml-team), directory v1;
+# a job in ml-team mounts it with:
+#   volumes: [{name: data, persistentVolumeClaim: {claimName: dataset-corpus}}]
+#   volumeMounts: [{name: data, mountPath: /data, subPath: v1, readOnly: true}]
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaDataset
+metadata:
+  name: corpus
+spec:
+  type: text
+  license: cc-by-4.0
+  description: Instruction-tuning corpus (JSONL)
+  version: v1
+  namespace: ml-team
+  source:
+    type: http
+    http:
+      url: https://example.com/datasets/corpus.jsonl
+      checksumURL: https://example.com/datasets/corpus.jsonl.sha256
+  cache:
+    size: 20Gi
+  versioning:
+    enabled: true
+    retentionPolicy:
+      keepLast: 3
+---
+# The same from S3. The Secret aws-credentials in ml-team holds AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY.
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaDataset
+metadata:
+  name: corpus-s3
+spec:
+  type: text
+  namespace: ml-team
+  source:
+    type: s3
+    s3:
+      bucket: my-datasets
+      prefix: corpus/
+      region: eu-west-1
+      credentialsSecret: aws-credentials

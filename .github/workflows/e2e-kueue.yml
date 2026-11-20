@@ -1,0 +1,110 @@
+name: Kind e2e (Kueue)
+
+# Runs the Kueue integration on a kind cluster without GPUs: queueing (one job admitted, the other Queued until the
+# first finishes), all-or-nothing gang admission, priority preemption, and elastic jobs (partial admission between
+# minNodes and nodes, completion through the Job success policy). Kueue itself comes from the chart's own
+# `kueue` sub-chart (kueue.enabled=true), so the sub-chart is exercised too. Images are built from the checkout like
+# e2e-jobs.yml (scripts/kind-demo.sh with GRYVIA_LOCAL_IMAGES=1). Scenarios live in scripts/e2e-kueue.sh.
+#
+# NOT YET RUN: this workflow was written without access to a cluster. Assumptions that could not be verified offline
+# are marked ASSUMPTION here and in scripts/e2e-kueue.sh.
+
+on:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'operators/ai-operator/**'
+      - 'operators/quota-operator/**'
+      - 'helm/**'
+      - 'crds/**'
+      - 'scripts/e2e-kueue.sh'
+      - 'examples/training/**'
+      - 'scripts/kind-demo.sh'
+      - '.github/workflows/e2e-kueue.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  kueue:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v7
+      - uses: azure/setup-helm@v5
+      - uses: helm/kind-action@v1
+        with:
+          install_only: true
+      - name: Install Gryvia with locally built images (Kueue off)
+        run: GRYVIA_LOCAL_IMAGES=1 ./scripts/kind-demo.sh
+      - name: Remove the demo tenants
+        # Tenants of one cohort lend each other their idle quota. The demo tenants (acme, globex) would lend
+        # theirs to q1 and hide the queueing this workflow asserts.
+        run: |
+          kubectl delete gryviatenant --all --wait=true --timeout=180s
+          kubectl delete gryviaquota --all --ignore-not-found --wait=true --timeout=60s
+      - name: Enable Kueue, the AIJob integration and the per-tenant queues
+        # Same flags as kind-demo.sh plus the Kueue ones (not --reuse-values: new chart defaults must apply).
+        # The quota resource is a fake extended resource; see scripts/e2e-kueue.sh.
+        run: |
+          helm upgrade gryvia ./helm/gryvia --namespace gryvia-system --set namespace.create=false \
+            --set nvidiaDevicePlugin.enabled=false --set dcgmExporter.enabled=false --set monitoring.enabled=false \
+            --set global.imageTag=dev --set global.imagePullPolicy=Never \
+            --set kueue.enabled=true \
+            --set aiOperator.kueueIntegration=true --set aiOperator.kueueStrictAdmission=true \
+            --set quotaOperator.kueueIntegration=true \
+            --set quotaOperator.kueueQuotaResources=example.com/slot \
+            --wait --timeout 600s
+      - name: Kueue and the operators are running
+        run: |
+          # ASSUMPTION: the Deployment is named kueue-controller-manager (kueue.fullnameOverride=kueue in values.yaml).
+          kubectl -n gryvia-system rollout status deploy/kueue-controller-manager --timeout=300s
+          kubectl -n gryvia-system rollout status deploy -l app.kubernetes.io/component=ai-operator --timeout=180s
+          kubectl -n gryvia-system rollout status deploy -l app.kubernetes.io/component=quota-operator --timeout=180s
+          kubectl -n gryvia-system get deploy -l app.kubernetes.io/component=ai-operator -o jsonpath='{.items[0].spec.template.spec.containers[0].args}'; echo
+          kubectl get crd clusterqueues.kueue.x-k8s.io localqueues.kueue.x-k8s.io workloads.kueue.x-k8s.io resourceflavors.kueue.x-k8s.io workloadpriorityclasses.kueue.x-k8s.io
+          # ASSUMPTION: Kueue's webhook answers once its controller is Ready; give it a moment to serve.
+          for i in $(seq 1 30); do
+            kubectl create -f - --dry-run=server <<'YAML' >/dev/null 2>&1 && break || sleep 4
+          apiVersion: kueue.x-k8s.io/v1beta1
+          kind: ResourceFlavor
+          metadata: {name: probe}
+          YAML
+          done
+      - name: Tenant q1 gets a ClusterQueue, LocalQueue and flavors; the node advertises fake slots
+        run: ./scripts/e2e-kueue.sh setup
+      - name: Missing tenant queue never bypasses admission
+        run: ./scripts/e2e-kueue.sh strict
+      - name: Two jobs that do not fit together - one runs, one is Queued, then it runs after the first finishes
+        run: ./scripts/e2e-kueue.sh queue
+      - name: A gang bigger than the quota never starts partially (zero pods) and starts whole once it fits
+        run: ./scripts/e2e-kueue.sh gang
+      - name: A higher-priority job preempts a running lower-priority one, which is requeued
+        run: ./scripts/e2e-kueue.sh preempt
+      - name: A preempted job checkpoints in its preStop hook while Kueue evicts it and resumes from that checkpoint
+        run: ./scripts/e2e-kueue.sh preempt-checkpoint
+      - name: An elastic job is admitted with fewer workers than asked, and its success policy completes it under Kueue
+        run: ./scripts/e2e-kueue.sh elastic
+      - name: The elastic trainer image (CPU torch)
+        run: |
+          docker build -f examples/training/Dockerfile.elastic -t ghcr.io/zyvorai/gryvia-elastic-train:dev examples/training
+          kind load docker-image --name gryvia-demo ghcr.io/zyvorai/gryvia-elastic-train:dev
+      - name: A real torchrun job admitted with 2 of 4 workers trains as a group of 2
+        run: ./scripts/e2e-kueue.sh elastic-torchrun
+      - name: Tenant borrowing limits and cohorts are enforced, and a queued job explains itself
+        run: ./scripts/e2e-kueue.sh fairshare
+      - name: Dump state on failure
+        if: failure()
+        run: |
+          kubectl get gryviaaijobs,gryviatenants -A -o yaml || true
+          kubectl get clusterqueues,localqueues,resourceflavors,workloadpriorityclasses -o yaml || true
+          kubectl get workloads,jobs,pods -A -o wide || true
+          kubectl -n gryvia-system logs deploy/kueue-controller-manager --tail=300 || true
+          kubectl -n gryvia-system logs -l app.kubernetes.io/component=ai-operator --tail=300 || true
+          kubectl -n gryvia-system logs -l app.kubernetes.io/component=quota-operator --tail=300 || true
+          kubectl -n tenant-q1 logs -l gryvia.io/job --prefix --tail=60 --max-log-requests=20 || true

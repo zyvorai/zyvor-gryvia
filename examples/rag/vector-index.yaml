@@ -1,0 +1,82 @@
+# Retrieval over a dataset (chart values aiOperator.rag.enabled and llmGateway.enabled, plus
+# storageOperator.datasets.enabled for the dataset). See docs/rag.md.
+#
+#   kubectl apply -f examples/rag/vector-index.yaml
+#   gryvia rag index list -n tenant-alpha
+#   gryvia llm keys create app -n tenant-alpha          # prints the key once
+#   curl http://<release>-llm-gateway.gryvia-system:8080/v1/retrieve -H "Authorization: Bearer $KEY" \
+#     -H "Content-Type: application/json" -d '{"index":"handbook","query":"How are GPU hours capped?","topK":4}'
+#
+# The handbook, downloaded into a PVC of tenant-alpha (the index must be in the dataset's spec.namespace).
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaDataset
+metadata:
+  name: handbook
+spec:
+  type: text
+  description: Team handbook (Markdown and HTML pages)
+  version: v1
+  namespace: tenant-alpha
+  source:
+    type: http
+    http:
+      url: https://example.com/handbook/handbook.md
+---
+# An embedding model published on the LLM gateway. vLLM serves embedding models on /v1/embeddings
+# (add --task=embed through the inference controller's flags when vLLM does not detect it).
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaInferenceService
+metadata:
+  name: embed
+  namespace: platform-models
+  annotations:
+    gryvia.io/llm-model: embed
+    gryvia.io/llm-served-model: BAAI/bge-small-en-v1.5
+    gryvia.io/llm-shared: "true"
+spec:
+  modelRef: bge-small-en
+  backend: vllm
+  replicas: 1
+  gpuCount: 1
+  servicePort: 8000
+---
+# The index: chunks of 800 characters overlapping by 100, embedded with "embed", kept in a managed Qdrant and
+# rebuilt every night (and whenever the dataset publishes a new version).
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaVectorIndex
+metadata:
+  name: handbook
+  namespace: tenant-alpha
+spec:
+  datasetRef: handbook
+  embedding:
+    model: embed
+    batchSize: 32
+  chunking:
+    size: 800
+    overlap: 100
+  store:
+    type: managed
+    managed:
+      storageSize: 5Gi
+  schedule: "0 3 * * *"
+---
+# The same dataset in an existing Qdrant (Qdrant Cloud, say). The Secret qdrant-cloud in tenant-alpha holds the
+# API key under "apiKey"; the operator copies it to the gateway's key namespace for /v1/retrieve.
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaVectorIndex
+metadata:
+  name: handbook-cloud
+  namespace: tenant-alpha
+spec:
+  datasetRef: handbook
+  embedding:
+    model: embed
+  store:
+    type: external
+    external:
+      url: https://xyz.eu-central.aws.cloud.qdrant.io:6333
+      apiKeySecretRef:
+        name: qdrant-cloud
+        key: apiKey
+  collection: handbook

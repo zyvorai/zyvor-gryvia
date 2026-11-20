@@ -1,0 +1,59 @@
+# RKE2 with the CIS profile and FIPS checks, for the Sovereign AI OS (playbooks/sovereign-aios-rke2.yaml).
+
+rke2_version: v1.36.5+rke2r1
+# server or agent; the playbook sets it from the inventory group.
+rke2_type: server
+# Shared join token. Generate once (openssl rand -hex 32) and keep it in a vault.
+rke2_token: ""
+# Address agents and the other servers join (a load balancer or the first server), and extra API certificate SANs.
+rke2_server_address: ""
+rke2_tls_san: []
+
+# online: get.rke2.io downloads the release. airgap: rke2_artifacts_dir on the controller holds install.sh,
+# rke2.linux-<arch>.tar.gz, sha256sum-<arch>.txt and rke2-images.linux-<arch>.tar.zst from the release page.
+rke2_install_method: online
+rke2_artifacts_dir: ""
+
+# CIS: the RKE2 cis profile, protect-kernel-defaults, its sysctls, the etcd user, encrypted Secrets and audit logs.
+rke2_cis: true
+# FIPS: RKE2's binaries use a FIPS 140 validated crypto module. This also requires the host kernel in FIPS mode
+# (/proc/sys/crypto/fips_enabled = 1). With rke2_fips_enable_os, RHEL-family hosts are switched with
+# fips-mode-setup and rebooted; other hosts fail with how to enable it (Ubuntu: pro enable fips-updates).
+rke2_fips: true
+rke2_fips_enable_os: false
+
+# SELinux needs the rke2-selinux package on RHEL-family hosts (from Rancher's RPM repo or your mirror).
+rke2_selinux: false
+rke2_cni: canal
+
+# Pod Security admission: restricted everywhere, except namespaces that run node agents (GPU device plugin,
+# DCGM exporter, Netra's eBPF agent, Falco, SPIRE agent).
+rke2_psa_exempt_namespaces:
+  - kube-system
+  - cis-operator-system
+  - tigera-operator
+  - gryvia-system
+  - gpu-operator
+  - falco
+  - spire-system
+  - spire-server
+
+rke2_audit_log_maxage: 30
+rke2_audit_log_maxbackup: 10
+rke2_audit_log_maxsize: 100
+rke2_etcd_snapshot_cron: "0 */6 * * *"
+rke2_etcd_snapshot_retention: 28
+
+# Pull through a Harbor mirror (scripts/airgap-mirror.sh): containerd asks it for these registries' images, stored
+# as <mirror>/<path without the registry host>.
+rke2_registry_mirror: ""
+rke2_registry_mirrored: [docker.io, ghcr.io, quay.io, registry.k8s.io, nvcr.io, reg.kyverno.io, cgr.dev]
+rke2_registry_username: ""
+rke2_registry_password: ""
+# PEM of the mirror's CA, when it is not in the host trust store.
+rke2_registry_ca: ""
+
+rke2_node_labels: []
+rke2_node_taints: []
+# Copy the admin kubeconfig from the first server to this path on the controller (empty: do not).
+rke2_fetch_kubeconfig: ""

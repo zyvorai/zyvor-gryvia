@@ -1,0 +1,81 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.22.0
+  name: gryvianetworkrates.gryvia.io
+spec:
+  group: gryvia.io
+  names:
+    kind: GryviaNetworkRate
+    listKind: GryviaNetworkRateList
+    plural: gryvianetworkrates
+    singular: gryvianetworkrate
+  scope: Cluster
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.sameZone
+      name: SameZone
+      type: number
+    - jsonPath: .spec.crossZone
+      name: CrossZone
+      type: number
+    - jsonPath: .spec.internetEgress
+      name: Internet
+      type: number
+    - jsonPath: .spec.currency
+      name: Currency
+      type: string
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          GryviaNetworkRate is the Schema for the gryvianetworkrates API. It is pure data (no controller); the
+          gateway uses the first object by name. Traffic to a peer whose zone is unknown is never priced.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: GryviaNetworkRateSpec is the provider's network egress price
+              list (price per GB, 1 GB = 10^9 bytes).
+            properties:
+              crossZone:
+                description: CrossZone is the price per GB of egress to a peer in
+                  another zone
+                minimum: 0
+                type: number
+              currency:
+                default: USD
+                description: Currency is the ISO currency code of the prices
+                type: string
+              internetEgress:
+                description: InternetEgress is the price per GB of egress to a peer
+                  outside the cluster
+                minimum: 0
+                type: number
+              sameZone:
+                description: SameZone is the price per GB of egress to a peer in the
+                  same zone
+                minimum: 0
+                type: number
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources: {}

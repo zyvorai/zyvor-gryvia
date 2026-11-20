@@ -1,0 +1,30 @@
+{{- /* Optional alert rules and dashboards (both off by default); see prometheus.rules / prometheus.dashboards in values.yaml. */ -}}
+{{- if and .Values.prometheus.enabled .Values.prometheus.rules.enabled (.Capabilities.APIVersions.Has "monitoring.coreos.com/v1") }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "network-intelligence.fullname" . }}-alerts
+  namespace: {{ .Values.prometheus.serviceMonitor.namespace | default .Values.namespace.name }}
+  labels:
+    {{- include "network-intelligence.labels" . | nindent 4 }}
+    {{- with .Values.prometheus.serviceMonitor.additionalLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  groups:
+    {{- (fromYaml (.Files.Get "monitoring-assets/prometheus-rules.yaml")).groups | toYaml | nindent 4 }}
+{{- end }}
+{{- if .Values.prometheus.dashboards.enabled }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "network-intelligence.fullname" . }}-dashboards
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "network-intelligence.labels" . | nindent 4 }}
+    grafana_dashboard: "1"
+data:
+  {{- (.Files.Glob "monitoring-assets/grafana-dashboards/*.json").AsConfig | nindent 2 }}
+{{- end }}

@@ -1,0 +1,205 @@
+# Example: Monthly Team Budget
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaBudget
+metadata:
+  name: ml-research-monthly
+spec:
+  scope:
+    type: team
+    name: ml-research
+
+  period:
+    type: monthly
+    # Auto-creates new period at start of each month
+
+  limits:
+    costUSD: 50000  # $50k/month
+    gpuHours: 2000  # 2000 GPU hours
+    gpuTypeHours:
+      H100: 200      # Max 200 H100 hours
+      A100-80G: 1000
+      A100-40G: 500
+      T4: 300
+    maxConcurrentJobs: 50
+    maxConcurrentGPUs: 128
+
+  alerts:
+    # Alert at 50% usage
+    - threshold: 50
+      actions: [email]
+      recipients:
+        - ml-team-lead@company.com
+
+    # Alert at 75% usage
+    - threshold: 75
+      actions: [email, slack]
+      recipients:
+        - ml-team-lead@company.com
+
+    # Alert and warn at 90% usage
+    - threshold: 90
+      actions: [email, slack, webhook]
+      recipients:
+        - ml-team-lead@company.com
+        - finance@company.com
+
+    # Block at 100% usage
+    - threshold: 100
+      actions: [block, email]
+      recipients:
+        - ml-team-lead@company.com
+        - finance@company.com
+
+  enforcement:
+    enabled: true
+    action: block  # Block new jobs when budget exceeded
+    gracePeriod: 2h  # 2 hour grace period
+
+  rollover:
+    enabled: true
+    maxRolloverPercent: 20  # Can roll over up to 20% unused budget
+
+  priority:
+    allowOverride: true
+    overrideLimitPercent: 10  # High-priority jobs can use 10% over budget
+---
+# Example: Quarterly Project Budget
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaBudget
+metadata:
+  name: llm-training-q1
+spec:
+  scope:
+    type: project
+    name: llm-training
+
+  period:
+    type: quarterly
+    startDate: "2024-01-01T00:00:00Z"
+    endDate: "2024-03-31T23:59:59Z"
+
+  limits:
+    costUSD: 500000  # $500k for the quarter
+    gpuHours: 20000
+
+  alerts:
+    - threshold: 80
+      actions: [email, slack]
+      recipients:
+        - project-manager@company.com
+
+  enforcement:
+    enabled: true
+    action: warn  # Just warn, don't block
+    gracePeriod: 24h
+
+  rollover:
+    enabled: false  # No rollover for project budgets
+---
+# Example: User Daily Budget (Development)
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaBudget
+metadata:
+  name: dev-user-alice-daily
+spec:
+  scope:
+    type: user
+    name: alice
+
+  period:
+    type: daily
+
+  limits:
+    costUSD: 500  # $500/day for development
+    gpuHours: 20
+    maxConcurrentJobs: 5
+    maxConcurrentGPUs: 8
+
+  alerts:
+    - threshold: 80
+      actions: [email]
+      recipients:
+        - alice@company.com
+
+  enforcement:
+    enabled: true
+    action: throttle  # Throttle to lower priority
+    gracePeriod: 1h
+---
+# Example: Namespace Weekly Budget
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaBudget
+metadata:
+  name: production-weekly
+spec:
+  scope:
+    type: namespace
+    name: production
+
+  period:
+    type: weekly
+
+  limits:
+    costUSD: 25000  # $25k/week
+    gpuHours: 1000
+    maxConcurrentGPUs: 64
+
+  alerts:
+    - threshold: 90
+      actions: [email, slack, webhook]
+      recipients:
+        - ops-team@company.com
+        - on-call@company.com
+
+  enforcement:
+    enabled: true
+    action: block
+    gracePeriod: 30m  # Short grace period for production
+
+  priority:
+    allowOverride: true
+    overrideLimitPercent: 25  # Production can burst to 125%
+---
+# Budget Status Example
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaBudget
+metadata:
+  name: ml-research-monthly
+status:
+  currentPeriod:
+    startDate: "2024-01-01T00:00:00Z"
+    endDate: "2024-01-31T23:59:59Z"
+    daysRemaining: 12
+
+  usage:
+    costUSD: 37500  # $37.5k used
+    gpuHours: 1500
+    gpuTypeHours:
+      H100: 150
+      A100-80G: 750
+      A100-40G: 400
+      T4: 200
+    jobCount: 342
+    currentConcurrentJobs: 23
+    currentConcurrentGPUs: 64
+
+  utilization:
+    costPercent: 75  # 75% of budget used
+    gpuHoursPercent: 75
+    jobsPercent: 46
+
+  state: warning  # In warning state
+
+  alerts:
+    - timestamp: "2024-01-10T08:00:00Z"
+      threshold: 50
+      message: "Budget 50% consumed"
+    - timestamp: "2024-01-18T14:30:00Z"
+      threshold: 75
+      message: "Budget 75% consumed - warning state"
+
+  forecast:
+    projectedCostUSD: 64285  # Projected to exceed budget
+    projectedGPUHours: 2571
+    budgetSufficient: false
+    estimatedExhaustionDate: "2024-01-28T16:00:00Z"

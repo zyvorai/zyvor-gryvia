@@ -1,0 +1,36 @@
+# Example: per-node fabric health used by fabric-aware scheduling (opt-in)
+#
+# Normally written by the node's eBPF collector (helm/network-intelligence
+# ebpf.publishNodeFabric=true, flag -publish-node-fabric): one object per node,
+# named after the node. The ai-operator reads it only with --fabric-aware-scheduling
+# (helm aiOperator.fabricAwareScheduling=true) or a job annotation, and ignores it once
+# measuredAt + ttlSeconds has passed. Shown here so you can try the scheduler by hand.
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaNodeFabric
+metadata:
+  name: gpu-node-07
+spec:
+  nodeName: gpu-node-07
+  scoreDelta: 0.35
+  reasons:
+    - "rdma retry rate 9.0% > 2% [ml-training/llama-70b-pretrain]"
+  measuredAt: "2026-01-01T12:00:00Z"
+  ttlSeconds: 300
+  expiresAt: "2026-01-01T12:05:00Z"
+---
+# A job that opts in to fabric-aware placement regardless of the operator default
+# (use "false" to opt out when the operator flag is on). The result lands in
+# status.placementExplanation and a FabricAwarePlacement Event.
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaAIJob
+metadata:
+  name: llama-fabric-aware
+  namespace: ml-training
+  annotations:
+    gryvia.io/fabric-aware: "true"
+spec:
+  type: training
+  image: pytorch/pytorch:latest
+  gpus: 8
+  gpuType: H100
+  network: rdma

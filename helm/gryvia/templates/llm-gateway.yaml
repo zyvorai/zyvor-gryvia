@@ -1,0 +1,299 @@
+{{- if (dig "llmGateway" "enabled" nil .Values.AsMap) }}
+{{- $gw := .Values.llmGateway }}
+{{- $keyNs := $gw.keyNamespace | default "gryvia-llm-keys" }}
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ $keyNs }}
+  labels:
+    {{- include "gryvia.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/resource-policy: keep
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "gryvia.fullname" . }}-llm-gateway
+  namespace: {{ include "gryvia.namespace" . }}
+  labels:
+    {{- include "gryvia.labels" . | nindent 4 }}
+    app.kubernetes.io/component: llm-gateway
+spec:
+  replicas: {{ $gw.replicas | default 1 }}
+  selector:
+    matchLabels:
+      {{- include "gryvia.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: llm-gateway
+  template:
+    metadata:
+      labels:
+        {{- include "gryvia.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: llm-gateway
+    spec:
+      serviceAccountName: {{ include "gryvia.fullname" . }}-llm-gateway
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: gateway
+          image: {{ include "gryvia.image" (dict "root" . "image" .Values.aiOperator.image) | quote }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          command:
+            - /manager
+          args:
+            - llm-gateway
+            - --listen-address=:8080
+            - --metrics-address=:8081
+            - {{ printf "--key-namespace=%s" $keyNs | quote }}
+            - {{ printf "--price-input-per-1m=%v" ($gw.priceInputPer1M | default 0) | quote }}
+            - {{ printf "--price-output-per-1m=%v" ($gw.priceOutputPer1M | default 0) | quote }}
+            - {{ printf "--currency=%s" ($gw.currency | default "USD") | quote }}
+            - {{ printf "--flush-interval=%s" ($gw.flushInterval | default "5m") | quote }}
+            - {{ printf "--quota-refresh-interval=%s" ($gw.quotaRefreshInterval | default "30s") | quote }}
+            - {{ printf "--quota-sync-interval=%s" ($gw.quotaSyncInterval | default "1s") | quote }}
+            {{- if $gw.intentPolicy }}
+            - --intent-policy-file=/etc/gryvia/intent-policy.json
+            {{- end }}
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+            - name: metrics
+              containerPort: 8081
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: metrics
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          {{- with $gw.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- if $gw.intentPolicy }}
+          volumeMounts:
+            - name: intent-policy
+              mountPath: /etc/gryvia
+              readOnly: true
+          {{- end }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+      {{- if $gw.intentPolicy }}
+      volumes:
+        - name: intent-policy
+          configMap:
+            name: {{ include "gryvia.fullname" . }}-llm-intent-policy
+      {{- end }}
+      {{- with $gw.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $gw.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "gryvia.fullname" . }}-llm-gateway
+  namespace: {{ include "gryvia.namespace" . }}
+  labels:
+    {{- include "gryvia.labels" . | nindent 4 }}
+    app.kubernetes.io/component: llm-gateway
+spec:
+  type: {{ (dig "service" "type" "ClusterIP" $gw) }}
+  selector:
+    {{- include "gryvia.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: llm-gateway
+  ports:
+    - name: http
+      port: {{ (dig "service" "port" 8080 $gw) }}
+      targetPort: http
+      protocol: TCP
+    - name: metrics
+      port: 8081
+      targetPort: metrics
+      protocol: TCP
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "gryvia.fullname" . }}-llm-gateway
+  namespace: {{ include "gryvia.namespace" . }}
+  labels:
+    {{- include "gryvia.labels" . | nindent 4 }}
+{{- if .Values.rbac.create }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "gryvia.fullname" . }}-llm-gateway
+  labels:
+    {{- include "gryvia.labels" . | nindent 4 }}
+rules:
+# Published models (annotation gryvia.io/llm-model), the tokensPerDay limits and the indexes /v1/retrieve queries.
+- apiGroups: ["gryvia.io"]
+  resources: ["gryviainferenceservices", "gryviaquotas", "gryviavectorindexes"]
+  verbs: ["get", "list", "watch"]
+# Scale to zero: the gryvia.io/wake-requested and gryvia.io/last-request annotations.
+- apiGroups: ["gryvia.io"]
+  resources: ["gryviainferenceservices"]
+  verbs: ["patch"]
+# Hourly token records in the namespace of each key.
+- apiGroups: ["gryvia.io"]
+  resources: ["gryviausagerecords"]
+  verbs: ["get", "list", "create", "update"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "gryvia.fullname" . }}-llm-gateway
+  labels:
+    {{- include "gryvia.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "gryvia.fullname" . }}-llm-gateway
+subjects:
+- kind: ServiceAccount
+  name: {{ include "gryvia.fullname" . }}-llm-gateway
+  namespace: {{ include "gryvia.namespace" . }}
+---
+# The shared daily token counters (ConfigMaps gryvia-llm-tokens-<day>, label gryvia.io/llm-token-counter=true).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "gryvia.fullname" . }}-llm-token-counter
+  namespace: {{ include "gryvia.namespace" . }}
+  labels:
+    {{- include "gryvia.labels" . | nindent 4 }}
+rules:
+- apiGroups: [""]
+  resources: ["configmaps"]
+  verbs: ["get", "list", "create", "update", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "gryvia.fullname" . }}-llm-token-counter
+  namespace: {{ include "gryvia.namespace" . }}
+  labels:
+    {{- include "gryvia.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "gryvia.fullname" . }}-llm-token-counter
+subjects:
+- kind: ServiceAccount
+  name: {{ include "gryvia.fullname" . }}-llm-gateway
+  namespace: {{ include "gryvia.namespace" . }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "gryvia.fullname" . }}-llm-keys-reader
+  namespace: {{ $keyNs }}
+  labels:
+    {{- include "gryvia.labels" . | nindent 4 }}
+rules:
+- apiGroups: [""]
+  resources: ["secrets"]
+  verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "gryvia.fullname" . }}-llm-keys-reader
+  namespace: {{ $keyNs }}
+  labels:
+    {{- include "gryvia.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "gryvia.fullname" . }}-llm-keys-reader
+subjects:
+- kind: ServiceAccount
+  name: {{ include "gryvia.fullname" . }}-llm-gateway
+  namespace: {{ include "gryvia.namespace" . }}
+{{- if .Values.apiGateway.enabled }}
+---
+# The api-gateway issues and revokes keys (POST/DELETE /api/llm-keys).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "gryvia.fullname" . }}-llm-keys-admin
+  namespace: {{ $keyNs }}
+  labels:
+    {{- include "gryvia.labels" . | nindent 4 }}
+rules:
+- apiGroups: [""]
+  resources: ["secrets"]
+  verbs: ["get", "list", "create", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "gryvia.fullname" . }}-llm-keys-admin
+  namespace: {{ $keyNs }}
+  labels:
+    {{- include "gryvia.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "gryvia.fullname" . }}-llm-keys-admin
+subjects:
+- kind: ServiceAccount
+  name: gryvia-api-gateway
+  namespace: {{ include "gryvia.namespace" . }}
+{{- end }}
+{{- end }}
+{{- if and (gt (int $gw.replicas) 1) .Values.podDisruptionBudget.enabled }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "gryvia.fullname" . }}-llm-gateway
+  namespace: {{ include "gryvia.namespace" . }}
+spec:
+  minAvailable: {{ .Values.podDisruptionBudget.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "gryvia.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: llm-gateway
+{{- end }}
+
+{{- if $gw.intentPolicy }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "gryvia.fullname" . }}-llm-intent-policy
+  namespace: {{ include "gryvia.namespace" . }}
+  labels:
+    {{- include "gryvia.labels" . | nindent 4 }}
+    app.kubernetes.io/component: llm-gateway
+data:
+  intent-policy.json: |
+{{- $gw.intentPolicy | nindent 4 }}
+{{- end }}
+{{- end }}

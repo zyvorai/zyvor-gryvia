@@ -1,0 +1,330 @@
+---
+# Multi-Instance GPU (MIG) Support
+# Split A100/H100 GPUs into smaller instances for better utilization
+#
+# STATUS: reference/design sketch. The ConfigMaps and the mig-manager DaemonSet are the standard NVIDIA
+# approach and are unverified here; the Gryvia-kind documents below (GryviaAIJob with `mig`, GryviaJobTemplate,
+# GryviaGPUNode with `mig`, SchedulingPolicy) do NOT match the CRDs in crds/ (no such fields; GryviaJobTemplate
+# and SchedulingPolicy do not exist) and would be rejected. See gpu-features/README.md.
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mig-config
+  namespace: gryvia-system
+data:
+  mig-profiles.yaml: |
+    # A100-80GB MIG Profiles
+    a100-80gb:
+      profiles:
+        - name: 1g.10gb
+          compute: 1/7  # 1 GPU slice
+          memory: 10GB
+          instances: 7  # Can create 7 instances
+          use_cases: [inference, development, small-models]
+
+        - name: 2g.20gb
+          compute: 2/7
+          memory: 20GB
+          instances: 3
+          use_cases: [medium-models, fine-tuning]
+
+        - name: 3g.40gb
+          compute: 3/7
+          memory: 40GB
+          instances: 2
+          use_cases: [large-models, training]
+
+        - name: 4g.40gb
+          compute: 4/7
+          memory: 40GB
+          instances: 1
+          use_cases: [very-large-models]
+
+        - name: 7g.80gb
+          compute: 7/7
+          memory: 80GB
+          instances: 1
+          use_cases: [full-gpu, largest-models]
+
+    # H100-80GB MIG Profiles
+    h100-80gb:
+      profiles:
+        - name: 1g.10gb
+          compute: 1/7
+          memory: 10GB
+          instances: 7
+
+        - name: 2g.20gb
+          compute: 2/7
+          memory: 20GB
+          instances: 3
+
+        - name: 3g.40gb
+          compute: 3/7
+          memory: 40GB
+          instances: 2
+
+        - name: 7g.80gb
+          compute: 7/7
+          memory: 80GB
+          instances: 1
+
+---
+# MIG Device Plugin DaemonSet
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: nvidia-mig-manager
+  namespace: gryvia-system
+spec:
+  selector:
+    matchLabels:
+      name: nvidia-mig-manager
+  template:
+    metadata:
+      labels:
+        name: nvidia-mig-manager
+    spec:
+      nodeSelector:
+        gryvia.io/mig-capable: "true"
+      hostPID: true
+      containers:
+        - name: nvidia-mig-manager
+          image: nvcr.io/nvidia/cloud-native/k8s-mig-manager:v0.6.0
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: MIG_STRATEGY
+              value: "mixed"  # mixed, single, or none
+            - name: MIG_CONFIG_FILE
+              value: "/etc/mig-config/config.yaml"
+          volumeMounts:
+            - name: mig-config
+              mountPath: /etc/mig-config
+            - name: dev
+              mountPath: /dev
+          securityContext:
+            privileged: true
+      volumes:
+        - name: mig-config
+          configMap:
+            name: mig-parted-config
+        - name: dev
+          hostPath:
+            path: /dev
+
+---
+# MIG Configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mig-parted-config
+  namespace: gryvia-system
+data:
+  config.yaml: |
+    version: v1
+    mig-configs:
+      # All 1g.10gb instances (7 instances)
+      all-1g.10gb:
+        - devices: all
+          mig-enabled: true
+          mig-devices:
+            "1g.10gb": 7
+
+      # Mixed: 2x 3g.40gb + 1x 1g.10gb
+      mixed-3g-1g:
+        - devices: all
+          mig-enabled: true
+          mig-devices:
+            "3g.40gb": 2
+            "1g.10gb": 1
+
+      # Balanced: 3x 2g.20gb + 1x 1g.10gb
+      balanced:
+        - devices: all
+          mig-enabled: true
+          mig-devices:
+            "2g.20gb": 3
+            "1g.10gb": 1
+
+      # Full GPU (no MIG)
+      all-disabled:
+        - devices: all
+          mig-enabled: false
+
+---
+# Example Job using MIG
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaAIJob
+metadata:
+  name: inference-mig
+  namespace: default
+spec:
+  framework: pytorch
+  resources:
+    # Request MIG instance instead of full GPU
+    mig:
+      profile: 1g.10gb
+      count: 2
+    memory: 16Gi
+    cpu: 4
+  image: nvcr.io/nvidia/pytorch:24.01-py3
+  command:
+    - python
+    - inference.py
+
+---
+# Job Template for Development (1g.10gb)
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaJobTemplate
+metadata:
+  name: mig-development
+spec:
+  description: "Small MIG instance for development"
+  parameters:
+    - name: replicas
+      default: "1"
+  template:
+    framework: pytorch
+    resources:
+      mig:
+        profile: 1g.10gb
+        count: 1
+      memory: 8Gi
+      cpu: 2
+
+---
+# Job Template for Fine-Tuning (2g.20gb)
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaJobTemplate
+metadata:
+  name: mig-fine-tuning
+spec:
+  description: "Medium MIG instance for fine-tuning"
+  template:
+    framework: pytorch
+    resources:
+      mig:
+        profile: 2g.20gb
+        count: 1
+      memory: 32Gi
+      cpu: 8
+
+---
+# Scheduling Policy for MIG
+apiVersion: gryvia.io/v1alpha1
+kind: SchedulingPolicy
+metadata:
+  name: mig-bin-packing
+spec:
+  type: mig-aware
+  description: "Efficiently pack MIG instances"
+
+  strategy:
+    # Prefer filling nodes with MIG instances
+    preferMIG: true
+
+    # Bin packing strategy
+    objective: minimize-fragmentation
+
+    # MIG profiles priority
+    profilePreference:
+      - "1g.10gb"  # Pack small instances first
+      - "2g.20gb"
+      - "3g.40gb"
+      - "7g.80gb"
+
+---
+# MIG Node Labels
+# Apply these labels to MIG-capable nodes:
+#
+# kubectl label nodes gpu-node-1 gryvia.io/mig-capable=true
+# kubectl label nodes gpu-node-1 gryvia.io/mig-strategy=mixed
+# kubectl label nodes gpu-node-1 nvidia.com/mig.config=all-1g.10gb
+
+---
+# MIG Monitoring
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mig-dcgm-config
+  namespace: gryvia-system
+data:
+  dcgm-exporter-config.csv: |
+    # MIG-specific metrics
+    DCGM_FI_DEV_GPU_UTIL,           gauge, MIG GPU utilization
+    DCGM_FI_DEV_MEM_COPY_UTIL,      gauge, MIG memory utilization
+    DCGM_FI_DEV_POWER_USAGE,        gauge, MIG power usage
+    DCGM_FI_DEV_GPU_TEMP,           gauge, MIG temperature
+    DCGM_FI_PROF_SM_ACTIVE,         gauge, MIG SM active
+    DCGM_FI_PROF_SM_OCCUPANCY,      gauge, MIG SM occupancy
+
+---
+# GPU Node with MIG Configuration
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaGPUNode
+metadata:
+  name: gpu-node-1-mig
+spec:
+  nodeName: gpu-node-1
+  gpuType: A100-80G
+  gpuCount: 8
+
+  # MIG configuration
+  mig:
+    enabled: true
+    strategy: mixed
+    profile: all-1g.10gb
+
+    # Available MIG instances
+    instances:
+      - profile: 1g.10gb
+        count: 56  # 8 GPUs × 7 instances
+        available: 48
+        allocated: 8
+
+  pricing:
+    # MIG instance pricing (per hour)
+    mig:
+      "1g.10gb": 3.43   # $24/7
+      "2g.20gb": 6.86
+      "3g.40gb": 10.29
+      "7g.80gb": 24.00
+
+---
+# Cost Optimization with MIG
+apiVersion: gryvia.io/v1alpha1
+kind: SchedulingPolicy
+metadata:
+  name: cost-optimized-mig
+spec:
+  type: cost-optimized
+  description: "Use MIG instances for cost savings"
+
+  rules:
+    # Small models → MIG 1g.10gb
+    - condition: "memory < 10GB"
+      action:
+        type: use-mig
+        profile: 1g.10gb
+      savings: 85%  # vs full GPU
+
+    # Medium models → MIG 2g.20gb
+    - condition: "memory >= 10GB AND memory < 20GB"
+      action:
+        type: use-mig
+        profile: 2g.20gb
+      savings: 71%
+
+    # Large models → MIG 3g.40gb
+    - condition: "memory >= 20GB AND memory < 40GB"
+      action:
+        type: use-mig
+        profile: 3g.40gb
+      savings: 57%
+
+    # Very large → Full GPU
+    - condition: "memory >= 40GB"
+      action:
+        type: use-full-gpu
+      savings: 0%

@@ -1,0 +1,242 @@
+# Example: PyTorch DDP Training Template
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaTemplate
+metadata:
+  name: pytorch-ddp-training
+spec:
+  description: "Distributed PyTorch training with DDP"
+  category: training
+  tags: [pytorch, distributed, ddp]
+
+  defaults:
+    framework: pytorch
+    resources:
+      gpuType: A100-80G
+      gpuCount: 8
+      memory: 512Gi
+      cpu: 64
+    image: nvcr.io/nvidia/pytorch:24.01-py3
+
+    command:
+      - torchrun
+      - --nproc_per_node={{ .gpuCount }}
+      - --nnodes={{ .nodeCount }}
+      - train.py
+      - --data={{ .dataPath }}
+      - --output={{ .outputPath }}
+      - --batch-size={{ .batchSize }}
+      - --epochs={{ .epochs }}
+
+    env:
+      - name: NCCL_DEBUG
+        value: INFO
+      - name: PYTORCH_CUDA_ALLOC_CONF
+        value: max_split_size_mb:512
+
+  parameters:
+    - name: dataPath
+      description: "Path to training data"
+      type: string
+      required: true
+
+    - name: outputPath
+      description: "Path for checkpoints and outputs"
+      type: string
+      default: "/output"
+
+    - name: batchSize
+      description: "Batch size per GPU"
+      type: integer
+      default: "32"
+      validation:
+        min: 1
+        max: 512
+
+    - name: epochs
+      description: "Number of training epochs"
+      type: integer
+      default: "100"
+      validation:
+        min: 1
+        max: 1000
+
+    - name: nodeCount
+      description: "Number of training nodes"
+      type: integer
+      default: "1"
+      validation:
+        min: 1
+        max: 64
+---
+# Example: LLM Inference Template
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaTemplate
+metadata:
+  name: llm-inference-vllm
+spec:
+  description: "LLM inference serving with vLLM"
+  category: inference
+  tags: [llm, inference, vllm]
+
+  defaults:
+    framework: vllm
+    resources:
+      gpuType: A100-80G
+      gpuCount: 4
+      memory: 256Gi
+      cpu: 32
+
+    image: vllm/vllm-openai:v0.6.6
+
+    command:
+      - python
+      - -m
+      - vllm.entrypoints.openai.api_server
+      - --model={{ .modelName }}
+      - --tensor-parallel-size={{ .gpuCount }}
+      - --max-num-batched-tokens={{ .maxBatchTokens }}
+      - --max-num-seqs={{ .maxSeqs }}
+
+    env:
+      - name: VLLM_ATTENTION_BACKEND
+        value: "FLASH_ATTN"
+
+  parameters:
+    - name: modelName
+      description: "HuggingFace model name or local path"
+      type: string
+      required: true
+
+    - name: maxBatchTokens
+      description: "Maximum tokens in a batch"
+      type: integer
+      default: "16384"
+
+    - name: maxSeqs
+      description: "Maximum concurrent sequences"
+      type: integer
+      default: "256"
+---
+# Example: Development Environment Template
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaTemplate
+metadata:
+  name: jupyter-dev-env
+spec:
+  description: "JupyterLab development environment"
+  category: development
+  tags: [jupyter, development, interactive]
+
+  defaults:
+    framework: jupyter
+    resources:
+      gpuType: T4
+      gpuCount: 1
+      memory: 32Gi
+      cpu: 8
+
+    image: jupyter/tensorflow-notebook:2024.10.0
+
+    command:
+      - jupyter
+      - lab
+      - --ip=0.0.0.0
+      - --port=8888
+      - --no-browser
+      - --allow-root
+
+    env:
+      - name: JUPYTER_ENABLE_LAB
+        value: "yes"
+
+  parameters:
+    - name: password
+      description: "Jupyter password"
+      type: string
+      required: true
+---
+# Example: Benchmark Template
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaTemplate
+metadata:
+  name: mlperf-training-benchmark
+spec:
+  description: "MLPerf training benchmark"
+  category: benchmark
+  tags: [mlperf, benchmark, performance]
+
+  defaults:
+    framework: pytorch
+    resources:
+      gpuType: A100-80G
+      gpuCount: 8
+      memory: 512Gi
+      cpu: 64
+
+    image: nvcr.io/nvidia/pytorch:24.01-py3
+
+    command:
+      - python
+      - -m
+      - mlperf.train
+      - --model={{ .model }}
+      - --dataset={{ .dataset }}
+      - --target-accuracy={{ .targetAccuracy }}
+
+  parameters:
+    - name: model
+      description: "MLPerf model to benchmark"
+      type: string
+      required: true
+      validation:
+        enum: [resnet50, bert, gpt2, maskrcnn, ssd, dlrm]
+
+    - name: dataset
+      description: "Dataset to use"
+      type: string
+      required: true
+
+    - name: targetAccuracy
+      description: "Target accuracy to achieve"
+      type: number
+      default: "0.75"
+---
+# A job that follows the pytorch-ddp-training template
+# (GryviaAIJob has no templateRef/parameters fields, so the template defaults
+# and parameter values are written out inline).
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaAIJob
+metadata:
+  name: my-training-job
+spec:
+  type: training
+
+  distributed:
+    enabled: true
+    framework: pytorch
+    nodes: 4        # nodeCount
+    gpusPerNode: 8
+
+  gpus: 32          # 4 nodes x 8 GPUs
+  gpuType: A100-80G
+  resources:
+    requests:
+      cpu: "64"
+      memory: 512Gi
+
+  image: nvcr.io/nvidia/pytorch:24.01-py3
+  command:
+    - torchrun
+    - --nproc_per_node=8
+    - --nnodes=4
+    - train.py
+    - --data=/data/imagenet
+    - --output=/output/resnet50-run1
+    - --batch-size=64
+    - --epochs=90
+
+  env:
+    - name: NCCL_DEBUG
+      value: INFO
+    - name: PYTORCH_CUDA_ALLOC_CONF
+      value: max_split_size_mb:512

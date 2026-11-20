@@ -1,0 +1,71 @@
+name: Kind e2e (GPUaaS)
+
+# Tenant RBAC, the budget admission gate and node reservations on a 2-node kind cluster without GPUs.
+# The worker advertises fake nvidia.com/gpu capacity (see scripts/e2e-gpuaas.sh for the assumptions).
+# Installs like kind-e2e.yml / e2e-jobs.yml (scripts/kind-demo.sh with GRYVIA_LOCAL_IMAGES=1), then turns the
+# opt-in flags on with a helm upgrade: quotaOperator.tenantRbac, quotaOperator.reservations, aiOperator.admissionGate.
+# NOTE: authored without being able to run it; treat the first CI run as its first run.
+
+on:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'operators/**'
+      - 'helm/**'
+      - 'crds/**'
+      - 'services/api-gateway/**'
+      - 'scripts/e2e-gpuaas.sh'
+      - 'scripts/kind-gpuaas.yaml'
+      - 'scripts/kind-demo.sh'
+      - '.github/workflows/e2e-gpuaas.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gpuaas:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - uses: azure/setup-helm@v5
+      - uses: helm/kind-action@v1
+        with:
+          install_only: true
+      - name: Create a 2-node kind cluster
+        # Same name as scripts/kind-demo.sh so that it reuses this cluster instead of creating a 1-node one.
+        run: kind create cluster --name gryvia-demo --config scripts/kind-gpuaas.yaml --wait 120s
+      - name: Install Gryvia with locally built images
+        run: GRYVIA_LOCAL_IMAGES=1 ./scripts/kind-demo.sh
+      - name: Turn on tenant RBAC, reservations and the admission gate
+        run: |
+          helm upgrade gryvia ./helm/gryvia --namespace gryvia-system --reuse-values \
+            --set quotaOperator.tenantRbac=true \
+            --set quotaOperator.reservations=true \
+            --set aiOperator.admissionGate=true \
+            --wait --timeout 300s
+          kubectl -n gryvia-system rollout status deploy -l app.kubernetes.io/component=ai-operator --timeout=180s
+          kubectl -n gryvia-system rollout status deploy -l app.kubernetes.io/component=quota-operator --timeout=180s
+          kubectl -n gryvia-system get deploy -l app.kubernetes.io/component=ai-operator -o jsonpath='{.items[0].spec.template.spec.containers[0].args}' | grep -q -- '--admission-gate=true'
+          kubectl -n gryvia-system get deploy -l app.kubernetes.io/component=quota-operator -o jsonpath='{.items[0].spec.template.spec.containers[0].args}' | grep -q -- '--tenant-rbac=true'
+          kubectl get clusterrole gryvia-tenant-viewer gryvia-tenant-member gryvia-tenant-admin
+      - name: Tenant RoleBindings and kubectl auth can-i
+        run: ./scripts/e2e-gpuaas.sh rbac
+      - name: Hard budget rejects an over-forecast job with no workload; an affordable job succeeds
+        run: ./scripts/e2e-gpuaas.sh budget
+      - name: A reservation taints the worker, only the owner's job lands, expiry frees it
+        run: ./scripts/e2e-gpuaas.sh reservation
+      - name: Dump state on failure
+        if: failure()
+        run: |
+          kubectl get nodes -o yaml || true
+          kubectl get gryviatenants,gryviabudgets,gryviareservations,gryviagpuskus -o yaml || true
+          kubectl get gryviaaijobs,gryviausagerecords,rolebindings,jobs,pods -A || true
+          kubectl get gryviaaijobs -A -o yaml || true
+          kubectl -n gryvia-system logs -l app.kubernetes.io/component=ai-operator --tail=300 || true
+          kubectl -n gryvia-system logs -l app.kubernetes.io/component=quota-operator --tail=300 || true

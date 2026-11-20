@@ -1,0 +1,39 @@
+# CPU image for the download, fine-tune, evaluate (including lm-eval tasks) and GGUF conversion steps with tiny models
+# (the kind e2e). No quantize: llm-compressor AWQ/GPTQ needs a GPU. The library versions are the ones the e2e ran with;
+# the GGUF converter is llama.cpp's convert_hf_to_gguf.py and gguf-py from the same build as the llama.cpp server image.
+#   docker build -f examples/model-factory/Dockerfile.cpu -t <registry>/gryvia-model-factory:cpu examples/model-factory
+FROM python:3.12-slim
+
+ARG LLAMA_CPP_REF=b11347
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    HOME=/tmp \
+    HF_HOME=/models/hf-home \
+    HF_HUB_DISABLE_TELEMETRY=1 \
+    LLAMA_CPP_DIR=/opt/llama.cpp
+
+RUN pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu torch==2.8.0 \
+ && pip install --no-cache-dir transformers==5.18.0 trl==1.14.1 peft==0.21.2 datasets==5.0.1 accelerate==1.15.0 \
+    huggingface_hub==1.33.0 "lm-eval[api]==0.4.13" sentencepiece==0.2.2 "protobuf>=4.21,<5"
+
+RUN python3 - <<EOF
+import io, tarfile, urllib.request
+url = "https://github.com/ggml-org/llama.cpp/archive/refs/tags/${LLAMA_CPP_REF}.tar.gz"
+prefix = "llama.cpp-${LLAMA_CPP_REF}/"
+keep = ("convert_hf_to_gguf.py", "conversion/", "gguf-py/")
+with tarfile.open(fileobj=io.BytesIO(urllib.request.urlopen(url, timeout=300).read())) as tar:
+    members = []
+    for m in tar.getmembers():
+        rel = m.name[len(prefix):]
+        if m.name.startswith(prefix) and rel.startswith(keep) and (m.isfile() or m.isdir()):
+            m.name = rel
+            members.append(m)
+    tar.extractall("/opt/llama.cpp", members=members, filter="data")
+EOF
+RUN pip install --no-cache-dir /opt/llama.cpp/gguf-py
+
+WORKDIR /app
+COPY outputs.py download.py finetune_lora.py evaluate.py convert_gguf.py ./
+
+USER 65534:65534

@@ -1,0 +1,368 @@
+---
+# Distributed Tracing with Jaeger and OpenTelemetry
+
+# OpenTelemetry Collector
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: otel-collector-config
+  namespace: gryvia-system
+data:
+  otel-collector-config.yaml: |
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:4317
+          http:
+            endpoint: 0.0.0.0:4318
+
+    processors:
+      batch:
+        timeout: 10s
+        send_batch_size: 1024
+
+      memory_limiter:
+        check_interval: 1s
+        limit_mib: 512
+
+      # Add resource attributes
+      resource:
+        attributes:
+          - key: cluster
+            value: gryvia
+            action: upsert
+
+    exporters:
+      # Jaeger (use TLS in production with proper certificates)
+      otlp/jaeger:
+        endpoint: jaeger-collector:14250
+        tls:
+          insecure: false
+          insecure_skip_verify: true
+
+      # Prometheus
+      prometheus:
+        endpoint: "0.0.0.0:8889"
+        namespace: gryvia-system
+
+      # Logging for debugging
+      logging:
+        loglevel: info
+
+    service:
+      pipelines:
+        traces:
+          receivers: [otlp]
+          processors: [memory_limiter, batch, resource]
+          exporters: [otlp/jaeger, logging]
+
+        metrics:
+          receivers: [otlp]
+          processors: [memory_limiter, batch]
+          exporters: [prometheus]
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: otel-collector
+  namespace: gryvia-system
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: otel-collector
+  template:
+    metadata:
+      labels:
+        app: otel-collector
+    spec:
+      containers:
+        - name: otel-collector
+          image: otel/opentelemetry-collector:0.91.0
+          command:
+            - /otelcol
+            - --config=/conf/otel-collector-config.yaml
+          ports:
+            - containerPort: 4317  # OTLP gRPC
+            - containerPort: 4318  # OTLP HTTP
+            - containerPort: 8889  # Prometheus metrics
+          volumeMounts:
+            - name: config
+              mountPath: /conf
+          resources:
+            requests:
+              memory: 256Mi
+              cpu: 200m
+            limits:
+              memory: 512Mi
+              cpu: 500m
+      volumes:
+        - name: config
+          configMap:
+            name: otel-collector-config
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: otel-collector
+  namespace: gryvia-system
+spec:
+  selector:
+    app: otel-collector
+  ports:
+    - name: otlp-grpc
+      port: 4317
+      targetPort: 4317
+    - name: otlp-http
+      port: 4318
+      targetPort: 4318
+    - name: metrics
+      port: 8889
+      targetPort: 8889
+
+---
+# Jaeger All-in-One (for development/testing)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jaeger
+  namespace: gryvia-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: jaeger
+  template:
+    metadata:
+      labels:
+        app: jaeger
+    spec:
+      containers:
+        - name: jaeger
+          image: jaegertracing/all-in-one:1.52
+          env:
+            - name: COLLECTOR_ZIPKIN_HOST_PORT
+              value: ":9411"
+            - name: COLLECTOR_OTLP_ENABLED
+              value: "true"
+          ports:
+            - containerPort: 5775  # Zipkin
+              protocol: UDP
+            - containerPort: 6831  # Jaeger Thrift
+              protocol: UDP
+            - containerPort: 6832  # Jaeger Thrift
+              protocol: UDP
+            - containerPort: 5778  # Jaeger HTTP
+            - containerPort: 16686 # Jaeger UI
+            - containerPort: 14250 # Jaeger gRPC
+            - containerPort: 14268 # Jaeger HTTP
+            - containerPort: 14269 # Admin port
+            - containerPort: 9411  # Zipkin
+            - containerPort: 4317  # OTLP gRPC
+            - containerPort: 4318  # OTLP HTTP
+          resources:
+            requests:
+              memory: 1Gi
+              cpu: 500m
+            limits:
+              memory: 2Gi
+              cpu: 1
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: jaeger-query
+  namespace: gryvia-system
+spec:
+  type: ClusterIP
+  selector:
+    app: jaeger
+  ports:
+    - name: query
+      port: 16686
+      targetPort: 16686
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: jaeger-collector
+  namespace: gryvia-system
+spec:
+  selector:
+    app: jaeger
+  ports:
+    - name: grpc
+      port: 14250
+      targetPort: 14250
+    - name: http
+      port: 14268
+      targetPort: 14268
+    - name: zipkin
+      port: 9411
+      targetPort: 9411
+
+---
+# Production Jaeger with Elasticsearch backend
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jaeger-collector-prod
+  namespace: gryvia-system
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: jaeger-collector
+  template:
+    metadata:
+      labels:
+        app: jaeger-collector
+    spec:
+      containers:
+        - name: jaeger-collector
+          image: jaegertracing/jaeger-collector:1.52
+          env:
+            - name: SPAN_STORAGE_TYPE
+              value: elasticsearch
+            - name: ES_SERVER_URLS
+              value: https://elasticsearch:9200
+            - name: ES_INDEX_PREFIX
+              value: jaeger
+            - name: COLLECTOR_QUEUE_SIZE
+              value: "10000"
+            - name: COLLECTOR_NUM_WORKERS
+              value: "100"
+          ports:
+            - containerPort: 14250
+            - containerPort: 14268
+          resources:
+            requests:
+              memory: 2Gi
+              cpu: 1
+            limits:
+              memory: 4Gi
+              cpu: 2
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jaeger-query-prod
+  namespace: gryvia-system
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: jaeger-query
+  template:
+    metadata:
+      labels:
+        app: jaeger-query
+    spec:
+      containers:
+        - name: jaeger-query
+          image: jaegertracing/jaeger-query:1.52
+          env:
+            - name: SPAN_STORAGE_TYPE
+              value: elasticsearch
+            - name: ES_SERVER_URLS
+              value: https://elasticsearch:9200
+            - name: ES_INDEX_PREFIX
+              value: jaeger
+          ports:
+            - containerPort: 16686
+          resources:
+            requests:
+              memory: 512Mi
+              cpu: 500m
+
+---
+# Example: Instrumented Job
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaAIJob
+metadata:
+  name: traced-training
+  namespace: default
+  annotations:
+    gryvia.io/tracing: enabled
+spec:
+  framework: pytorch
+  resources:
+    gpuType: A100-80G
+    gpuCount: 8
+  image: nvcr.io/nvidia/pytorch:24.01-py3
+  command:
+    - python
+    - train.py
+  env:
+    # OpenTelemetry configuration
+    - name: OTEL_EXPORTER_OTLP_ENDPOINT
+      value: "http://otel-collector.gryvia-system:4317"
+    - name: OTEL_SERVICE_NAME
+      value: "training-job"
+    - name: OTEL_RESOURCE_ATTRIBUTES
+      value: "job.name=traced-training,job.namespace=default"
+    - name: OTEL_TRACES_EXPORTER
+      value: "otlp"
+    - name: OTEL_METRICS_EXPORTER
+      value: "otlp"
+
+---
+# Trace Sampling Configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: trace-sampling-config
+  namespace: gryvia-system
+data:
+  sampling.yaml: |
+    # Sampling strategies
+    strategies:
+      # Always sample errors
+      - service: "*"
+        type: probabilistic
+        param: 1.0
+        condition:
+          tags:
+            error: true
+
+      # Sample 10% of successful requests
+      - service: "*"
+        type: probabilistic
+        param: 0.1
+        condition:
+          tags:
+            error: false
+
+      # Always sample slow requests (>1s)
+      - service: "*"
+        type: probabilistic
+        param: 1.0
+        condition:
+          duration: ">1s"
+
+      # Sample all GPU jobs
+      - service: "gpu-*"
+        type: probabilistic
+        param: 1.0
+
+---
+# ServiceMonitor for trace metrics
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: otel-collector-metrics
+  namespace: gryvia-system
+spec:
+  selector:
+    matchLabels:
+      app: otel-collector
+  endpoints:
+    - port: metrics
+      interval: 30s
+      path: /metrics

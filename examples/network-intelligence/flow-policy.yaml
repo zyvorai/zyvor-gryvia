@@ -1,0 +1,38 @@
+# GryviaFlowPolicy - Intent-based network policy for payment-to-database traffic
+# Allows TCP traffic from the payment service to the database on port 5432
+# with a low-latency intent, which optimizes routing and QoS settings.
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaFlowPolicy
+metadata:
+  name: payment-to-db
+  namespace: production
+spec:
+  # Traffic source: the payment service
+  source:
+    service: payment-service
+    namespace: production
+    labels:
+      app: payment
+      tier: backend
+
+  # Traffic destination: PostgreSQL database on port 5432
+  destination:
+    service: postgres-primary
+    namespace: production
+    port: 5432
+    labels:
+      app: postgres
+      role: primary
+
+  # Only match TCP traffic (database connections)
+  protocol: tcp
+
+  # Allow this traffic flow
+  action: allow
+
+  # Low-latency intent triggers optimized routing and QoS markings
+  # Options: low-latency, high-throughput, secure, default
+  intent: low-latency
+
+  # Lower priority number = higher precedence (0-1000)
+  priority: 100

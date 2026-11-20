@@ -1,0 +1,102 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: storage-operator
+  namespace: gryvia-system
+  labels:
+    app: storage-operator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: storage-operator
+  template:
+    metadata:
+      labels:
+        app: storage-operator
+    spec:
+      serviceAccountName: storage-operator
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: manager
+        image: gryvia/storage-operator:1.0.0
+        imagePullPolicy: IfNotPresent
+        command:
+        - /manager
+        args:
+        - --leader-elect
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          runAsUser: 65532
+          capabilities:
+            drop:
+            - ALL
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8081
+          initialDelaySeconds: 15
+          periodSeconds: 20
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: 8081
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        resources:
+          limits:
+            cpu: 500m
+            memory: 512Mi
+          requests:
+            cpu: 100m
+            memory: 128Mi
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: storage-operator
+  namespace: gryvia-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: storage-operator-role
+rules:
+- apiGroups: ["gryvia.io"]
+  resources: ["gryviastorages"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: ["gryvia.io"]
+  resources: ["gryviastorages/status"]
+  verbs: ["get", "update", "patch"]
+- apiGroups: [""]
+  resources: ["nodes", "persistentvolumes", "persistentvolumeclaims"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: [""]
+  resources: ["serviceaccounts", "configmaps", "secrets"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: ["apps"]
+  resources: ["daemonsets", "deployments", "statefulsets"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: ["storage.k8s.io"]
+  resources: ["storageclasses", "csinodes", "csidrivers"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: ["rbac.authorization.k8s.io"]
+  resources: ["clusterroles", "clusterrolebindings"]
+  verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: storage-operator-rolebinding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: storage-operator-role
+subjects:
+- kind: ServiceAccount
+  name: storage-operator
+  namespace: gryvia-system

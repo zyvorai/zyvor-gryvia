@@ -1,0 +1,5 @@
+- name: Restart rke2
+  ansible.builtin.systemd:
+    name: "rke2-{{ rke2_type }}"
+    state: restarted
+  throttle: 1

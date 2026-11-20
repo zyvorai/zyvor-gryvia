@@ -1,0 +1,80 @@
+---
+# Common setup for all nodes
+
+- name: Update package cache
+  apt:
+    update_cache: yes
+    cache_valid_time: 3600
+  when: ansible_os_family == "Debian"
+
+- name: Install essential packages
+  apt:
+    name:
+      - curl
+      - wget
+      - vim
+      - htop
+      - iotop
+      - sysstat
+      - net-tools
+      - ethtool
+      - pciutils
+      - lshw
+      - jq
+      - git
+      - build-essential
+      - linux-headers-{{ ansible_kernel }}
+    state: present
+  when: ansible_os_family == "Debian"
+
+- name: Disable swap
+  shell: swapoff -a
+  when: ansible_swaptotal_mb > 0
+
+- name: Remove swap from fstab
+  lineinfile:
+    path: /etc/fstab
+    regexp: '^\s*[^#].*\s+swap\s+'
+    state: absent
+
+- name: Load required kernel modules
+  modprobe:
+    name: "{{ item }}"
+    state: present
+  loop:
+    - overlay
+    - br_netfilter
+
+- name: Ensure kernel modules load on boot
+  copy:
+    dest: /etc/modules-load.d/gryvia.conf
+    content: |
+      overlay
+      br_netfilter
+
+- name: Configure sysctl for Kubernetes
+  sysctl:
+    name: "{{ item.key }}"
+    value: "{{ item.value }}"
+    state: present
+    sysctl_set: yes
+    reload: yes
+  loop:
+    - { key: 'net.bridge.bridge-nf-call-iptables', value: '1' }
+    - { key: 'net.bridge.bridge-nf-call-ip6tables', value: '1' }
+    - { key: 'net.ipv4.ip_forward', value: '1' }
+    - { key: 'vm.swappiness', value: '0' }
+    - { key: 'vm.overcommit_memory', value: '1' }
+    - { key: 'fs.file-max', value: '2097152' }
+    - { key: 'fs.inotify.max_user_watches', value: '524288' }
+
+- name: Disable firewall
+  systemd:
+    name: ufw
+    state: stopped
+    enabled: no
+  ignore_errors: yes
+
+- name: Set hostname
+  hostname:
+    name: "{{ inventory_hostname }}"

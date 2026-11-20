@@ -1,0 +1,26 @@
+{{- if .Values.networkPolicy.enabled }}
+{{- /* Opt-in: the gateway only accepts traffic from the dashboard pods (and from its own namespace's
+       health probes via the kubelet, which bypass NetworkPolicy). */ -}}
+{{- if .Values.apiGateway.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: gryvia-api-gateway
+  namespace: {{ include "gryvia.namespace" . }}
+  labels:
+    {{- include "gryvia.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app: gryvia-api-gateway
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: gryvia-ui
+      ports:
+        - port: 8080
+          protocol: TCP
+{{- end }}
+{{- end }}

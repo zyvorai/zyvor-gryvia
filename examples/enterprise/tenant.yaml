@@ -1,0 +1,96 @@
+# GryviaTenant - Isolated multi-tenant team configuration
+# Creates the "ml-research" team with members, GPU quotas, storage limits,
+# network isolation, billing, and governance policies.
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaTenant
+metadata:
+  name: ml-research
+spec:
+  displayName: "ML Research Team"
+  description: "Core ML research team working on foundation models and computer vision"
+
+  # Team members with role-based access
+  members:
+    - username: alice
+      role: admin
+    - username: bob
+      role: member
+    - username: carol
+      role: member
+    - username: dave
+      role: viewer
+
+  # Resource quotas for the team
+  quotas:
+    # Monthly GPU hour limits
+    gpuHours:
+      monthly: 10000            # 10,000 GPU-hours per month
+      burst: 2000               # Allow 2,000 extra hours for burst workloads
+
+    # Monthly cost cap
+    costUSD:
+      monthly: 50000            # $50,000/month budget
+      burst: 10000              # $10,000 burst allowance
+
+    # Concurrent resource limits
+    concurrentJobs: 20
+    concurrentGPUs: 64
+
+    # Per-GPU-type quotas
+    perGPUType:
+      H100:
+        count: 32               # Max 32 concurrent H100 GPUs
+        hours: 5000             # Max 5000 H100-hours per month
+      A100:
+        count: 48
+        hours: 8000
+
+  # Priority and preemption settings
+  priorities:
+    default: normal
+    allowHighPriority: true
+    preemptionAllowed: false    # This team's jobs cannot be preempted
+
+  # Network isolation between tenants
+  networkPolicy:
+    isolated: true
+    allowedTenants:
+      - data-engineering        # Allow cross-team data access
+
+  # Storage limits per category
+  storageQuotas:
+    home: "500Gi"
+    scratch: "2Ti"
+    datasets: "10Ti"
+    models: "5Ti"
+
+  # Default settings applied to all jobs in this tenant
+  jobDefaults:
+    image: "nvcr.io/nvidia/pytorch:24.01-py3"
+    priorityClass: normal
+    checkpointing: true         # Enable checkpointing by default
+    retryPolicy: "on-failure"
+
+  # Billing and chargeback configuration
+  billing:
+    costCenter: "CC-4001"
+    billingContact: "alice@company.com"
+    purchaseOrder: "PO-2024-ML-001"
+    paymentMethod: prepaid
+
+  # Notification channels for alerts and reports
+  notifications:
+    email:
+      - "ml-research@company.com"
+      - "alice@company.com"
+    slack:
+      channel: "#ml-research-ops"
+      webhook: "https://hooks.slack.com/services/T00/B00/xxxx"
+
+  # Compliance and governance policies
+  governance:
+    dataClassification: confidential
+    complianceRequirements:
+      - SOC2
+      - GDPR
+    auditRetention: "365d"

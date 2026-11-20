@@ -1,0 +1,312 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.22.0
+  name: gryviabudgets.gryvia.io
+spec:
+  group: gryvia.io
+  names:
+    kind: GryviaBudget
+    listKind: GryviaBudgetList
+    plural: gryviabudgets
+    singular: gryviabudget
+  scope: Cluster
+  versions:
+  - name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: GryviaBudget is the Schema for the gryviabudgets API
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: GryviaBudgetSpec defines the desired state of GryviaBudget
+            properties:
+              alerts:
+                description: Alerts defines alert thresholds
+                items:
+                  description: BudgetAlert defines an alert threshold
+                  properties:
+                    actions:
+                      description: Actions to take when threshold is reached
+                      items:
+                        type: string
+                      type: array
+                    recipients:
+                      description: Recipients for notifications
+                      items:
+                        type: string
+                      type: array
+                    threshold:
+                      description: Threshold is the percentage of budget consumed
+                        (0-100)
+                      type: number
+                  required:
+                  - actions
+                  - threshold
+                  type: object
+                type: array
+              enforcement:
+                description: Enforcement defines how the budget is enforced
+                properties:
+                  action:
+                    description: Action is the enforcement action (warn, block, throttle)
+                    type: string
+                  enabled:
+                    description: Enabled enables enforcement
+                    type: boolean
+                  gracePeriod:
+                    description: GracePeriod before enforcement
+                    type: string
+                type: object
+              limits:
+                description: Limits defines the budget limits
+                properties:
+                  costUSD:
+                    description: CostUSD is the cost limit in USD
+                    type: number
+                  gpuHours:
+                    description: GPUHours is the GPU hours limit
+                    type: number
+                  gpuTypeHours:
+                    additionalProperties:
+                      type: number
+                    description: GPUTypeHours is per-GPU-type hour limits
+                    type: object
+                  maxConcurrentGPUs:
+                    description: MaxConcurrentGPUs limits concurrent GPU usage
+                    type: integer
+                  maxConcurrentJobs:
+                    description: MaxConcurrentJobs limits concurrent jobs
+                    type: integer
+                type: object
+              period:
+                description: Period defines the budget period
+                properties:
+                  endDate:
+                    description: EndDate is the end of a custom period
+                    type: string
+                  startDate:
+                    description: StartDate is the start of a custom period
+                    type: string
+                  type:
+                    description: Type is the period type (daily, weekly, monthly,
+                      quarterly, annual, custom)
+                    type: string
+                required:
+                - type
+                type: object
+              priority:
+                description: Priority defines priority override settings
+                properties:
+                  allowOverride:
+                    description: AllowOverride allows high-priority jobs to exceed
+                      budget
+                    type: boolean
+                  overrideLimitPercent:
+                    description: OverrideLimitPercent is the percentage over budget
+                      allowed
+                    type: integer
+                type: object
+              rollover:
+                description: Rollover defines rollover policy
+                properties:
+                  enabled:
+                    description: Enabled enables rollover
+                    type: boolean
+                  maxRolloverPercent:
+                    description: MaxRolloverPercent is the max percentage that can
+                      roll over
+                    type: integer
+                type: object
+              scope:
+                description: Scope defines who this budget applies to
+                properties:
+                  name:
+                    description: Name is the name of the scoped entity
+                    type: string
+                  type:
+                    description: Type is the scope type (team, namespace, user, project)
+                    type: string
+                required:
+                - name
+                - type
+                type: object
+            required:
+            - period
+            - scope
+            type: object
+          status:
+            description: GryviaBudgetStatus defines the observed state of GryviaBudget
+            properties:
+              alerts:
+                description: Alerts is the history of triggered alerts
+                items:
+                  description: BudgetAlertEvent records a triggered alert
+                  properties:
+                    message:
+                      description: Message describing the alert
+                      type: string
+                    threshold:
+                      description: Threshold that was crossed
+                      type: number
+                    timestamp:
+                      description: Timestamp of the alert
+                      format: date-time
+                      type: string
+                  type: object
+                type: array
+              conditions:
+                description: Conditions represent the latest available observations
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+              currentPeriod:
+                description: CurrentPeriod tracks the current budget period
+                properties:
+                  daysRemaining:
+                    description: DaysRemaining in the current period
+                    type: integer
+                  endDate:
+                    description: EndDate of the current period
+                    format: date-time
+                    type: string
+                  startDate:
+                    description: StartDate of the current period
+                    format: date-time
+                    type: string
+                type: object
+              forecast:
+                description: Forecast projects end-of-period usage
+                properties:
+                  budgetSufficient:
+                    description: BudgetSufficient indicates if budget will last the
+                      period
+                    type: boolean
+                  estimatedExhaustionDate:
+                    description: EstimatedExhaustionDate is when budget will run out
+                    format: date-time
+                    type: string
+                  projectedCostUSD:
+                    description: ProjectedCostUSD is the projected total cost
+                    type: number
+                  projectedGPUHours:
+                    description: ProjectedGPUHours is the projected total GPU hours
+                    type: number
+                type: object
+              state:
+                description: State is the budget state (active, warning, exceeded,
+                  blocked)
+                type: string
+              usage:
+                description: Usage tracks current resource consumption
+                properties:
+                  costUSD:
+                    description: CostUSD is the cost consumed
+                    type: number
+                  currentConcurrentGPUs:
+                    description: CurrentConcurrentGPUs is currently allocated GPUs
+                    type: integer
+                  currentConcurrentJobs:
+                    description: CurrentConcurrentJobs is currently running jobs
+                    type: integer
+                  gpuHours:
+                    description: GPUHours is the GPU hours consumed
+                    type: number
+                  gpuTypeHours:
+                    additionalProperties:
+                      type: number
+                    description: GPUTypeHours is per-GPU-type hours consumed
+                    type: object
+                  jobCount:
+                    description: JobCount is total jobs run this period
+                    type: integer
+                type: object
+              utilization:
+                description: Utilization tracks utilization percentages
+                properties:
+                  costPercent:
+                    description: CostPercent is cost utilization percentage
+                    type: number
+                  gpuHoursPercent:
+                    description: GPUHoursPercent is GPU hours utilization percentage
+                    type: number
+                  jobsPercent:
+                    description: JobsPercent is jobs utilization percentage
+                    type: number
+                type: object
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

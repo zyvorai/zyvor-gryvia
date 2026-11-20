@@ -1,0 +1,60 @@
+# Example: Model Lineage for LLaMA Fine-Tune
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaModelLineage
+metadata:
+  name: llama-70b-finetune-v1
+  namespace: ml-training
+spec:
+  model:
+    name: llama-70b-domain-adapted
+    version: "1.0.0"
+    registry: "registry.company.com/models/llama-70b-domain"
+    format: safetensors
+
+  provenance:
+    autoCapture: true
+    code:
+      gitRepo: "https://github.com/company/llm-training"
+      gitCommit: "a1b2c3d4e5f6"
+      gitBranch: "main"
+      containerImage: "registry.company.com/training:v1.2.0"
+    data:
+      datasets:
+        - datasetRef: "domain-corpus-v3"
+          version: "3.1.0"
+          checksum: "sha256:abcdef1234567890"
+        - datasetRef: "instruction-dataset"
+          version: "2.0.0"
+          checksum: "sha256:0987654321fedcba"
+    training:
+      jobRef: "llama-70b-finetune-job"
+      hyperparameters:
+        learning_rate: "2e-5"
+        batch_size: "32"
+        epochs: "3"
+        warmup_steps: "500"
+        weight_decay: "0.01"
+      distributedConfig: "8xH100, FSDP, NCCL over RDMA"
+    infrastructure:
+      gpuNodes:
+        - gpu-node-01
+        - gpu-node-02
+      networkType: rdma
+      storageBackend: lustre-fast
+      totalGpuHours: 384
+      totalCost: 3072.00
+
+  compliance:
+    immutableRecord: true
+    cryptographicChain: true
+    signedBy: "ml-pipeline@company.com"
+    attestation:
+      format: in-toto
+      attachToRegistry: true
+    regulatoryFramework:
+      - EU-AI-Act
+      - NIST-AI-RMF
+    dataPrivacy:
+      piiScanned: true
+      piiFound: false
+      dpiaCompleted: true

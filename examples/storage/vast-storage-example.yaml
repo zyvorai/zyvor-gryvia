@@ -1,0 +1,45 @@
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaStorage
+metadata:
+  name: vast-production
+spec:
+  backend: vast
+  endpoint: vast-mgmt.example.com
+  capacity: 100Ti
+  credentials:
+    secretName: vast-credentials
+    secretNamespace: gryvia-system
+  mountOptions:
+    - "rw"
+    - "relatime"
+    - "vers=3"
+  storageClass:
+    name: vast-production
+    parameters:
+      vipPool: "10.0.0.0/24"
+      csiDriverVersion: "v2.5.0"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: vast-credentials
+  namespace: gryvia-system
+type: Opaque
+# IMPORTANT: Replace placeholders with real credentials before applying.
+stringData:
+  username: <REPLACE_WITH_USERNAME>
+  password: <REPLACE_WITH_PASSWORD>
+---
+# Example PVC using VAST storage
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: training-data
+  namespace: default
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: vast-production
+  resources:
+    requests:
+      storage: 1Ti

@@ -1,0 +1,39 @@
+Thank you for installing {{ .Chart.Name }}.
+
+Your release is named {{ .Release.Name }}.
+
+== Network Intelligence Operator ==
+
+The operator has been deployed to namespace: {{ .Values.namespace.name }}
+
+To check the operator status:
+  kubectl get pods -n {{ .Values.namespace.name }} -l app.kubernetes.io/component=operator
+
+{{- if .Values.ebpf.enabled }}
+
+== eBPF Collector ==
+
+The eBPF collector DaemonSet has been deployed to all nodes.
+
+To check collector status:
+  kubectl get pods -n {{ .Values.namespace.name }} -l app.kubernetes.io/component=collector
+
+Which programs attached on a node:
+  kubectl -n {{ .Values.namespace.name }} port-forward <collector-pod> 9090 &  curl -s localhost:9090/api/v1/ebpf/status
+{{- end }}
+
+{{- if .Values.prometheus.enabled }}
+
+== Monitoring ==
+
+{{- if .Capabilities.APIVersions.Has "monitoring.coreos.com/v1" }}
+Prometheus ServiceMonitor resources have been created.
+{{- else }}
+The Prometheus Operator is not installed, so no ServiceMonitor was created; scrape the endpoints below directly.
+{{- end }}
+
+Operator metrics endpoint: :8080/metrics
+Collector metrics endpoint: :9090/metrics
+{{- end }}
+
+For more information, visit: https://github.com/zyvorai/gryvia

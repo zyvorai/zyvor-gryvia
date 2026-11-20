@@ -1,0 +1,20 @@
+# GryviaQuota with an optional egress cap.
+#
+# spec.network.maxEgressMbps is read ONLY by the per-node eBPF collector, and only when it runs with
+# -quota-pace, -cgroup-path and -quota-pace-sync (all off by default; chart value ebpf.quotaPace.sync).
+# It lowers SO_MAX_PACING_RATE of NEW outbound TCP connections opened by pods of the listed namespaces
+# (never below 1 Mbit/s, never for kube-system, gryvia-system or the collector's own namespace). It is
+# not a bandwidth guarantee and does not limit UDP, RDMA or connections that already exist. Leave the
+# field out for no cap. See docs/fabric-status.md.
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaQuota
+metadata:
+  name: team-batch-egress
+spec:
+  team: batch
+  namespaces:
+    - batch-ingest
+  gpuQuota:
+    maxGPUs: 8
+  network:
+    maxEgressMbps: 2000   # 2 Gbit/s per new connection

@@ -1,0 +1,49 @@
+# GryviaModelRegistry - Register a trained model with version tracking
+# Records model artifacts, provenance, metadata, and optional auto-serving config.
+# Supports promotion through stages: dev -> staging -> production -> archived.
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaModelRegistry
+metadata:
+  name: resnet50-v2-1-0
+  namespace: ml-team
+spec:
+  # Unique model name used across all versions
+  modelName: resnet50-v2
+
+  # Semantic version for this model checkpoint
+  version: "1.0.0"
+
+  # Link back to the training job that produced this model
+  source:
+    workflowRef: image-classifier-pipeline
+
+  # Where the model files are stored
+  artifacts:
+    s3Path: "s3://ml-models/resnet50-v2/v1.0.0/"
+    format: pytorch               # pytorch, onnx, tensorrt, safetensors
+    sizeBytes: 102400000          # ~100 MB
+
+  # Current promotion stage
+  stage: staging
+
+  description: "ResNet50 v2 trained on ImageNet-1K, 90 epochs, top-1 accuracy 78.5%"
+
+  # Arbitrary key-value metadata for tracking
+  metadata:
+    framework: "pytorch-2.1.0"
+    dataset: "imagenet-1k"
+    top1_accuracy: "0.785"
+    top5_accuracy: "0.942"
+    training_gpu_hours: "48"
+    epochs: "90"
+    batch_size: "256"
+
+  # Automatically deploy when promoted to production
+  autoServe: true
+
+  # Configuration used when auto-serving is triggered
+  servingConfig:
+    backend: triton
+    replicas: 3
+    gpuCount: 1
+    gpuType: A100

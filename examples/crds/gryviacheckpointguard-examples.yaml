@@ -1,0 +1,42 @@
+# Example: Checkpoint guard for LLM training
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaCheckpointGuard
+metadata:
+  name: llm-training-guard
+  namespace: default
+spec:
+  jobSelector:
+    matchLabels:
+      gryvia.io/team: ml-research
+      gryvia.io/type: training
+
+  checkpointPolicy:
+    intervalMinutes: 15
+    emergencyCheckpoint:
+      triggers:
+        - GpuHealthDegraded
+        - SpotPreemptionSignal
+        - MemoryPressure
+        - LossDivergence
+    replication:
+      backend: s3
+      copies: 3
+      asyncUpload: true
+
+  validation:
+    checksumVerify: true
+    tensorShapeVerify: true
+    loadTest: false
+    retainValidOnly: true
+    retentionCount: 10
+
+  restore:
+    autoRestore: true
+    preferNearStorage: true
+    injectEnvVars:
+      CHECKPOINT_DIR: "/checkpoints"
+      RESUME_FROM_CHECKPOINT: "true"
+
+  monitoring:
+    exportMetrics: true
+    alertOnFailure: true

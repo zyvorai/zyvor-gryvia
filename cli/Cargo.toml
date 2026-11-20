@@ -1,0 +1,56 @@
+[package]
+name = "gryvia"
+version = "1.0.0"
+edition = "2021"
+authors = ["Gryvia Contributors"]
+description = "CLI for managing Gryvia GPU clusters"
+license = "LicenseRef-Zyvor-Production-1.0"
+repository = "https://github.com/zyvorai/gryvia"
+
+[[bin]]
+name = "gryvia"
+path = "src/main.rs"
+
+[dependencies]
+clap = { version = "4.6", features = ["derive", "color", "suggestions", "env"] }
+clap_complete = "4.6"
+anstyle = "1"
+tokio = { version = "1.53", features = ["rt-multi-thread", "macros", "time", "io-util"] }
+kube = { version = "5.0", features = ["runtime", "derive"] }
+k8s-openapi = { version = "0.28", features = ["v1_32"] }
+schemars = { version = "1.2", features = ["chrono04"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde_yaml = "0.9"
+anyhow = "1.0"
+thiserror = "2.0"
+colored = "3.1"
+chrono = { version = "0.4", features = ["serde"] }
+indicatif = "0.18"
+dialoguer = "0.12"
+futures = "0.3"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+# Gateway HTTP client (src/gateway.rs). All of these are already in the dependency tree through kube's rustls
+# client; declaring them only lets the CLI call the gateway without adding a new HTTP stack.
+hyper = { version = "1", features = ["client", "http1"] }
+hyper-util = { version = "0.1", features = ["client-legacy", "http1", "tokio"] }
+hyper-rustls = { version = "0.27", default-features = false, features = ["http1", "tls12"] }
+http-body-util = "0.1"
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+rustls-native-certs = "0.8"
+rustls-pki-types = { version = "1", features = ["std"] }
+# sha256 and random bytes for `gryvia llm keys create` (already in the tree through rustls).
+ring = "0.17"
+
+[dev-dependencies]
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring"] }
+assert_cmd = "2.2"
+rcgen = "0.14"
+predicates = "3.1"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true

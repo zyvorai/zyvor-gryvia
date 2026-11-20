@@ -1,0 +1,30 @@
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaAIJob
+metadata:
+  name: llama-training
+  namespace: default
+  labels:
+    team: nlp
+spec:
+  type: training
+  distributed:
+    framework: pytorch
+    enabled: true
+    nodes: 1
+    gpusPerNode: 8
+  gpus: 8
+  gpuType: H100
+  resources:
+    requests:
+      cpu: "64"
+      memory: 512Gi
+  image: nvcr.io/nvidia/pytorch:24.01-py3
+  command:
+    - torchrun
+    - --nproc_per_node=8
+    - train.py
+    - --model=llama-70b
+    - --batch-size=4
+  env:
+    - name: NCCL_DEBUG
+      value: INFO

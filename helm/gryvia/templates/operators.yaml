@@ -1,0 +1,356 @@
+{{- if and .Values.aiOperator.nativeQueueScheduler .Values.aiOperator.kueueIntegration }}
+{{- fail "aiOperator.nativeQueueScheduler and aiOperator.kueueIntegration are mutually exclusive" }}
+{{- end }}
+{{- if and (dig "aiOperator" "kaiScheduler" false .Values.AsMap) (or .Values.aiOperator.kueueIntegration .Values.aiOperator.nativeQueueScheduler) }}
+{{- fail "aiOperator.kaiScheduler cannot be combined with aiOperator.kueueIntegration or aiOperator.nativeQueueScheduler" }}
+{{- end }}
+{{- if and (dig "aiOperator" "volcanoScheduler" false .Values.AsMap) (or (dig "aiOperator" "kaiScheduler" false .Values.AsMap) .Values.aiOperator.kueueIntegration .Values.aiOperator.nativeQueueScheduler) }}
+{{- fail "aiOperator.volcanoScheduler cannot be combined with kaiScheduler, kueueIntegration or nativeQueueScheduler" }}
+{{- end }}
+{{- if and (dig "quotaOperator" "kaiIntegration" false .Values.AsMap) .Values.quotaOperator.kueueIntegration }}
+{{- fail "quotaOperator.kaiIntegration and quotaOperator.kueueIntegration are mutually exclusive" }}
+{{- end }}
+{{- if and .Values.aiOperator.kueueStrictAdmission (not .Values.aiOperator.kueueIntegration) }}
+{{- fail "aiOperator.kueueStrictAdmission requires aiOperator.kueueIntegration" }}
+{{- end }}
+{{- if and (dig "billing" "ledger" "enabled" false .Values.AsMap) (not (and .Values.webhook.enabled .Values.quotaOperator.enabled (dig "quotaOperator" "usageRecordWebhook" "enabled" nil .Values.AsMap))) }}
+{{- fail "billing.ledger.enabled requires webhook.enabled, quotaOperator.enabled and quotaOperator.usageRecordWebhook.enabled: the ledger and finalized invoices are only immutable behind the admission webhook" }}
+{{- end }}
+{{- if and (dig "aiOperator" "federation" "failover" false .Values.AsMap) (not (and (dig "aiOperator" "federation" "allowedServers" list .Values.AsMap) .Values.aiOperator.kueueIntegration)) }}
+{{- fail "aiOperator.federation.failover requires aiOperator.federation.allowedServers and aiOperator.kueueIntegration: it moves Kueue MultiKueue Workloads off failed members" }}
+{{- end }}
+{{- /* One Deployment per enabled operator; they differ only in name, image and resources. */ -}}
+{{- $ops := dict "gpu-operator" .Values.gpuOperator "ai-operator" .Values.aiOperator "quota-operator" .Values.quotaOperator "storage-operator" .Values.storageOperator "network-operator" .Values.networkOperator -}}
+{{- range $name, $op := $ops }}
+{{- if $op.enabled }}
+{{- /* The ai-operator serves the GryviaAIJob admission webhook, the quota-operator the GryviaUsageRecord one. */ -}}
+{{- $webhookSecret := "" }}
+{{- if and (eq $name "ai-operator") $.Values.webhook.enabled }}
+{{- $webhookSecret = include "gryvia.webhookSecretName" $ }}
+{{- else if and (eq $name "quota-operator") $.Values.webhook.enabled (dig "quotaOperator" "usageRecordWebhook" "enabled" nil $.Values.AsMap) }}
+{{- $webhookSecret = include "gryvia.usageWebhookSecretName" $ }}
+{{- end }}
+{{- $webhook := ne $webhookSecret "" }}
+{{- $wsProxy := and (eq $name "ai-operator") (dig "workspaceProxy" "enabled" false $.Values.AsMap) }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "gryvia.fullname" $ }}-{{ $name }}
+  namespace: {{ include "gryvia.namespace" $ }}
+  labels:
+    {{- include "gryvia.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $name }}
+spec:
+  replicas: {{ $op.replicas }}
+  selector:
+    matchLabels:
+      {{- include "gryvia.selectorLabels" $ | nindent 6 }}
+      app.kubernetes.io/component: {{ $name }}
+  template:
+    metadata:
+      labels:
+        {{- include "gryvia.selectorLabels" $ | nindent 8 }}
+        app.kubernetes.io/component: {{ $name }}
+    spec:
+      serviceAccountName: {{ include "gryvia.serviceAccountName" $ }}
+      {{- with $.Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml $.Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: manager
+          image: {{ include "gryvia.image" (dict "root" $ "image" $op.image) | quote }}
+          imagePullPolicy: {{ $.Values.global.imagePullPolicy }}
+          command:
+            - /manager
+          args:
+            - --leader-elect={{ $.Values.ha.leaderElection }}
+            - --metrics-bind-address=:8080
+            - --health-probe-bind-address=:8081
+            {{- if eq $name "gpu-operator" }}
+            - --auto-register={{ $.Values.gpuOperator.autoRegister }}
+            {{- end }}
+            {{- if and (dig "platformCompletion" "reportUnsupportedAPIs" nil $.Values.AsMap) (has $name (list "ai-operator" "storage-operator")) }}
+            - --report-unsupported-apis=true
+            {{- end }}
+            {{- if and (eq $name "ai-operator") (dig "platformCompletion" "inferenceTelemetry" nil $.Values.AsMap) }}
+            - {{ printf "--inference-telemetry-image=%s" (include "gryvia.image" (dict "root" $ "image" $op.image)) | quote }}
+            {{- end }}
+            {{- /* timeSlicing.enabled implies sharing controller + device-plugin ConfigMap writes */ -}}
+            {{- $timeSlice := dig "nvidiaPlatform" "timeSlicing" "enabled" false $.Values.AsMap }}
+            {{- $gpuSharing := or $.Values.gpuOperator.gpuSharing $timeSlice }}
+            {{- $dpCfg := or $.Values.gpuOperator.devicePluginConfig $timeSlice }}
+            {{- if and (eq $name "gpu-operator") $gpuSharing }}
+            - --enable-gpu-sharing=true
+            {{- end }}
+            {{- if and (eq $name "gpu-operator") $gpuSharing $dpCfg }}
+            - {{ printf "--device-plugin-config-name=%s" (dig "nvidiaPlatform" "timeSlicing" "configName" nil $.Values.AsMap) | quote }}
+            - {{ printf "--device-plugin-config-namespace=%s" $.Release.Namespace | quote }}
+            {{- end }}
+            {{- if and (eq $name "gpu-operator") (dig "platformCompletion" "gpuHealth" nil $.Values.AsMap) }}
+            - --enable-gpu-health-controller=true
+            {{- end }}
+            {{- if and (eq $name "gpu-operator") (dig "platformCompletion" "gpuRemediation" nil $.Values.AsMap) }}
+            - --enable-gpu-remediation=true
+            {{- end }}
+            {{- if and (eq $name "quota-operator") (dig "platformCompletion" "kueueFairSharing" nil $.Values.AsMap) }}
+            - --kueue-fair-sharing=true
+            {{- end }}
+            {{- if and (eq $name "quota-operator") (dig "platformCompletion" "kueueTopologyName" nil $.Values.AsMap) }}
+            - {{ printf "--kueue-topology-name=%s" (dig "platformCompletion" "kueueTopologyName" nil $.Values.AsMap) | quote }}
+            {{- end }}
+            {{- if and (eq $name "quota-operator") (dig "platformCompletion" "kueueTopologyName" nil $.Values.AsMap) (dig "platformCompletion" "kueueGenerateTopology" false $.Values.AsMap) }}
+            - --kueue-generate-topology=true
+            {{- end }}
+            {{- if and (eq $name "quota-operator") (dig "platformCompletion" "kueueAdmissionCheck" nil $.Values.AsMap) }}
+            - {{ printf "--kueue-admission-check=%s" (dig "platformCompletion" "kueueAdmissionCheck" nil $.Values.AsMap) | quote }}
+            {{- end }}
+            {{- if and (eq $name "ai-operator") $.Values.aiOperator.inferenceGatewayRouting }}
+            - --inference-gateway-routing=true
+            {{- end }}
+            {{- if and (eq $name "ai-operator") $.Values.aiOperator.inferencePrometheusURL }}
+            - {{ printf "--inference-prometheus-url=%s" $.Values.aiOperator.inferencePrometheusURL | quote }}
+            {{- end }}
+            {{- if and (eq $name "ai-operator") (dig "aiOperator" "modelWatch" "enabled" nil $.Values.AsMap) }}
+            - --enable-model-watch=true
+            - {{ printf "--model-watch-hub-url=%s" (dig "aiOperator" "modelWatch" "hubURL" nil $.Values.AsMap) | quote }}
+            - {{ printf "--model-watch-min-poll-interval=%s" (dig "aiOperator" "modelWatch" "minPollInterval" nil $.Values.AsMap) | quote }}
+            {{- end }}
+            {{- if and (eq $name "ai-operator") (dig "aiOperator" "rag" "enabled" nil $.Values.AsMap) }}
+            {{- if not (dig "llmGateway" "enabled" nil $.Values.AsMap) }}
+            {{- fail "aiOperator.rag.enabled needs llmGateway.enabled (ingestion embeds through the LLM gateway)" }}
+            {{- end }}
+            - --enable-rag=true
+            - {{ printf "--rag-qdrant-image=%s" (dig "aiOperator" "rag" "qdrantImage" "qdrant/qdrant:v1.12.6-unprivileged" $.Values.AsMap) | quote }}
+            - {{ printf "--rag-ingest-image=%s" (dig "aiOperator" "rag" "ingestImage" "ghcr.io/zyvorai/gryvia-rag-ingest:latest" $.Values.AsMap) | quote }}
+            {{- end }}
+            {{- if and (eq $name "ai-operator") (dig "aiOperator" "agents" "enabled" nil $.Values.AsMap) }}
+            {{- if not (dig "llmGateway" "enabled" nil $.Values.AsMap) }}
+            {{- fail "aiOperator.agents.enabled needs llmGateway.enabled (agents call models through the LLM gateway)" }}
+            {{- end }}
+            - --enable-agents=true
+            - {{ printf "--agent-image=%s" (dig "aiOperator" "agents" "image" "ghcr.io/zyvorai/gryvia-agent-runtime:latest" $.Values.AsMap) | quote }}
+            {{- end }}
+            {{- if and (eq $name "ai-operator") (dig "aiOperator" "jobHooks" "enabled" nil $.Values.AsMap) }}
+            - --enable-job-hooks=true
+            - {{ printf "--job-hook-workers=%v" (dig "aiOperator" "jobHooks" "workers" 8 $.Values.AsMap) | quote }}
+            {{- with (dig "aiOperator" "jobHooks" "allowedCIDRs" list $.Values.AsMap) }}
+            - {{ printf "--job-hook-allowed-cidrs=%s" (join "," .) | quote }}
+            {{- end }}
+            {{- end }}
+            {{- if and (eq $name "ai-operator") (or (dig "aiOperator" "rag" "enabled" nil $.Values.AsMap) (dig "aiOperator" "agents" "enabled" nil $.Values.AsMap)) }}
+            - {{ printf "--llm-gateway-url=http://%s-llm-gateway.%s.svc.cluster.local:%v" (include "gryvia.fullname" $) (include "gryvia.namespace" $) (dig "llmGateway" "service" "port" 8080 $.Values.AsMap) | quote }}
+            - {{ printf "--llm-key-namespace=%s" (dig "llmGateway" "keyNamespace" "gryvia-llm-keys" $.Values.AsMap) | quote }}
+            {{- end }}
+            {{- if and (eq $name "storage-operator") (dig "storageOperator" "datasets" "enabled" nil $.Values.AsMap) }}
+            - --enable-datasets=true
+            - {{ printf "--dataset-namespace=%s" (default (include "gryvia.namespace" $) (dig "storageOperator" "datasets" "namespace" nil $.Values.AsMap)) | quote }}
+            {{- with (dig "storageOperator" "datasets" "image" nil $.Values.AsMap) }}
+            - {{ printf "--dataset-image=%s" . | quote }}
+            {{- end }}
+            {{- with (dig "storageOperator" "datasets" "s3Image" nil $.Values.AsMap) }}
+            - {{ printf "--dataset-s3-image=%s" . | quote }}
+            {{- end }}
+            {{- with (dig "storageOperator" "datasets" "defaultSize" nil $.Values.AsMap) }}
+            - {{ printf "--dataset-default-size=%s" . | quote }}
+            {{- end }}
+            {{- end }}
+            {{- if and (eq $name "ai-operator") $.Values.aiOperator.placementHolds }}
+            - --placement-holds=true
+            {{- end }}
+            {{- if and (eq $name "ai-operator") (dig "aiOperator" "topologyPlacement" false $.Values.AsMap) }}
+            - --topology-placement=true
+            {{- end }}
+            {{- if and (eq $name "ai-operator") $.Values.aiOperator.fabricAwareScheduling }}
+            - --fabric-aware-scheduling=true
+            {{- end }}
+            {{- if and (eq $name "ai-operator") $.Values.aiOperator.nativeQueueScheduler }}
+            - --native-queue-scheduler=true
+            {{- end }}
+            {{- if and (eq $name "ai-operator") $.Values.aiOperator.kueueIntegration }}
+            - --kueue-integration=true
+            - --kueue-default-queue={{ $.Values.aiOperator.kueueDefaultQueue }}
+            - --kueue-strict-admission={{ $.Values.aiOperator.kueueStrictAdmission }}
+            {{- end }}
+            {{- if and (eq $name "ai-operator") (dig "aiOperator" "kaiScheduler" false $.Values.AsMap) }}
+            - --kai-scheduler=true
+            - --kai-default-queue={{ dig "aiOperator" "kaiDefaultQueue" "default-queue" $.Values.AsMap }}
+            {{- end }}
+            {{- if and (eq $name "ai-operator") (dig "aiOperator" "volcanoScheduler" false $.Values.AsMap) }}
+            - --volcano-scheduler=true
+            - --volcano-default-queue={{ dig "aiOperator" "volcanoDefaultQueue" "default" $.Values.AsMap }}
+            {{- end }}
+            {{- if and (eq $name "quota-operator") (dig "quotaOperator" "kaiIntegration" false $.Values.AsMap) }}
+            - --kai-integration=true
+            {{- end }}
+            {{- if and (eq $name "quota-operator") $.Values.quotaOperator.kueueIntegration }}
+            - --kueue-integration=true
+            - --kueue-quota-resources={{ $.Values.quotaOperator.kueueQuotaResources }}
+            {{- if $.Values.quotaOperator.kueueGpuTypeFlavors }}
+            - --kueue-gpu-type-flavors=true
+            {{- end }}
+            {{- end }}
+            {{- if and (eq $name "quota-operator") $.Values.quotaOperator.slurmIntegration }}
+            {{- $slurm := $.Values.quotaOperator.slurm }}
+            - --slurm-integration=true
+            - --slurm-namespace={{ $slurm.namespace | default (include "gryvia.namespace" $) }}
+            - --slurm-controller={{ $slurm.controller }}
+            {{- with $slurm.slurmdImage }}
+            - --slurm-slurmd-image={{ . }}
+            {{- end }}
+            - --slurm-nodes-per-tenant={{ $slurm.nodesPerTenant }}
+            - --slurm-gpus-per-node={{ $slurm.gpusPerNode }}
+            - --slurm-oversubscribe={{ $slurm.oversubscribe }}
+            {{- with $slurm.restapiUrl }}
+            - --slurm-restapi-url={{ . }}
+            {{- end }}
+            - --slurm-token-secret={{ $slurm.tokenSecret }}
+            - --slurm-token-key={{ $slurm.tokenKey }}
+            - --slurm-accounting-interval={{ $slurm.accountingInterval }}
+            {{- end }}
+            {{- if and (eq $name "ai-operator") (dig "aiOperator" "preflightEnforce" false $.Values.AsMap) }}
+            - --preflight-enforce=true
+            {{- end }}
+            {{- if and (eq $name "ai-operator") (dig "aiOperator" "checkpointGuard" false $.Values.AsMap) }}
+            - --checkpoint-guard=true
+            {{- end }}
+            {{- $fedServers := dig "aiOperator" "federation" "allowedServers" list $.Values.AsMap }}
+            {{- if and (eq $name "ai-operator") $fedServers }}
+            - {{ printf "--federation-allowed-servers=%s" (join "," $fedServers) | quote }}
+            - {{ printf "--federation-credentials-namespace=%s" (dig "aiOperator" "federation" "credentialsNamespace" "" $.Values.AsMap | default (include "gryvia.namespace" $)) | quote }}
+            {{- if (dig "aiOperator" "federation" "failover" false $.Values.AsMap) }}
+            - --federation-failover=true
+            {{- end }}
+            {{- end }}
+            {{- if and (eq $name "ai-operator") $.Values.aiOperator.admissionGate }}
+            - --admission-gate=true
+            - --admission-default-hours={{ $.Values.aiOperator.admissionDefaultHours }}
+            {{- end }}
+            {{- /* dig + default: `helm upgrade --reuse-values` from a release that predates these keys must still render valid flags */}}
+            {{- if and (eq $name "ai-operator") (dig "aiOperator" "idleReclaim" "enabled" false $.Values.AsMap) }}
+            - --idle-reclaim=true
+            - --idle-reclaim-suspend={{ dig "aiOperator" "idleReclaim" "suspend" false $.Values.AsMap }}
+            - --idle-reclaim-threshold={{ dig "aiOperator" "idleReclaim" "thresholdPercent" 10 $.Values.AsMap }}
+            - --idle-reclaim-window={{ dig "aiOperator" "idleReclaim" "window" "30m" $.Values.AsMap }}
+            {{- end }}
+            {{- if and (eq $name "quota-operator") (dig "quotaOperator" "budgetWebhook" "url" nil $.Values.AsMap) }}
+            - {{ printf "--budget-webhook-url=%s" (dig "quotaOperator" "budgetWebhook" "url" nil $.Values.AsMap) | quote }}
+            {{- end }}
+            {{- if and (eq $name "quota-operator") $.Values.quotaOperator.tenantRbac }}
+            - --tenant-rbac=true
+            {{- end }}
+            {{- if and (eq $name "quota-operator") $.Values.quotaOperator.reservations }}
+            - --enable-reservations=true
+            {{- end }}
+            {{- if and (eq $name "quota-operator") (dig "billing" "ledger" "enabled" false $.Values.AsMap) }}
+            - --billing-ledger=true
+            {{- end }}
+            {{- range $op.extraArgs }}
+            - {{ . | quote }}
+            {{- end }}
+            {{- if and (eq $name "ai-operator") $.Values.aiOperator.mergeFabricSignals }}
+            - --merge-fabric-signals=true
+            {{- end }}
+            {{- if $wsProxy }}
+            - {{ printf "--workspace-public-url=%s" (dig "workspaceProxy" "publicURL" "" $.Values.AsMap) | quote }}
+            - --workspace-proxy-key-file=/etc/gryvia/workspace-proxy/key
+            - {{ printf "--platform-namespace=%s" (include "gryvia.namespace" $) | quote }}
+            {{- end }}
+            {{- if $webhook }}
+            - --enable-webhooks=true
+            - --webhook-cert-dir=/tmp/k8s-webhook-server/serving-certs
+            {{- end }}
+          {{- if and (eq $name "quota-operator") (dig "quotaOperator" "budgetWebhook" "url" nil $.Values.AsMap) (dig "quotaOperator" "budgetWebhook" "secretName" nil $.Values.AsMap) }}
+          env:
+            - name: GRYVIA_BUDGET_WEBHOOK_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ (dig "quotaOperator" "budgetWebhook" "secretName" nil $.Values.AsMap) | quote }}
+                  key: {{ (dig "quotaOperator" "budgetWebhook" "secretKey" nil $.Values.AsMap) | quote }}
+          {{- end }}
+          ports:
+            - name: metrics
+              containerPort: 8080
+              protocol: TCP
+            - name: health
+              containerPort: 8081
+              protocol: TCP
+            {{- if $webhook }}
+            - name: webhook
+              containerPort: 9443
+              protocol: TCP
+            {{- end }}
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: health
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: health
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            {{- toYaml $op.resources | nindent 12 }}
+          securityContext:
+            {{- toYaml $.Values.securityContext | nindent 12 }}
+          {{- if or $webhook $wsProxy }}
+          volumeMounts:
+            {{- if $webhook }}
+            - name: webhook-certs
+              mountPath: /tmp/k8s-webhook-server/serving-certs
+              readOnly: true
+            {{- end }}
+            {{- if $wsProxy }}
+            - name: workspace-proxy-key
+              mountPath: /etc/gryvia/workspace-proxy
+              readOnly: true
+            {{- end }}
+          {{- end }}
+      {{- if or $webhook $wsProxy }}
+      volumes:
+        {{- if $webhook }}
+        - name: webhook-certs
+          secret:
+            secretName: {{ $webhookSecret }}
+            defaultMode: 0440
+        {{- end }}
+        {{- if $wsProxy }}
+        - name: workspace-proxy-key
+          secret:
+            secretName: {{ (dig "workspaceProxy" "existingSecret" "" $.Values.AsMap) | default "gryvia-workspace-proxy" }}
+            defaultMode: 0440
+            items:
+              - key: key
+                path: key
+        {{- end }}
+      {{- end }}
+      {{- with $op.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $op.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- if and $.Values.podDisruptionBudget.enabled (gt (int $op.replicas) 1) }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "gryvia.fullname" $ }}-{{ $name }}
+  namespace: {{ include "gryvia.namespace" $ }}
+spec:
+  minAvailable: {{ $.Values.podDisruptionBudget.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "gryvia.selectorLabels" $ | nindent 6 }}
+      app.kubernetes.io/component: {{ $name }}
+{{- end }}
+{{- end }}
+{{- end }}

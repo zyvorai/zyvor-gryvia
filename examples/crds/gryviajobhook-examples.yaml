@@ -1,0 +1,56 @@
+# GryviaJobHook examples. Needs aiOperator.jobHooks.enabled; see docs/job-hooks.md.
+
+# Slack message when any AI job or workflow in the namespace fails or is preempted.
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaJobHook
+metadata:
+  name: slack-failures
+  namespace: ml-research
+spec:
+  events: [Failed, Preempted]
+  webhook:
+    url: https://hooks.slack.com/services/YOUR/WEBHOOK/URL
+    format: slack
+---
+# Signed JSON to your own receiver when an NLP team's training job succeeds, for example to push the model to a
+# registry. The Secret's "secret" key signs each body (X-Gryvia-Signature).
+apiVersion: v1
+kind: Secret
+metadata:
+  name: hook-secret
+  namespace: ml-research
+stringData:
+  secret: change-me
+---
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaJobHook
+metadata:
+  name: publish-model
+  namespace: ml-research
+spec:
+  events: [Succeeded]
+  kinds: [GryviaAIJob]
+  selector:
+    matchLabels:
+      team: nlp
+  webhook:
+    url: https://automation.example.com/gryvia/job-succeeded
+    secretRef:
+      name: hook-secret
+    timeoutSeconds: 15
+  retry:
+    attempts: 5
+    backoffSeconds: 30
+---
+# Each run of scheduled workflows, delivered to an in-cluster receiver over http (the operator must list the
+# cluster's service CIDR in aiOperator.jobHooks.allowedCIDRs).
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaJobHook
+metadata:
+  name: workflow-runs
+  namespace: ml-research
+spec:
+  events: [Succeeded, Failed]
+  kinds: [GryviaWorkflow]
+  webhook:
+    url: http://run-tracker.ml-research.svc.cluster.local:8080/runs

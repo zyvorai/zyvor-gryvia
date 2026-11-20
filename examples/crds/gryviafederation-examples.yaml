@@ -1,0 +1,128 @@
+# Example: Multi-Region Federation
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaFederation
+metadata:
+  name: global-federation
+spec:
+  clusters:
+    - name: us-west-prod
+      region: us-west-2
+      apiServer: https://kube-usw.company.com
+      credentials:
+        secretRef: usw-kubeconfig
+      capacity:
+        gpuTypes:
+          - type: A100-80G
+            total: 128
+            available: 64
+          - type: H100
+            total: 64
+            available: 32
+      pricing:
+        currency: USD
+        gpuHourlyRates:
+          A100-80G: 24.00
+          H100: 32.00
+      network:
+        latency: 0ms
+        bandwidth: 100Gbps
+      enabled: true
+      priority: 100
+
+    - name: us-east-prod
+      region: us-east-1
+      apiServer: https://kube-use.company.com
+      credentials:
+        secretRef: use-kubeconfig
+      capacity:
+        gpuTypes:
+          - type: A100-80G
+            total: 96
+            available: 48
+          - type: V100
+            total: 64
+            available: 32
+      pricing:
+        currency: USD
+        gpuHourlyRates:
+          A100-80G: 24.00
+          V100: 16.00
+      network:
+        latency: 65ms
+        bandwidth: 10Gbps
+      enabled: true
+      priority: 90
+
+    - name: eu-central-prod
+      region: eu-central-1
+      apiServer: https://kube-eu.company.com
+      credentials:
+        secretRef: eu-kubeconfig
+      capacity:
+        gpuTypes:
+          - type: A100-80G
+            total: 64
+            available: 32
+      pricing:
+        currency: EUR
+        gpuHourlyRates:
+          A100-80G: 22.00
+      network:
+        latency: 120ms
+        bandwidth: 10Gbps
+      enabled: true
+      priority: 80
+
+  distribution:
+    strategy: cost-optimized
+    affinity:
+      regionAffinity: [us-west-2, us-east-1]
+      dataLocality: true
+    constraints:
+      maxLatency: 100ms
+      dataSovereignty:
+        enabled: true
+        allowedRegions: [us-west-2, us-east-1, eu-central-1]
+
+  failover:
+    enabled: true
+    automatic: true
+    healthCheck:
+      interval: 30s
+      timeout: 10s
+      failureThreshold: 3
+
+  loadBalancing:
+    enabled: true
+    algorithm: least-loaded
+    weights:
+      us-west-prod: 100
+      us-east-prod: 90
+      eu-central-prod: 80
+
+  resourceSharing:
+    enabled: true
+    burstingEnabled: true
+    maxSharedPercentage: 50
+
+  costManagement:
+    enabled: true
+    maxCostPerHour: 5000
+    preferCheaper: true
+---
+# Example: Federated Job
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaAIJob
+metadata:
+  name: federated-training
+spec:
+  type: training
+
+  # Placement across clusters is decided by the GryviaFederation named "global-federation"
+  # (see above); the job itself only states what it needs (gpus/gpuType).
+
+  gpus: 16
+  gpuType: A100-80G
+
+  image: nvcr.io/nvidia/pytorch:24.01-py3
+  command: [python, train.py]

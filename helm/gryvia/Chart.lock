@@ -1,0 +1,18 @@
+dependencies:
+- name: gpu-operator
+  repository: https://helm.ngc.nvidia.com/nvidia
+  version: v26.7.1
+- name: network-operator
+  repository: https://helm.ngc.nvidia.com/nvidia
+  version: 26.7.0
+- name: k8s-nim-operator
+  repository: https://helm.ngc.nvidia.com/nvidia
+  version: 2.0.1
+- name: kueue
+  repository: oci://registry.k8s.io/kueue/charts
+  version: 0.19.6
+- name: slurm-operator
+  repository: oci://ghcr.io/slinkyproject/charts
+  version: 1.2.3
+digest: sha256:2d0fbde6704f716be720e17ea622479272a88228a51297963077a310adaa1f54
+generated: "2026-10-02T21:07:43.334856+05:30"

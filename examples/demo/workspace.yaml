@@ -1,0 +1,18 @@
+# A small CPU JupyterLab for the kind demo (scripts/kind-demo.sh with GRYVIA_LOCAL_IMAGES=1). Open it from the
+# dashboard's Workspaces page or with `gryvia workspace open demo-notebook -n gryvia-system`; it is marked Idle after
+# 30 minutes without activity and then paused (the pod stops, the 1Gi volume is kept).
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaWorkspace
+metadata:
+  name: demo-notebook
+  namespace: gryvia-system
+  annotations:
+    gryvia.io/idle-action: pause
+spec:
+  type: jupyter
+  image: quay.io/jupyter/minimal-notebook:latest
+  storage: 1Gi
+  idleTimeoutMinutes: 30
+  cpuRequest: 250m
+  memRequest: 512Mi
+  memLimit: 2Gi

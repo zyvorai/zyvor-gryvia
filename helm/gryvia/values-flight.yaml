@@ -1,0 +1,7 @@
+# Opt-in Flight Recorder on the Gryvia chart (gateway side).
+# Pair with helm/network-intelligence/values-flight.yaml and identical tokens:
+#   kubectl -n gryvia-system create secret generic gryvia-flight-token --from-literal=token="$(openssl rand -hex 32)"
+#   kubectl -n gryvia-network create secret generic gryvia-flight-token --from-literal=token='<same>'
+# See docs/flight-recorder.md.
+apiGateway:
+  flightTokenSecret: gryvia-flight-token

@@ -1,0 +1,107 @@
+---
+# NVIDIA Driver Installation
+
+- name: Check if NVIDIA drivers are already installed
+  shell: nvidia-smi
+  register: nvidia_check
+  ignore_errors: yes
+  changed_when: false
+
+- name: Install NVIDIA drivers
+  block:
+    - name: Add NVIDIA CUDA repository key
+      apt_key:
+        url: https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/3bf863cc.pub
+        state: present
+
+    - name: Add NVIDIA CUDA repository
+      apt_repository:
+        repo: "deb https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64 /"
+        state: present
+        filename: cuda
+
+    - name: Install NVIDIA driver and CUDA toolkit
+      apt:
+        name:
+          - nvidia-driver-535
+          - nvidia-utils-535
+          - cuda-toolkit-12-2
+          - nvidia-container-toolkit
+        state: present
+        update_cache: yes
+
+    - name: Load NVIDIA kernel modules
+      modprobe:
+        name: "{{ item }}"
+        state: present
+      loop:
+        - nvidia
+        - nvidia_uvm
+        - nvidia_drm
+
+    - name: Ensure NVIDIA modules load on boot
+      copy:
+        dest: /etc/modules-load.d/nvidia.conf
+        content: |
+          nvidia
+          nvidia_uvm
+          nvidia_drm
+
+    - name: Configure NVIDIA persistence mode
+      shell: nvidia-smi -pm 1
+      changed_when: false
+
+    - name: Get max GPU clock speeds
+      command: nvidia-smi --query-gpu=clocks.max.memory,clocks.max.sm --format=csv,noheader,nounits
+      register: gpu_max_clocks
+      changed_when: false
+
+    - name: Set GPU clocks to max for performance
+      command: "nvidia-smi -ac {{ gpu_max_clocks.stdout_lines[0] | trim }}"
+      changed_when: false
+      ignore_errors: yes
+      when: gpu_max_clocks.rc == 0 and gpu_max_clocks.stdout_lines | length > 0
+
+    - name: Disable GPU Auto Boost
+      shell: nvidia-smi --auto-boost-default=0
+      changed_when: false
+      ignore_errors: yes
+
+  when: nvidia_check.rc != 0
+
+- name: Configure NVIDIA Container Toolkit
+  block:
+    - name: Configure Docker to use NVIDIA runtime
+      copy:
+        dest: /etc/docker/daemon.json
+        content: |
+          {
+            "default-runtime": "nvidia",
+            "runtimes": {
+              "nvidia": {
+                "path": "nvidia-container-runtime",
+                "runtimeArgs": []
+              }
+            }
+          }
+      notify: restart docker
+      when: false  # We use containerd, not docker
+
+    - name: Configure containerd for NVIDIA
+      shell: |
+        nvidia-ctk runtime configure --runtime=containerd
+      changed_when: false
+
+    - name: Restart containerd
+      systemd:
+        name: containerd
+        state: restarted
+
+- name: Verify NVIDIA installation
+  shell: nvidia-smi
+  register: nvidia_info
+  changed_when: false
+
+- name: Display NVIDIA GPU information
+  debug:
+    var: nvidia_info.stdout_lines

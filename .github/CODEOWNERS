@@ -1,0 +1,8 @@
+# Default owner for everything; narrow this down as more maintainers join.
+*                          @zyvorai
+/helm/                     @zyvorai
+/services/api-gateway/     @zyvorai
+/operators/                @zyvorai
+/web-ui/                   @zyvorai
+/.github/                  @zyvorai
+/SECURITY.md               @zyvorai

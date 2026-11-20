@@ -1,0 +1,268 @@
+name: Repo checks
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  recovery-protocol:
+    name: Cooperative checkpoint and pod lifecycle protocol
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - run: python3 examples/training/test_checkpoint_worker.py
+      - run: python3 examples/training/test_coordinated_checkpoint.py
+      - run: python3 examples/training/test_checkpoint_contract.py
+      - run: python3 examples/training/test_checkpoint_status.py
+      - run: python3 examples/training/test_checkpoint_replica.py
+      - run: bash scripts/tests/e2e-kueue-pods.test.sh
+
+  dcp-checkpoint:
+    name: DCP checkpoint resharding (CPU torch, gloo)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - run: pip install --index-url https://download.pytorch.org/whl/cpu torch==2.8.0
+      - name: Save at world size 4, load at 2 and 3 (DDP and FSDP2)
+        run: python3 examples/training/test_dcp_checkpoint.py -v
+      - name: elastic_train.py under torchrun, resumed at a smaller world size
+        working-directory: examples/training
+        env:
+          CHECKPOINT_DIR: ${{ runner.temp }}/dcp-elastic
+          STEP_SECONDS: '0'
+          COLLECTIVE_TIMEOUT: '60'
+        run: |
+          TOTAL_STEPS=12 torchrun --nnodes=1 --nproc_per_node=4 --master_addr=127.0.0.1 --master_port=29511 elastic_train.py
+          rm "$CHECKPOINT_DIR/DONE"
+          TOTAL_STEPS=20 torchrun --nnodes=1 --nproc_per_node=2 --master_addr=127.0.0.1 --master_port=29512 elastic_train.py
+          python3 - <<'PY'
+          import json, os
+          done = json.load(open(os.path.join(os.environ['CHECKPOINT_DIR'], 'DONE')))
+          assert done['resumedFrom'] == 10 and done['resumedFromWorld'] == 4 and done['world'] == 2, done
+          print('resumed step 10 saved by world 4 at world 2:', done)
+          PY
+
+  model-factory:
+    name: Model factory scripts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - run: python3 examples/model-factory/test_model_factory.py
+
+  rag-ingest:
+    name: RAG ingestion script
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - run: python3 examples/rag/test_ingest.py
+
+  agent-runtime:
+    name: Agent runtime
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - run: pip install -r examples/agents/requirements.txt pytest
+      - run: cd examples/agents && python -m pytest -q
+
+  legacy-names:
+    name: No legacy Fabric* kinds
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Fail on Fabric* identifiers
+        run: |
+          # The kinds were renamed from Fabric<Kind> to Gryvia<Kind>. A legacy identifier is Fabric + the name of a current
+          # kind (FabricAIJob for GryviaAIJob); scripts/rename-kinds.sh and the docs describing the rename may mention them.
+          # Other Fabric-prefixed identifiers (FabricPenalty, FabricOptions, FabricEnabled...) are current code.
+          kinds=$(grep -rhoE '^  *kind: Gryvia[A-Za-z]+' crds/ | sed -E 's/.*kind: Gryvia//' | sort -u | paste -sd'|' -)
+          test -n "$kinds"
+          if git grep -nE "(^|[^A-Za-z])Fabric($kinds)([^a-z]|$)" -- . ':!scripts/rename-kinds.sh' ':!CHANGELOG.md' ':!website/docs/guides/OPERATIONS.md' ':!*package-lock.json' ':!.github/workflows/repo-checks.yml'; then
+            echo "::error::Legacy Fabric* identifiers found; use the Gryvia* names."
+            exit 1
+          fi
+
+  generated-files:
+    name: Generated CRDs and docs are current
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.27'
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - name: Install generators
+        run: |
+          go install sigs.k8s.io/controller-tools/cmd/controller-gen@latest
+          pip install pyyaml
+          echo "$HOME/go/bin" >> "$GITHUB_PATH"
+      - name: Regenerate CRDs and reference docs
+        run: |
+          ./scripts/gen-crds.sh
+          python3 scripts/gen-crd-docs.py
+      - name: Fail if anything changed
+        run: |
+          git status --porcelain
+          git diff --exit-code -- crds helm/gryvia/crds website/docs/reference/crds.md \
+            || { echo "::error::Generated files are stale. Run scripts/gen-crds.sh and scripts/gen-crd-docs.py and commit the result."; exit 1; }
+
+  chart-values:
+    name: Every chart value is read by a template
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - run: pip install pyyaml
+      - name: Fail on values.yaml keys no template reads
+        run: python3 scripts/check-chart-values.py
+
+  shellcheck:
+    name: Shell scripts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: shellcheck
+        run: |
+          shellcheck -S warning scripts/install.sh scripts/kind-demo.sh scripts/rename-kinds.sh scripts/install-k3s-gpu.sh scripts/tests/install-k3s-gpu.test.sh scripts/tests/billing-chart.test.sh \
+            scripts/tests/kueue-chart.test.sh scripts/tests/ui-gateway-chart.test.sh scripts/tests/checkpoint-guard-chart.test.sh scripts/tests/federation-chart.test.sh scripts/e2e-kueue.sh scripts/e2e-jobs.sh scripts/e2e-gpuaas.sh scripts/e2e-ml-lib.sh scripts/sync-monitoring-assets.sh \
+            scripts/validate-gpu.sh scripts/tests/validate-gpu.test.sh scripts/bench-ebpf-overhead.sh \
+            scripts/upgrade-test.sh scripts/backup-crs.sh scripts/tests/upgrade-test.test.sh scripts/release-check.sh scripts/tests/release-check.test.sh \
+            scripts/lib/deploy-guards.sh scripts/tests/deploy-api-key.test.sh scripts/tests/submission-chart.test.sh
+          bash -n scripts/deploy-remote.sh
+      - name: Script tests (fakes, no cluster)
+        run: |
+          bash scripts/tests/validate-gpu.test.sh
+          bash scripts/tests/upgrade-test.test.sh
+          bash scripts/tests/release-check.test.sh
+          bash scripts/tests/deploy-api-key.test.sh
+
+  docs-accuracy:
+    name: Documented commands and examples are valid
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: cli
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - run: pip install pyyaml
+      - name: Build the CLI
+        run: cargo build --locked
+        working-directory: cli
+      - name: Every documented `gryvia` command is accepted by the CLI parser
+        run: python3 scripts/check-cli-docs.py
+      - name: Every example and documented manifest matches its CRD schema
+        run: python3 scripts/check-examples.py
+      - name: Files and `gryvia` commands referenced from example READMEs and scripts exist
+        run: python3 scripts/check-example-refs.py
+      - name: No doc says a kind with a controller has none
+        run: python3 scripts/check-controller-claims.py
+
+  sdk-python:
+    name: Python SDK tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - run: pip install -e sdk/python pytest
+      - run: python -m pytest -q sdk/python/tests
+      - run: python -m pytest -q scripts/tests/test_benchmark_model.py scripts/tests/test_export_janus_bundle.py
+
+  sdk-go:
+    name: Go SDK tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.27'
+      - run: go vet ./... && go test ./...
+        working-directory: sdk/go
+
+  monitoring:
+    name: Dashboards, alert rules and runbooks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - run: pip install pyyaml pytest
+      - name: Dashboards match their generator
+        run: |
+          python3 scripts/gen-dashboards.py
+          git diff --exit-code -- monitoring/grafana-dashboards \
+            || { echo "::error::Edit scripts/gen-dashboards.py, run it, and commit the regenerated JSON."; exit 1; }
+      - name: Every referenced metric is exported or allow-listed
+        run: python3 scripts/check-metrics-refs.py
+      - name: Rule and dashboard structure, runbooks exist
+        run: python3 scripts/check-monitoring-assets.py
+      - name: Checker tests (including a deliberately bad fixture)
+        run: python3 -m pytest -q scripts/tests/test_monitoring_checks.py
+      - name: Helm chart copies of the assets are current
+        run: scripts/sync-monitoring-assets.sh --check
+      - name: promtool check rules
+        run: |
+          ver=3.5.0
+          base="https://github.com/prometheus/prometheus/releases/download/v${ver}"
+          tar_name="prometheus-${ver}.linux-amd64.tar.gz"
+          curl -fsSLO "${base}/${tar_name}"
+          curl -fsSL "${base}/sha256sums.txt" | grep " ${tar_name}\$" | sha256sum -c -
+          tar -xzf "${tar_name}" --strip-components=1 "prometheus-${ver}.linux-amd64/promtool"
+          ./promtool check rules monitoring/prometheus-rules.yaml
+      - name: Helm renders the monitoring resources (on) and nothing extra (off)
+        run: |
+          # the chart's NVIDIA sub-chart lives in a classic repo (the Kueue one is OCI and needs no repo add)
+          helm repo add nvidia https://helm.ngc.nvidia.com/nvidia
+          helm dependency build helm/gryvia
+          helm template rel helm/gryvia --api-versions monitoring.coreos.com/v1 \
+            --set monitoring.enabled=true --set apiGateway.metrics.enabled=true --set apiGateway.metrics.tokenSecret=gw-metrics > /tmp/on.yaml
+          python3 - <<'PY'
+          import collections, yaml
+          kinds = collections.Counter(d["kind"] for d in yaml.safe_load_all(open("/tmp/on.yaml")) if d)
+          for k in ("PodMonitor", "ServiceMonitor", "PrometheusRule"):
+              assert kinds[k] == 1, (k, kinds)
+          assert any(d and d["kind"] == "ConfigMap" and d["metadata"]["labels"].get("grafana_dashboard") == "1"
+                     for d in yaml.safe_load_all(open("/tmp/on.yaml")))
+          PY
+          helm template rel helm/gryvia --api-versions monitoring.coreos.com/v1 > /tmp/off.yaml
+          if grep -E 'kind: (PodMonitor|ServiceMonitor|PrometheusRule)|grafana_dashboard' /tmp/off.yaml; then
+            echo "::error::monitoring resources rendered with monitoring.enabled=false"; exit 1
+          fi
+          # the gateway refuses to serve /metrics without a token
+          if helm template rel helm/gryvia --set apiGateway.metrics.enabled=true >/dev/null 2>&1; then
+            echo "::error::apiGateway.metrics.enabled rendered without a tokenSecret"; exit 1
+          fi

@@ -1,0 +1,66 @@
+# GryviaAIJob - Distributed training with gang scheduling
+# All 4 nodes must be allocated simultaneously (gang scheduling) to prevent
+# deadlocks where partial allocations block other jobs. Uses RDMA networking
+# and NCCL for high-performance inter-node communication.
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaAIJob
+metadata:
+  name: gpt-distributed-training
+  namespace: ml-training
+  annotations:
+    # Gang scheduling: all nodes must be scheduled atomically
+    # Prevents partial allocation that wastes resources while waiting
+    gryvia.io/gang-schedule: "true"
+    gryvia.io/gang-size: "4"       # All 4 nodes must be available
+    gryvia.io/gang-timeout: "10m"  # Wait up to 10 min for all nodes
+spec:
+  type: training
+  model: gpt-13b
+
+  # Total GPU request: 4 nodes x 8 GPUs = 32 H100 GPUs
+  gpus: 8
+  gpuType: H100
+  network: rdma
+  storage: vast-fast
+
+  image: nvcr.io/nvidia/pytorch:24.01-py3
+  imagePullPolicy: IfNotPresent
+
+  # Distributed configuration: 4-node data-parallel training
+  distributed:
+    enabled: true
+    framework: pytorch
+    nodes: 4
+    gpusPerNode: 8
+    backend: nccl                        # NCCL for GPU-to-GPU communication
+
+  command: ["torchrun"]
+  args:
+    - "--nproc_per_node=8"
+    - "--nnodes=4"
+    - "--node_rank=0"
+    - "--master_addr=gpt-distributed-training-0"
+    - "--master_port=29500"
+    - "train_gpt.py"
+    - "--model=gpt-13b"
+    - "--batch-size=32"
+    - "--gradient-accumulation-steps=4"
+    - "--fp16"
+
+  resources:
+    requests:
+      memory: "128Gi"
+      cpu: "32"
+    limits:
+      memory: "256Gi"
+      cpu: "64"
+
+  # Higher priority ensures gang can preempt lower-priority jobs if needed
+  priority: 80
+  retryLimit: 2
+  timeout: "168h"                        # 7-day training run
+
+  # Ensure all pods land on RDMA-capable nodes in the same rack
+  nodeSelector:
+    gryvia.io/rdma: "true"
+    topology.kubernetes.io/zone: "us-east-1a"

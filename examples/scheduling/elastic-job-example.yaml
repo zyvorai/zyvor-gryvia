@@ -1,0 +1,20 @@
+# Elastic PyTorch job: runs with 2 to 4 workers. See docs/elastic-training.md (unit-tested only, not run on a cluster).
+apiVersion: gryvia.io/v1alpha1
+kind: GryviaAIJob
+metadata:
+  name: elastic-train
+  namespace: default
+spec:
+  type: training
+  image: pytorch/pytorch:latest
+  gpus: 8
+  gpuType: H100
+  command: ["torchrun"]
+  args: ["--nnodes=$(NNODES)", "--nproc-per-node=$(NPROC_PER_NODE)", "--rdzv-backend=c10d", "--rdzv-endpoint=$(MASTER_ADDR):$(MASTER_PORT)", "train.py"]
+  distributed:
+    enabled: true
+    framework: pytorch
+    nodes: 4
+    gpusPerNode: 8
+    elastic:
+      minNodes: 2

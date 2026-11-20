@@ -1,0 +1,21 @@
+# RKE2 for the Sovereign AI OS: CIS profile, FIPS checks, encrypted Secrets, audit logs, restricted Pod Security and
+# a Harbor registry mirror. Then install the platform with helm/sovereign-aios (or deploy/argocd/sovereign-aios).
+#
+#   cp ansible/inventory/sovereign-aios.example.ini inventory.ini   # fill in hosts, token, mirror
+#   ansible-playbook -i inventory.ini ansible/playbooks/sovereign-aios-rke2.yaml
+- name: RKE2 servers
+  hosts: rke2_servers
+  become: true
+  serial: 1
+  roles:
+    - role: rke2_hardened
+      vars:
+        rke2_type: server
+
+- name: RKE2 agents
+  hosts: rke2_agents
+  become: true
+  roles:
+    - role: rke2_hardened
+      vars:
+        rke2_type: agent
