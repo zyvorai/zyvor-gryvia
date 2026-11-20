@@ -1,3 +1,6 @@
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 """Dataset routes (GryviaDataset, cluster-scoped) for the dashboard and CLI.
 
 A dataset is materialized into spec.namespace; a tenant sees, creates and deletes only datasets whose namespace is

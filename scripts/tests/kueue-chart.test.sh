@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 # Helm render tests for the opt-in Kueue integration of helm/gryvia: with every kueue value at its default nothing
 # Kueue-related is rendered (no flag, no RBAC, no sub-chart); each switch adds exactly its own flag/RBAC; the ON render
 # is valid YAML and lints. Needs helm (and python3 with PyYAML for the YAML check); no cluster.

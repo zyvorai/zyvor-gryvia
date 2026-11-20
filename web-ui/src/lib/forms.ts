@@ -1,3 +1,6 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 // Pure form helpers shared by the create dialogs; the patterns mirror the gateway's validation.
 
 export const K8S_NAME = /^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/

@@ -1,3 +1,6 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 // Port of netra's components/kit/PagePulse.tsx (same markup and classes, styled by
 // netra-story.css). Differences: no sparkline series, no count-up animation, and the live
 // pill takes a timestamp (react-query's dataUpdatedAt) instead of tracking a tick in an effect.

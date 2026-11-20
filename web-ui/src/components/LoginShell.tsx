@@ -1,3 +1,6 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 import type { ReactNode } from 'react'
 import { AlertCircle, CheckCircle2 } from 'lucide-react'
 import '@/styles/zyvor-login.css'

@@ -1,3 +1,6 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 //! `gryvia submit --sbatch`: turns a Slurm batch script into GryviaAIJobs.
 //!
 //! The `#SBATCH` directives become spec fields, the script runs as the container command, and the

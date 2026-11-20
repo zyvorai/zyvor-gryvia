@@ -1,3 +1,6 @@
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 NS = "default"
 TEMPLATE = {"steps": [{"name": "finetune", "type": "job",
                        "jobTemplate": {"type": "training", "image": "ft:1", "gpus": 1}}]}

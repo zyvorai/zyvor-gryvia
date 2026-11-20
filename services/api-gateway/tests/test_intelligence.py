@@ -1,3 +1,6 @@
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 """Numerical behavior, evidence gaps, payload limits and real-object namespace scoping."""
 
 from datetime import datetime, timedelta, timezone

@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 """Export a Gryvia cluster (jobs, GPU nodes, quotas) as a Zyvor Janus bundle.
 
 Janus (https://github.com/zyvorai/janus) replays a cluster in a discrete-event simulator, so the same jobs can be

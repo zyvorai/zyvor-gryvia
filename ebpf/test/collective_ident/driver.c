@@ -1,3 +1,6 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 /* driver <straggler.o> <libfakenccl.so> <normal|late> <world> <rank>...
  * Loads straggler.o with libbpf, attaches every uprobe/uretprobe by symbol to
  * the fake library, runs one rank_proc per rank (concurrently), then prints the

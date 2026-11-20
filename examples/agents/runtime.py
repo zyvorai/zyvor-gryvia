@@ -1,3 +1,6 @@
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 """Reference GryviaAgent runtime.
 
 Serves an OpenAI-compatible POST /v1/chat/completions. Each request runs a tool-calling loop against the agent's

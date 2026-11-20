@@ -1,3 +1,6 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 // Package reservation is the AI operator's side of GryviaReservation: how a job that names a
 // reservation (annotation or label gryvia.io/reservation) is allowed onto the reservation's
 // tainted nodes. The quota operator owns the reservation, the node taint gryvia.io/reserved

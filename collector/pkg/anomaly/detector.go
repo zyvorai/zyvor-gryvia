@@ -1,3 +1,6 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 // Package anomaly implements simple statistical anomaly detection over
 // flow events.  It maintains per-service baselines using exponential
 // moving average and standard deviation, and flags events that exceed

@@ -1,3 +1,6 @@
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 """Copy committed checkpoint steps to a second location, and restore from it when the local root is empty.
 
 A GryviaCheckpointGuard with checkpointPolicy.replication.target passes it as GRYVIA_CHECKPOINT_REPLICA:

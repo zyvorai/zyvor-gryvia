@@ -1,3 +1,6 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 // Package llmgateway is an OpenAI-compatible front door for the GryviaInferenceServices annotated
 // gryvia.io/llm-model: it authenticates per-tenant keys, routes by the request's model, enforces
 // GryviaQuota.spec.tokensPerDay and meters tokens into GryviaUsageRecords (kind tokens).

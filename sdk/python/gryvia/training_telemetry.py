@@ -1,3 +1,6 @@
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 """Dependency-free framework timing adapter. Durations use monotonic time.
 
 Wrap a whole step with ``measure('step')`` and its synchronous phases with

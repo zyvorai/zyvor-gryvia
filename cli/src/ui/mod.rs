@@ -1,3 +1,6 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 //! The terminal look shared by every command: when to use color, status markers, section headers and tables.
 //!
 //! Keep all styling here so `--no-color`, `NO_COLOR` and piping behave the same everywhere.

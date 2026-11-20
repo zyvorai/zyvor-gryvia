@@ -1,3 +1,6 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 //! `gryvia version`: the client version plus the image versions of the platform's workloads.
 
 use anyhow::Result;

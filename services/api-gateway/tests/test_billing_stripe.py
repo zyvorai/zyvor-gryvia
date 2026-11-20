@@ -1,3 +1,6 @@
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 """Stripe test-mode integration with Stripe mocked (httpx.MockTransport); no network calls."""
 import hashlib
 import hmac

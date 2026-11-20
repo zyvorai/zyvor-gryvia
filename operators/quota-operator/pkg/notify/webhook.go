@@ -1,3 +1,6 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 // Package notify delivers budget alerts to one operator-configured webhook URL.
 //
 // It is a delivery seam only: nothing is paid, emailed or paged by Gryvia. The signature scheme matches the

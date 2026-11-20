@@ -1,3 +1,6 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 //! Root `--help`: commands in named groups, colored, like `cilium --help`.
 //!
 //! clap has no native command groups, so the root help is rendered here. Names and descriptions come from

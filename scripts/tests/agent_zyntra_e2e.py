@@ -1,3 +1,6 @@
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 """The agent runtime's zyntra tool against a running Zyntra (scripts/tests/sovereign-aios-agent-zyntra.sh).
 
 The model is scripted; every Zyntra call goes over the network with the service token the chart generated. Checks

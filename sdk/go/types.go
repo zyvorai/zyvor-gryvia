@@ -1,3 +1,6 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 // Package gryvia provides a typed Go client for Gryvia resources.
 //
 // This package re-exports all API types from the ai-operator for convenient

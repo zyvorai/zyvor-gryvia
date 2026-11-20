@@ -1,3 +1,6 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 //! `gryvia ledger`: billing ledger verify / invoice finalize & void via the gateway.
 
 use anyhow::{anyhow, Result};

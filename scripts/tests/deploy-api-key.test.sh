@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 # deploy_resolve_api_key (scripts/lib/deploy-guards.sh): which key a deploy uses, tested against
 # a fake kubectl and a temporary HOME. No cluster, no network.
 set -uo pipefail

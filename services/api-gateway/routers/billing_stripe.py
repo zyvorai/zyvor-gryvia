@@ -1,3 +1,6 @@
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 """Stripe, test mode only (opt-in, chart ``billing.stripe.secretName`` on top of ``billing.ledger.enabled``).
 
 Enabled only when GRYVIA_STRIPE_SECRET_KEY starts with ``sk_test_``; a live key (``sk_live_``/``rk_live_``) keeps the

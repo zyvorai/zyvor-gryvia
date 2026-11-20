@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 # Turn a fresh Ubuntu server into a Gryvia node: k3s, and NVIDIA GPU support when the machine has GPUs.
 #
 #   sudo ./scripts/install-k3s-gpu.sh server                       # first node: k3s + Gryvia (+ NVIDIA GPU Operator)

@@ -1,3 +1,6 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 // Row model behind the tuner's parameter-space editor, and its conversion to/from the JSON the gateway accepts:
 // { "<name>": { type: "float"|"int", min, max, scale?, step? } | { type: "choice", values: [...] } }
 

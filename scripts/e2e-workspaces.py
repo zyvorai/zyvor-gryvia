@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 """Open running workspaces through the dashboard's /ws/ proxy, as a browser would, and check that they work.
 
 Needs a Gryvia install with workspaceProxy.enabled and Running workspaces, e.g. the kind demo plus:

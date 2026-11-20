@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 # End-to-end checks of the GPUaaS features on a 2-node kind cluster with Gryvia installed and the
 # opt-in flags on (quotaOperator.tenantRbac, quotaOperator.reservations, aiOperator.admissionGate).
 # Run by .github/workflows/e2e-gpuaas.yml, one scenario per step:

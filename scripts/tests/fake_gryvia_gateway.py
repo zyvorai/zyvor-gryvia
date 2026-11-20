@@ -1,3 +1,6 @@
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 """A stand-in for Gryvia's api-gateway with the response shapes the Sovereign AIOS Zyntra pack reads.
 
 Usage: python3 fake_gryvia_gateway.py PORT TOKEN   (answers 401 unless Authorization is "Bearer TOKEN")

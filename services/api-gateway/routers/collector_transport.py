@@ -1,3 +1,6 @@
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 """Transport security for talking to collectors (TLS verification, mTLS, request signing).
 
 Everything is read from the environment on each call, and every variable is optional: with none of

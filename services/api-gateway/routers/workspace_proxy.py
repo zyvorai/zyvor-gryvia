@@ -1,3 +1,6 @@
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 """Browser access to GryviaWorkspaces through the gateway: /ws/<namespace>/<name>/...
 
 ``POST /api/workspaces/{name}/open`` (normal gateway auth, tenant-scoped) returns a short-lived launch link. The

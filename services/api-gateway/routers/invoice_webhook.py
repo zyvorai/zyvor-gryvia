@@ -1,3 +1,6 @@
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 """Provider-neutral invoice webhook: POST the invoice JSON to one operator-configured URL.
 
 This is a delivery seam only. No payment is processed and no payment provider is integrated.

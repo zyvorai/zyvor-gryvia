@@ -1,3 +1,6 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 use anyhow::{Context, Result};
 use kube::api::{Api, ApiResource, GroupVersionKind, ListParams, PostParams};
 use kube::core::DynamicObject;

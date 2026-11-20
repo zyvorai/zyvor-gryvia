@@ -1,3 +1,6 @@
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 """Audit trail for the gateway: who changed what, and who was refused.
 
 Every state-changing request (POST, PUT, PATCH, DELETE) is recorded after it completes, including

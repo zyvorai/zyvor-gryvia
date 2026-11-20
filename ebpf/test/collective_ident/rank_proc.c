@@ -1,3 +1,6 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 /* One fake "training rank": rank_proc <rank> <world> [late]
  * comm A (created first) and comm B (second): 3 allreduce fp32 on A (1 MiB),
  * 2 allgather bf16 on B, 1 failing alltoall on B, then UserRank on A, then

@@ -1,3 +1,6 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 import { useState } from 'react'
 import { describe, expect, it } from 'vitest'
 import { render, screen, within } from '@testing-library/react'

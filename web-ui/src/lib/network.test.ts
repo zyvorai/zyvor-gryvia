@@ -1,3 +1,6 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 import { describe, expect, it } from 'vitest'
 import { bucketPolicies, edgeGeometry, filterFlows, flowFilterOptions, formatCaptureLevel, pageWindow, policyBucket, twoWayEdges, validatePolicyForm, verdictKind, verdictTone, EMPTY_FLOW_FILTERS } from './network'
 

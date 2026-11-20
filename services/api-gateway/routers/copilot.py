@@ -1,3 +1,6 @@
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 """Operator copilot: ask questions about your jobs, models, datasets, services and lineage in plain language.
 
 POST /api/copilot/chat runs a small tool-calling loop against the LLM gateway (the caller's LLM key in X-LLM-Key,

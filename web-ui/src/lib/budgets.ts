@@ -1,3 +1,6 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 // Pure helpers for the Budgets page. Amounts are estimates from usage records (see docs/gpuaas-completion.md).
 export type BudgetState = 'active' | 'warning' | 'exceeded' | 'blocked'
 

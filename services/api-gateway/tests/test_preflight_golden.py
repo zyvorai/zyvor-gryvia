@@ -1,3 +1,6 @@
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 """The gateway preflight and the ai-operator's Go port (pkg/preflight) must agree on the shared golden cases."""
 
 import json

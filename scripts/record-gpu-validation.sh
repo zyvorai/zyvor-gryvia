@@ -1,4 +1,7 @@
 #!/bin/sh
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 # Collect the docs/gpu-validation.md checklist into one file for the PR evidence.
 set -eu
 ns="${NS:-gryvia-system}"

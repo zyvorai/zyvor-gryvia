@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 # Try Gryvia on a laptop, no GPUs needed: creates a kind cluster, installs Gryvia and loads demo data
 # (fictional GPU nodes, a quota and a job).
 #

@@ -1,3 +1,6 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 import { describe, expect, it } from 'vitest'
 import { classLabel, networkRateDisplay, currentMonth, formatMoney, invoiceActions, invoiceBadge, invoiceFilename, voidReasonError, invoiceParams, invoiceTotalDisplay, invoiceTotalLabel, isValidMonth, monthLabel, parseMonth, periodLabel } from './invoices'
 

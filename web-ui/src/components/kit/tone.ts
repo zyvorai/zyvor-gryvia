@@ -1,3 +1,6 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 // Color is deviation (docs/design/APPLE-UX-CONTRACT.md): 'ok' is confirmed good,
 // 'warn'/'bad' only when a value really deviates, 'idle' when there is no data yet.
 export type Tone = 'ok' | 'warn' | 'bad' | 'idle'

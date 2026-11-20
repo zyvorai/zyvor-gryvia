@@ -1,3 +1,6 @@
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 """Cross-node comparison of identified NCCL collectives (pure functions, no I/O).
 
 Input is the per-node Flight Recorder ``collectives`` lists merged by

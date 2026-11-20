@@ -1,3 +1,6 @@
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 """Verify the existing all-ranks checkpoint against immutable model/dataset identity.
 
 This checks bytes and identity without deserializing framework payloads. A trainer binds this contract once

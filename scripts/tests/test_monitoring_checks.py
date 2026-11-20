@@ -1,3 +1,6 @@
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 """Tests for scripts/check-metrics-refs.py and scripts/check-monitoring-assets.py (run: python3 -m pytest scripts/tests)."""
 import importlib.util
 import json

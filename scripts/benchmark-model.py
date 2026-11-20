@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 """Measure an OpenAI-compatible streaming server; emit a laboratory observation.
 
 Uses server-reported completion_tokens, never text length or chunk count as tokens.

@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 # Install Gryvia from this checkout's Helm chart and apply the example manifest.
 #
 #   ./deploy.sh                         # install, wait, then apply production-deployment.yaml

@@ -1,3 +1,6 @@
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 """Shared helpers for the gateway's route modules.
 
 Each module under routers/ exposes ``build_router(deps) -> APIRouter`` and is

@@ -1,3 +1,6 @@
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 """Budgets (GryviaBudget, cluster-scoped), read-only.
 
 Admins see every budget; a tenant user sees only budgets whose scope name is one of its tenants or its

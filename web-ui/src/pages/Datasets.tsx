@@ -1,3 +1,6 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 import { api } from "@/lib/api";
 import { formatBytes, formatRelative } from "@/lib/format";
 import { phaseTone } from "@/lib/phase";

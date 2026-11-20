@@ -1,3 +1,6 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 //! `gryvia export skypilot`: print a SkyPilot task YAML that targets a Kubernetes cluster
 //! (run SkyPilot *on* Gryvia; Gryvia is not a multi-cloud broker).
 

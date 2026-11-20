@@ -1,3 +1,6 @@
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 """Sovereign AI OS overview: the health of Zyntra and Netra next to Gryvia, for the dashboard's overview page.
 
 GET /api/sovereign probes the products the gateway is pointed at (GRYVIA_ZYNTRA_URL, GRYVIA_NETRA_URL) from inside the

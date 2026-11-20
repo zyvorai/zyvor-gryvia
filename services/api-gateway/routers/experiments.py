@@ -1,3 +1,6 @@
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 """Experiment routes (GryviaLiveExperiment, namespaced): the leaderboard view for the dashboard and CLI.
 
 Read-only. The ai-operator's controller owns the status; this module only projects it and adds, per leaderboard

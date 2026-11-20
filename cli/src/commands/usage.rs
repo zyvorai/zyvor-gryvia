@@ -1,3 +1,6 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 //! `gryvia usage`: metered GPU usage aggregated from GryviaUsageRecord objects.
 //!
 //! Aggregation is client-side and follows the gateway (`routers/usage.py`): GPU hours and cost are summed,

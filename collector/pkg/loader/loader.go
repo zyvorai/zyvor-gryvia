@@ -1,3 +1,6 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 // Package loader handles loading, attaching, and lifecycle management
 // of compiled eBPF programs.  It discovers .o files in a directory,
 // loads them with cilium/ebpf (CO-RE relocations use the kernel BTF from

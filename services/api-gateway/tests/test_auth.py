@@ -1,3 +1,6 @@
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 """Login endpoint, default-key flag and the proxy-aware rate-limit key. main.py loads a kubeconfig at
 import time, so the loaders are stubbed before importing it (same approach as test_main_endpoints).
 """

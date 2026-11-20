@@ -1,3 +1,6 @@
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 """Markings: label-based access on top of tenant namespaces.
 
 A resource annotated ``gryvia.io/marking: <name>`` (GryviaDataset, GryviaModelRegistry) is visible only to a

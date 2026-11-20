@@ -1,3 +1,6 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 // Pure helpers for the Reservations page. A reservation taints and labels whole nodes for its
 // owner (see docs/gpuaas-completion.md); jobs opt in with the gryvia.io/reservation annotation.
 import { intError, nameError, parseIntStrict } from './forms'

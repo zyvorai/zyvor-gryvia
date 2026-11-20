@@ -1,3 +1,6 @@
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 """Sharded model + optimizer checkpoints with torch.distributed.checkpoint (DCP), resumable at another world size.
 
 coordinated_checkpoint.py commits opaque per-rank blobs, so a run can only resume with the same world size (or,

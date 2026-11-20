@@ -1,3 +1,6 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 /** Saves a blob as a file through a temporary link. */
 export function saveBlob(blob: Blob, filename: string): void {
   const url = URL.createObjectURL(blob)

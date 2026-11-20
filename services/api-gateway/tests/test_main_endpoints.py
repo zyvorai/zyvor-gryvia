@@ -1,3 +1,6 @@
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 """Tests for the aggregate/list endpoints defined in main.py, run against the fake Kubernetes client.
 
 main.py loads a kubeconfig at import time, so the loaders are stubbed before importing it.

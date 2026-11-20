@@ -1,3 +1,6 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 // Package placementsim replays a Janus-style cluster and workload through the
 // operator's real placement code (scheduler.FindOptimalNodesHeld) with a fake
 // Kubernetes client, and reports makespan, wait and GPU utilisation. It needs no

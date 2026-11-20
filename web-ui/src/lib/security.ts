@@ -1,3 +1,6 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 import type { CreateSecurityPolicyRequest, SecurityPolicy } from './api'
 import { validateK8sName } from './network'
 

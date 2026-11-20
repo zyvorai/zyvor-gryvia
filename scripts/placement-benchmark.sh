@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 # Run the Janus-format fixtures in tests/placement/janus through placement-sim and compare with
 # tests/placement/baseline.json. Usage: scripts/placement-benchmark.sh [--update] [--tolerance PCT]
 set -euo pipefail

@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 """Summarise the raw files written by scripts/bench-ebpf-overhead.sh into markdown tables."""
 import glob
 import json

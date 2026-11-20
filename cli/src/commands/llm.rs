@@ -1,3 +1,6 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 //! `gryvia llm keys|models|usage`: the LLM gateway (docs/llm-gateway.md) through the Kubernetes API.
 //!
 //! A key is a Secret in the gateway's key namespace (default gryvia-llm-keys) labelled gryvia.io/llm-key=true that

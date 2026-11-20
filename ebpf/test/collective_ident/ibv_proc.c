@@ -1,3 +1,6 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 #include <stddef.h>
 void *ibv_create_qp(void *, void *); int ibv_destroy_qp(void *);
 void *ibv_reg_mr(void *, void *, size_t, int); void *ibv_reg_mr_iova2(void *, void *, size_t, unsigned long, int);

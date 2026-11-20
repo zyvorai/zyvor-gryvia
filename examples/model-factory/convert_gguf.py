@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 """Convert a merged Hugging Face model directory into one GGUF file for llama.cpp's llama-server.
 
   python3 convert_gguf.py --model /models/finetuned/qwen3-8b/abc123 --outtype q8_0

@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 # Carry the Sovereign AI OS into an air gap through a Harbor registry.
 #
 # Connected side: save every image in deploy/airgap/images.txt (with its cosign signatures and attestations) and every

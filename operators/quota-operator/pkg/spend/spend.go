@@ -1,3 +1,6 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 // Package spend computes what a scope (team, tenant, namespace list) has spent in a
 // budget period, from the metered GryviaUsageRecords, and what a requested job would add.
 //

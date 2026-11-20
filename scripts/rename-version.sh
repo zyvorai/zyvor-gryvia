@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 # Moves the gryvia.io API from v1 to v1alpha1 (Kinds, apiVersion strings, Go GroupVersion, client constants).
 # Idempotent. Only Gryvia's own group is touched: other groups (core v1, k8s.cni.cncf.io/v1, ...) are left alone.
 set -euo pipefail

@@ -1,3 +1,6 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 // Package nic reads RDMA NIC hardware counters from sysfs
 // (/sys/class/infiniband/<dev>/ports/<n>/{counters,hw_counters}) and turns
 // them into per-second rates.

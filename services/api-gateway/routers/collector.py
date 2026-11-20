@@ -1,3 +1,6 @@
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 """Client for the Gryvia collector (the per-node eBPF DaemonSet, collector/main.go).
 
 Each collector pod serves JSON on :9090 (/api/v1/gpu/nccl, /api/v1/gpu/memory, ...). The gateway

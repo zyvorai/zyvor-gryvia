@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 # Every container image the Sovereign AI OS runs, for the air gap (deploy/airgap/images.txt).
 #
 #   scripts/sovereign-aios-images.sh            helm/sovereign-aios (with its default values) and the agent runtime

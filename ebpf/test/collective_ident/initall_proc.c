@@ -1,3 +1,6 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 /* One fake process that creates 3 communicators with ncclCommInitAll (comm i has rank i) and runs one
  * allreduce on each. Used to test the ncclCommInitAll uretprobe (bpf_loop over the returned communicators). */
 #include <stdlib.h>

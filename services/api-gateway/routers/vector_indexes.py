@@ -1,3 +1,6 @@
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 """Vector index routes (GryviaVectorIndex, namespaced) for the dashboard and CLI.
 
 Queries go to the LLM gateway (POST /v1/retrieve with an API key of the index's namespace); these routes only

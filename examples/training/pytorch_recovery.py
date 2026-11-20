@@ -1,3 +1,6 @@
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 """CPU/GPU PyTorch state recovery helpers; each rank owns its checkpoint.
 
 Distributed workers must save a mutually agreed step; this helper does not

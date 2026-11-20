@@ -1,3 +1,6 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 // Package trace connects the W3C trace context that ebpf/trace_correlator.c reads from ingress
 // TCP payloads to the Flight Recorder timeline.
 //

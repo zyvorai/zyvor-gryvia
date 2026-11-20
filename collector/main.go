@@ -1,3 +1,6 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 // Package main is the entry point for the Gryvia flow collector.
 //
 // It loads compiled eBPF programs, attaches them to the appropriate

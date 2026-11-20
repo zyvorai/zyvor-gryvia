@@ -1,3 +1,6 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 // Model playground: chat completions through POST /api/llm/chat with the caller's LLM key (services/api-gateway/routers/llm.py).
 
 export interface PlaygroundMessage {

@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 # End-to-end checks of the Kueue integration (docs/kueue-integration.md) on a kind cluster that has Gryvia
 # installed WITH Kueue and both operator flags on. Run by .github/workflows/e2e-kueue.yml, one scenario per step:
 #

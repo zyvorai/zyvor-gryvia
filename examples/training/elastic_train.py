@@ -1,3 +1,6 @@
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 """A small elastic data-parallel trainer for `torchrun` on CPU (gloo), used by the kind e2e.
 
 Launch it the way docs/elastic-training.md says, from every pod of an elastic GryviaAIJob:

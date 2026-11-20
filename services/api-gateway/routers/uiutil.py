@@ -1,3 +1,6 @@
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 """Helpers shared by the dashboard-facing route modules (workspaces, models, ...).
 
 Namespace handling mirrors /api/jobs in main.py: with OIDC tenants the request's

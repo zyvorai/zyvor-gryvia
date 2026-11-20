@@ -1,3 +1,6 @@
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 BODY = {"name": "corpus", "type": "text", "version": "v1",
         "source": {"type": "http", "http": {"url": "https://example.com/c.jsonl", "checksumURL": "https://example.com/c.sha256"}},
         "size": "20Gi", "retention": {"keepLast": 3}}

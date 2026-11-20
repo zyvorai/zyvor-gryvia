@@ -1,3 +1,6 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 //! `gryvia catalog`: the GPU SKUs a provider offers (GryviaGpuSku, cluster-scoped), with hourly rates.
 //!
 //! Rates are what the usage meter multiplies GPU hours by; they are estimates, not invoices.

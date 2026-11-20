@@ -1,3 +1,6 @@
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 """Report checkpoint progress to the GryviaAIJob's status ConfigMap and read early-checkpoint requests.
 
 A GryviaCheckpointGuard (ai-operator --checkpoint-guard) gives each pod GRYVIA_CHECKPOINT_STATUS_CONFIGMAP and

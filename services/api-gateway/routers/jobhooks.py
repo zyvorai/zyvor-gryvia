@@ -1,3 +1,6 @@
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 """Job hook routes (GryviaJobHook, namespaced) for the dashboard and CLI.
 
 A hook POSTs a signed JSON body (or a Slack message) when a GryviaAIJob or GryviaWorkflow in its namespace reaches one

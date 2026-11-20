@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 """Evaluate a fine-tuned model with lm-evaluation-harness and, optionally, your own exact-match set.
 
   python3 evaluate.py --model /models/finetuned/qwen3-8b/abc123 --tasks arc_easy,hellaswag --limit 500 \\

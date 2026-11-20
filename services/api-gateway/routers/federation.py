@@ -1,3 +1,6 @@
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 """Federation routes (GryviaFederation, cluster-scoped): a read-only view for the provider administrator.
 
 It shows what the ai-operator's opt-in federation controller (``--federation-servers``) records: per-cluster

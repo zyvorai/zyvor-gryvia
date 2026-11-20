@@ -1,3 +1,6 @@
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 def test_empty_state(make_client):
     c = make_client("ai")
     r = c.get("/api/ai/training/insight")

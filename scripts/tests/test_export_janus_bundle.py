@@ -1,3 +1,6 @@
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 """Tests for scripts/export-janus-bundle.py. Run: python3 -m unittest scripts/tests/test_export_janus_bundle.py
 
 Set JANUS_BIN (the zyvor-janus binary) and JANUS_REPO (a janus checkout) to also replay the exported bundle through

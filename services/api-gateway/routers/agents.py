@@ -1,3 +1,6 @@
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 """Agent routes (GryviaAgent, namespaced) for the dashboard and CLI.
 
 POST /api/agents/{name}/chat proxies an OpenAI-style chat request to the agent's in-cluster runtime (the agent's

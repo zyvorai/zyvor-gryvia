@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 # Install Envoy Gateway (the Gateway API controller behind ui.gateway) and the `eg` GatewayClass, but only
 # when the cluster has no Envoy Gateway controller yet. Re-running is a no-op. Additive: it creates the
 # envoy-gateway-system namespace, the Gateway API + Envoy Gateway CRDs and one controller Deployment.

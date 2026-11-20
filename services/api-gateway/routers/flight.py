@@ -1,3 +1,6 @@
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 """Authenticated, bounded cluster view of the per-node Flight Recorder.
 
 Node reports are independent observations. Missing nodes and nodes with no

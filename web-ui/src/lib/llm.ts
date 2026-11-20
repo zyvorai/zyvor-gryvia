@@ -1,3 +1,6 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 // LLM gateway: keys, published models and token usage (routes in services/api-gateway/routers/llm.py).
 
 export interface LlmKey {

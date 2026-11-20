@@ -1,3 +1,6 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 // Package sources reads the data the network-intelligence controllers report: the per-node eBPF
 // collector (HTTP, signed) and, optionally, Netra (HTTP, bearer). Nothing here invents data: a source
 // that is not configured or not reachable is reported as a typed *SourceError so a controller can

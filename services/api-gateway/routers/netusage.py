@@ -1,3 +1,6 @@
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 """Measured network usage per tenant (GryviaNetworkUsageRecord), its price estimate and a reconciliation.
 
 Records are fragments written by the collectors (one per node, tenant, UTC hour, peerClass, zoneClass) and carry

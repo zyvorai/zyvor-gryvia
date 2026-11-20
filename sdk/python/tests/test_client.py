@@ -1,3 +1,6 @@
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 """SDK tests against an in-process fake gateway (httpx.MockTransport); no network or cluster needed."""
 import asyncio
 

@@ -1,3 +1,6 @@
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 """Metered usage (GryviaUsageRecord, namespaced in the job's namespace) with grouping and export.
 
 Admins read every namespace; a tenant user is forced to its own tenant's namespaces regardless of the

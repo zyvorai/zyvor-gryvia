@@ -1,3 +1,6 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 // Package netcost attributes measured network bytes to tenants and prices-ready buckets.
 //
 // Byte source: the traffic_costs map of the cost_tracker tcx program (cumulative per-(local IP, remote IP)

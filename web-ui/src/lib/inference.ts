@@ -1,3 +1,6 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 import type { InferenceLatency } from '@/lib/api'
 
 /** "not measured" is shown for a figure the engine does not export or that has no data in the window. */

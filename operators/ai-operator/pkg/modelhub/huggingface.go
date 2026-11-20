@@ -1,3 +1,6 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 // Package modelhub lists models from a model hub. Only the Hugging Face Hub API is implemented
 // (GET /api/models); the base URL is an operator flag, never part of a user's object, so a watch cannot
 // make the operator call arbitrary hosts.

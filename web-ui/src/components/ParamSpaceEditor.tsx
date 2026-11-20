@@ -1,3 +1,6 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 import { useEffect, useId, useRef, useState } from 'react'
 import { emptyRow, jsonToRows, MAX_PARAMS, rowsToJson, spaceError, validateRows, withJson, withRows, type ParamRow, type ParamSpaceState, type RowErrors } from '@/lib/paramSpace'
 

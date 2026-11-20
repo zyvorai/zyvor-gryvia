@@ -1,3 +1,6 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 /** Compact number: 1.2K, 3.4M, integers under 100 as-is. */
 export function compact(n: number): string {
   if (!Number.isFinite(n)) return '—'

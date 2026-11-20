@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 # The billing ledger is opt-in: the default render has no ledger flag, webhooks, RBAC or Stripe env; turning it on
 # adds exactly those, Stripe env only appears with a secretName, and the ledger refuses to render without webhooks.
 set -euo pipefail

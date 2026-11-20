@@ -1,3 +1,6 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 export interface VectorIndex {
   metadata: { name: string; namespace?: string; creationTimestamp?: string };
   spec: {

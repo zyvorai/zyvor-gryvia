@@ -1,3 +1,6 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 // Package metrics exports quota, budget, usage and tenant gauges from the quota operator.
 //
 // Everything is computed at scrape time by one custom collector that lists GryviaQuota, GryviaUsageRecord and

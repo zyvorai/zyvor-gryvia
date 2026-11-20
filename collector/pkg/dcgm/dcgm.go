@@ -1,3 +1,6 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 // Package dcgm scrapes a node's dcgm-exporter (Prometheus text exposition),
 // keeps a short rolling window per GPU and correlates it with NCCL collective
 // windows: how much of the communication time the GPU was idle.

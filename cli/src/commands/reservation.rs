@@ -1,3 +1,6 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 //! `gryvia reservation list|create|cancel`: GryviaReservation objects (cluster-scoped) through the
 //! Kubernetes API. The quota operator taints and labels the reserved nodes; deleting the object
 //! (cancel) makes its finalizer remove the taint and labels again. Needs the quota operator running

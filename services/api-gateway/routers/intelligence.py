@@ -1,3 +1,6 @@
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 """Workload intelligence: typed analyses plus namespace-filtered live job evidence."""
 
 from datetime import datetime, timezone

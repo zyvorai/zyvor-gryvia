@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 # End-to-end checks of the KAI Scheduler integration (docs/kai-scheduler.md) on a kind cluster that has Gryvia
 # installed (scripts/kind-demo.sh with GRYVIA_LOCAL_IMAGES=1). Run by .github/workflows/e2e-kai.yml, one step each:
 #

@@ -1,3 +1,6 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 //! `gryvia list experiments` / `gryvia get experiment <name>`: GryviaLiveExperiment leaderboards.
 //!
 //! Read-only. The ai-operator owns the status; this only shows it, best run first, with the gap to the best.

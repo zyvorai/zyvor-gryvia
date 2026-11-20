@@ -1,3 +1,6 @@
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 """Multi-process CPU (gloo) tests for dcp_checkpoint: save at world size 4, load at 2 and 3, with DDP
 (replicated) and FSDP2 (fully_shard on a CPU device mesh, so parameters and Adam moments really are resharded).
 

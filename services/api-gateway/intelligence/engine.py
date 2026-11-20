@@ -1,3 +1,6 @@
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 """Deterministic analysis over explicit inputs; unknown observations never imply health."""
 
 from datetime import datetime, timezone

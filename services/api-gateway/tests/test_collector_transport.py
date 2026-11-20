@@ -1,3 +1,6 @@
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 """Gateway -> collector transport: TLS verification, mTLS and request signing (real local TLS server)."""
 import asyncio
 import datetime

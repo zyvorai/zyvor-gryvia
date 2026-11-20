@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 # Copy monitoring/ assets into the Helm charts (Helm's .Files only reads inside a chart directory).
 #   scripts/sync-monitoring-assets.sh          copy
 #   scripts/sync-monitoring-assets.sh --check  exit 1 if a chart copy differs from monitoring/ (CI drift check)

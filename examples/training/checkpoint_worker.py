@@ -1,3 +1,6 @@
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 """CPU protocol demo: a trainer owns state, its preStop hook requests a save.
 
 Run this file normally to advance a counter; run with --request from the hook.

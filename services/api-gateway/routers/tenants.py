@@ -1,3 +1,6 @@
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 """Tenant routes (GryviaTenant, cluster-scoped). Admin: full CRUD-lite; a tenant user sees only its own tenant."""
 from typing import Any, Dict, List, Optional
 

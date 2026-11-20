@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 # Regenerate every CRD from the operators' Go types with controller-gen.
 #
 # The Go types under operators/*/api/v1 are the source of truth. Output goes to

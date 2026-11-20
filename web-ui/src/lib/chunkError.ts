@@ -1,3 +1,6 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 const RELOAD_KEY = 'gryvia_chunk_reload'
 
 /** True for the errors a browser raises when a lazily loaded chunk no longer exists (after a redeploy). */

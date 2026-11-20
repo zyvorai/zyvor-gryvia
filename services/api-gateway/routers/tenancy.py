@@ -1,3 +1,6 @@
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 """Tenant directory: GryviaTenant lookup (cached briefly) and claim -> tenant matching.
 
 A tenant's namespace is ``tenant-<name>`` (the GryviaTenant controller creates it). The gateway never

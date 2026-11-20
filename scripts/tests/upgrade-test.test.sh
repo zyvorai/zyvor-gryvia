@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 # Tests for scripts/upgrade-test.sh and scripts/backup-crs.sh: argument handling, --dry-run, and a whole run
 # against fake kind/kubectl/helm/docker/curl/gryvia binaries that record their calls. No cluster needed.
 set -uo pipefail

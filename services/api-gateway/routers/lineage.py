@@ -1,3 +1,6 @@
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 """Lineage graph (dataset -> job -> model -> inference service) for the dashboard.
 
 Read-only and derived from existing resources, nothing is stored:

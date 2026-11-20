@@ -1,3 +1,6 @@
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 """Lookback fairshare: GPU-hours vs tenant fairShareWeight over a window.
 
 Recommend-only by default. When GRYVIA_FAIRSHARE_APPLY=1 (or true), POST /api/fairshare/apply

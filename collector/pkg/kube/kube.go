@@ -1,3 +1,6 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 // Package kube is a minimal in-cluster Kubernetes REST client: TLS against the
 // service account CA, a bearer token that is re-read on every request (projected
 // tokens rotate) and bounded response bodies. It exists so the collector needs no

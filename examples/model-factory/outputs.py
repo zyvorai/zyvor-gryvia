@@ -1,3 +1,6 @@
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 """Report step outputs to a GryviaWorkflow.
 
 The workflow controller reads a JSON object of strings from the termination message of a step's rank-0 pod and

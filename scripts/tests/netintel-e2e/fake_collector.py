@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 """A FAKE collector for the network-intelligence e2e test (.github/workflows/e2e-netintel.yml).
 
 It serves canned JSON on the routes the operator reads (/api/v1/graph, /api/v1/anomalies,

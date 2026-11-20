@@ -1,3 +1,6 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 // Volcano scheduling backend (opt-in: --volcano-scheduler).
 //
 // Sets schedulerName=volcano and scheduling.volcano.sh/queue-name from the job queue.

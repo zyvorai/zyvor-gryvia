@@ -1,3 +1,6 @@
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 """Cluster view of the per-node unified diagnosis, incident history and comparison.
 
 Same trust model as routers/flight.py: the gateway signs one request per collector, applies tenant

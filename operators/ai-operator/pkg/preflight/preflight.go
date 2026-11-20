@@ -1,3 +1,6 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 // Package preflight is the Go port of the gateway's workload preflight
 // (services/api-gateway/intelligence/engine.py, preflight): a weight-memory estimate and node-shape,
 // GPU-type, RDMA and interconnect checks, evaluated against pools built from the cluster's nodes.

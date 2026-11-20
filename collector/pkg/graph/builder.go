@@ -1,3 +1,6 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 // Package graph builds and maintains an in-memory service dependency
 // graph derived from observed network flow events.  The graph is
 // exposed via an HTTP endpoint as JSON for consumption by the API

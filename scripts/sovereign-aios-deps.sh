@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 # Fill helm/sovereign-aios/charts/ from local checkouts: Gryvia from this repository, Zyntra and Netra from sibling
 # checkouts (ZYNTRA_DIR, NETRA_DIR; default ../zyntra and ../netra next to this repository). Netra does not publish
 # a chart, so `helm dependency build` cannot fetch it; this is the way to render or install from source.

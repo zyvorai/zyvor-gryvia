@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 # Gryvia — deploy guards, sourced on the target host by scripts/deploy-remote.sh.
 #
 # Why this exists. deploy-remote.sh builds the images on the host and imports them

@@ -1,3 +1,6 @@
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 """Opt-in two-person operations. ConfigMap resourceVersion is the distributed state lock.
 
 No arbitrary patches, commands or external URLs are accepted. A target's UID/resourceVersion

@@ -1,3 +1,6 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 //! `gryvia workspace list|get|create|delete|new|pause|resume|open`: GryviaWorkspace objects (namespaced), the
 //! Jupyter and VS Code environments the ai-operator runs. `open` asks the api-gateway for a short-lived launch link
 //! (POST /api/workspaces/{name}/open, workspaceProxy in the Helm chart) and opens it in the browser.

@@ -1,3 +1,6 @@
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 """Trace lookup and engine-latency routes: tenant scoping, validation, and no trace id in logs."""
 import logging
 

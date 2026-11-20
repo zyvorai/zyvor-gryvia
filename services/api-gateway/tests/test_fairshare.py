@@ -1,3 +1,6 @@
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 """Unit tests for lookback fairshare recommendations."""
 from routers.fairshare import compute_fairshare
 

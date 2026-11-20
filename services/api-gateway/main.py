@@ -1,3 +1,6 @@
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 """
 Gryvia API Gateway
 Provides REST API for Web UI with aggregated metrics and cluster data

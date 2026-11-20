@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 """Structural lint of monitoring/ without promtool or Grafana.
 
 Rules (monitoring/prometheus-rules.yaml, plain rule-file format): groups[].name, rules[] each with exactly one of

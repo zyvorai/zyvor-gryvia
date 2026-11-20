@@ -1,3 +1,6 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 import { useEffect } from 'react'
 
 /** Sets the browser tab/history title to "<title> · Gryvia" while the page is mounted. */

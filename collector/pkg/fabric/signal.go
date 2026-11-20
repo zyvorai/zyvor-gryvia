@@ -1,3 +1,6 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 // Package fabric decodes the fabric_signal ring buffers emitted by
 // ebpf/straggler.c, rdma_health.c, gds_trace.c, overlap.c, infer_latency.c,
 // ucx_gloo.c and weight_exfil.c (roce_cnp.c and pfc_pause.c only keep counters,

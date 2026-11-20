@@ -1,3 +1,6 @@
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 """Gateway metrics (Prometheus) and the guarded /metrics endpoint.
 
 Security: /metrics is DISABLED unless GRYVIA_METRICS_TOKEN is set (>= 32 characters); it is then served only to

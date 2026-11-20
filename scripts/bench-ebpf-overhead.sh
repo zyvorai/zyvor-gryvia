@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 # Measure what the Gryvia eBPF collector costs on a Linux host: loopback TCP throughput,
 # connect/accept rate, request/response latency and syscall rate with no programs attached
 # (baseline, run twice to measure the noise floor), the default program set, and the full set.

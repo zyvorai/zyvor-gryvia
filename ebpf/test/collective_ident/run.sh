@@ -1,4 +1,7 @@
 #!/bin/sh
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 # Host-side test of ebpf/straggler.c with a stand-in libnccl (see fakenccl.c).
 # Also tests ebpf/ibv_verbs.c against a stand-in libibverbs (fakeibv.c).
 # Needs root, clang/gcc and libbpf headers.  Usage: run.sh <path to straggler.o> [<path to ibv_verbs.o>]

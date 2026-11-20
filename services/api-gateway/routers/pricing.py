@@ -1,3 +1,6 @@
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 """GPU price lookup: the GryviaGpuSku catalog is the source of truth.
 
 The table below is used only when the cluster has no (enabled) SKU at all, so a fresh install still

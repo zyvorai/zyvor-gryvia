@@ -1,3 +1,6 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 //! `gryvia agents list|get|create|delete|chat`: GryviaAgent objects (namespaced). The ai-operator (with
 //! --enable-agents) runs each agent's tool-calling runtime; `chat` sends a message through the api-gateway's
 //! POST /api/agents/{name}/chat, which proxies it to the agent (see docs/agents.md).

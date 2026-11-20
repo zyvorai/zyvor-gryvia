@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 """Fail if a dashboard or alert rule under monitoring/ references a metric nobody exports.
 
 Defined metrics = every "gryvia_*" string literal in non-test Go and Python sources of collector/, operators/ and

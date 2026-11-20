@@ -1,3 +1,6 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 //! A small client for the Gryvia API gateway (`GRYVIA_GATEWAY_URL`), used by the commands whose data lives
 //! behind it (collector counters, merged network flows and graph, security alerts).
 //!

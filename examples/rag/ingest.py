@@ -1,3 +1,6 @@
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 """Ingest a dataset into a Qdrant collection for a GryviaVectorIndex.
 
 The GryviaVectorIndex controller runs this script as a Job with the dataset version mounted read-only at DATA_DIR.

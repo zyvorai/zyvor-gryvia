@@ -1,3 +1,6 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 //! `gryvia status` with no job: the platform report (components, workloads, per-node detail).
 //!
 //! This file only talks to the cluster; the model and the text live in `crate::platform` and are pure.

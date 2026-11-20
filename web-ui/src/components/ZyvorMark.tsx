@@ -1,3 +1,6 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 /** zyvor.dev brand: the open orange "Z" stroke, and the "Z zyvor" lockup (same as Zorvia's). */
 
 export const ZYVOR_URL = 'https://zyvor.dev'

@@ -1,3 +1,6 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 // Package pricing holds the single default GPU price table used when no
 // GryviaGpuSku objects exist in the cluster. Once a provider publishes SKUs the
 // catalog is the source of truth and this table is ignored.

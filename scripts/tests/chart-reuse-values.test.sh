@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 # Upgrading from the oldest tagged release's values.
 #
 # `helm upgrade --reuse-values` renders the new chart with the previous release's values only: a sub-chart

@@ -1,3 +1,6 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 // Package admission is the AIJob controller's admission gate: before the controller creates
 // anything for a job (PVC, Service, workload) it asks whether the quota and budgets covering
 // the job's namespace allow it, using the metered GryviaUsageRecords for the spend and a

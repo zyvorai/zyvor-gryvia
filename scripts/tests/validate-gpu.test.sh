@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 # Tests for scripts/validate-gpu.sh: --dry-run, and real runs against a fake `kubectl` on PATH that
 # returns canned output for the pass and fail cases. No cluster, no GPU, no network.
 set -uo pipefail

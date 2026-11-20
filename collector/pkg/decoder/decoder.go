@@ -1,3 +1,6 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 // Package decoder reads raw perf events from eBPF ring buffers,
 // deserialises them into FlowEvent structs, and enriches each event
 // with Kubernetes metadata resolved from the local /proc filesystem

@@ -1,3 +1,6 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 import { useQuery } from '@tanstack/react-query'
 import { api } from '@/lib/api'
 import { engineLabel, formatCount, formatMs, formatRatio, inferenceRows, NOT_MEASURED } from '@/lib/inference'

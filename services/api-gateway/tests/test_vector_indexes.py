@@ -1,3 +1,6 @@
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 NS = "default"
 BODY = {"name": "handbook", "datasetRef": "docs", "embedding": {"model": "embed", "batchSize": 16},
         "chunking": {"size": 800, "overlap": 100}, "schedule": "0 3 * * *"}

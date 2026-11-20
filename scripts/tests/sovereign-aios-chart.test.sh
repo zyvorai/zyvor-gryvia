@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 # Helm render tests for helm/sovereign-aios: the shared credentials, the LLM gateway key hash, Zyntra's pack, URLs,
 # certificate and keys, the agents' Zyntra service token and Zyntra's policy, Netra's certificate and keys, and the
 # namespace guard. Needs helm and python3 with PyYAML and

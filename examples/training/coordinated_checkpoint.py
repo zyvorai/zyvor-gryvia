@@ -1,3 +1,6 @@
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 """Globally consistent checkpoints across ranks, on shared storage (ReadWriteMany).
 
 checkpoint_store.py gives each rank its own atomic latest pointer, so after a failure rank 0 can resume at

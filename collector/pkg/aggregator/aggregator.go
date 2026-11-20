@@ -1,3 +1,6 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 // Package aggregator computes per-service-pair metrics over a sliding
 // time window.  It receives decoded FlowEvents and maintains running
 // statistics (p50/p95/p99 latency, throughput, connection rate) that

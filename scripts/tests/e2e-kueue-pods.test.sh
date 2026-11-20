@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 # Regression: terminal pods retained for logs must not fail the eviction check.
 set -euo pipefail
 cd "$(dirname "$0")/../.."

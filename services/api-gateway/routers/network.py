@@ -1,3 +1,6 @@
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 """Network intelligence routes (flows, policies, insights, graph, anomalies, costs, traces).
 
 Everything is derived from network-intelligence CRs; when no source object exists the

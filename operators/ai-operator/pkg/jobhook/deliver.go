@@ -1,3 +1,6 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 // Package jobhook delivers GryviaJobHook webhooks.
 //
 // Hook URLs are written by tenants, so the dialer refuses loopback, private (RFC 1918, fc00::/7), CGNAT, link-local

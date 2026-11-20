@@ -1,3 +1,6 @@
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 """Cluster diagnosis merge, expected-node coverage, incident history routes and tenant scoping."""
 import csv
 import io

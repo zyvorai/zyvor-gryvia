@@ -1,3 +1,6 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 //! `gryvia models watch list|runs|create|suspend|resume|delete`: GryviaModelWatch objects (namespaced)
 //! through the Kubernetes API. The ai-operator polls the model hub for each watch and starts one
 //! GryviaWorkflow per new model; `runs` shows those candidates. Needs the ai-operator running with

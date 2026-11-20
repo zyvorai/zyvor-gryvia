@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 # Tests scripts/apply-crds.sh with a fake kubectl: a CRD whose scope changed is recreated only when it has no objects.
 set -euo pipefail
 

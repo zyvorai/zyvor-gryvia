@@ -1,3 +1,6 @@
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 """GPU reservations (GryviaReservation, cluster-scoped).
 
 Admins see and manage every reservation. A tenant user sees only reservations owned by one of its tenants

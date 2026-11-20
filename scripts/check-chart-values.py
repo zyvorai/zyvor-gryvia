@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 """Fail when a leaf key in a chart's values.yaml is not read by any template or helper.
 
 A value nobody reads is a silent no-op for the user who sets it. For every chart under helm/ this script

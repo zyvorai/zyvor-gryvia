@@ -1,3 +1,6 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 // Pure list logic (search, filter, sort, paginate) behind DataTable; kept separate so it is unit-tested.
 
 export type SortDir = 'asc' | 'desc'

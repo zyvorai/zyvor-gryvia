@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 # Helpers for .github/workflows/e2e-netintel.yml (sourced by each step).
 #
 #   py NS KIND NAME 'python assertions on the dict s (= .status)'   one attempt; non-zero when an assertion fails

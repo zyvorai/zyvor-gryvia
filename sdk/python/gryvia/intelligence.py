@@ -1,3 +1,6 @@
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 """Workload analysis and explicit operation lifecycle; no automatic execution."""
 from urllib.parse import quote
 
