@@ -347,6 +347,7 @@ Gryvia is **free and open source** under the [Apache License 2.0](LICENSE). That
 incident triage, a named technical contact and 24x7 critical intake. Plans and terms:
 [docs/SUBSCRIPTION-MODEL.md](docs/SUBSCRIPTION-MODEL.md) ·
 [Pricing](https://zyvor.dev/pricing?utm_source=github&utm_medium=gryvia&utm_campaign=readme_license) ·
+[Buy / get a quote](https://zyvor.dev/buy) ·
 [sales@zyvor.dev](mailto:sales@zyvor.dev).
 
 ---
