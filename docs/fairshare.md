@@ -1,7 +1,7 @@
 # Time-window fairshare
 
 Lookback of tenant GPU-hours versus `GryviaTenant.spec.quotas.fairShareWeight`, with recommended
-weight adjustments — the open alternative to Run:ai’s closed time-based fairshare product.
+weight adjustments.
 
 **Status:** report + apply via CLI and gateway. Weights feed Kueue `fairShareWeight` (when
 `platformCompletion.kueueFairSharing`) and KAI `overQuotaWeight`. Not verified as changing live

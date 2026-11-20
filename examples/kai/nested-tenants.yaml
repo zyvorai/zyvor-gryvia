@@ -1,4 +1,4 @@
-# Nested Gryvia tenants → KAI parentQueue hierarchy (open alternative to Run:ai projects).
+# Nested Gryvia tenants → KAI parentQueue hierarchy.
 # Requires quotaOperator.kaiIntegration + aiOperator.kaiScheduler.
 # Parent "dept" is a non-leaf queue: schedule jobs only on leaf "team-a" / "team-b".
 apiVersion: gryvia.io/v1alpha1

@@ -1,6 +1,6 @@
 # DRA ResourceClaims and LLM intent routing
 
-Wave 3 competitor gaps: real DRA attachment for fractional GPUs, and lean Kinference-style intent routing.
+Wave 3: real DRA attachment for fractional GPUs, and lean Kinference-style intent routing.
 
 ## DRA (`gpu-isolation=dra`)
 

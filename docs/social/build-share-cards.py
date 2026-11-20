@@ -30,7 +30,7 @@ CLUSTERS = [
     ("Cluster B", "A100 · RoCE v2"),
     ("Cluster C", "L40 Edge · Standard"),
 ]
-PILLS = ["Zyvor Production 1.0", "Go 1.24+", "Kubernetes 1.32+", "NVIDIA GPU"]
+PILLS = ["Zyvor PL 1.0", "Go 1.24+", "Kubernetes 1.32+", "NVIDIA GPU"]
 
 
 def svg(p, label):

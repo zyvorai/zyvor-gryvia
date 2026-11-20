@@ -17,13 +17,13 @@ const REPO_DOCS = 'https://github.com/zyvorai/zyvor-gryvia/blob/main/docs';
 const NEW = [
   {
     title: 'Beyond a queue UI',
-    text: 'Run:ai packs GPUs. Gryvia ships Flight Recorder, eBPF fabric intelligence, workload intelligence, token+GPU FinOps and sovereign composition. gryvia compare runai.',
-    to: '/docs/guides/COMPETITORS',
+    text: 'Gryvia ships Flight Recorder, eBPF fabric intelligence, workload intelligence, token+GPU FinOps and sovereign composition.',
+    to: '/docs/intro',
   },
   {
     title: 'Adult platform, one Helm switch',
     text: 'values-adult-platform.yaml turns on fairshare apply, Flight Recorder, intelligence actions and the billing ledger.',
-    to: `${REPO_DOCS}/competitors.md`,
+    to: `${REPO_DOCS}/gpu-cloud-platform.md`,
   },
   {
     title: 'Submit without YAML',

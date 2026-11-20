@@ -108,7 +108,7 @@ guide. A job with `spec.migProfile` keeps its MIG resource.
 | **Driver memory isolation** (KAI `HamiCore` / `NvFractions`, NVIDIA proprietary path) | **Unverified** — install-time `global.gpuSharingMode`; not proven on GPUs in this repo |
 | Shares above 1 GPU (e.g. 1.5) | Not mapped |
 
-NVIDIA Run:ai marketing often collapses these into one “enforced fractions” claim. Gryvia separates packing (shipped) from CUDA isolation (hardware / NVIDIA mode).
+Gryvia separates packing (shipped) from CUDA isolation (hardware / NVIDIA mode).
 
 ## Not done yet
 

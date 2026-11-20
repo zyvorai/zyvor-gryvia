@@ -21,4 +21,3 @@ and copies `spec.command` into `run:`. Review and edit before launch.
 - Gryvia jobs: `spec.idleTimeout` ([idle-autostop](idle-autostop.md)).
 - Gryvia inference: `scaleToZero`.
 
-See [competitors](competitors.md).

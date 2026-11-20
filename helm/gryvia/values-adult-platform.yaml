@@ -1,4 +1,4 @@
-# One switch: the adult Gryvia stack that makes Run:ai look like a queue UI.
+# One switch: the adult Gryvia stack.
 # Pair network-intelligence with helm/network-intelligence/values-flight.yaml
 # and matching flight tokens (see docs/flight-recorder.md).
 #

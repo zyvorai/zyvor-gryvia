@@ -68,7 +68,7 @@ def compute_fairshare(
     for row in rows:
         share_target = (row["weight"] / total_w) if total_w > 0 else 0.0
         share_actual = (row["gpuHours"] / total_h) if total_h > 0 else 0.0
-        # Boost under-consumers, trim over-consumers (Run:ai-style correction signal).
+        # Boost under-consumers, trim over-consumers.
         ratio = 1.0
         if share_actual > 0 and share_target > 0:
             ratio = share_target / share_actual

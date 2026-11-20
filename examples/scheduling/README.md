@@ -33,10 +33,9 @@ kubectl apply -f elastic-training.yaml
 kubectl apply -f gang-scheduling.yaml
 ```
 
-## Adult platform (vs Run:ai)
+## Adult platform
 
 ```bash
 helm upgrade --install gryvia ./helm/gryvia -n gryvia-system \
   -f helm/gryvia/values-adult-platform.yaml
-gryvia compare runai
 ```

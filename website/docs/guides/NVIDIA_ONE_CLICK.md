@@ -1,7 +1,7 @@
 # NVIDIA one-click install
 
 Gryvia turns **open** NVIDIA operators on (GPU Operator, Network Operator, NIM Operator).
-It does **not** replace them and does **not** copy Run:ai’s proprietary UI.
+It does **not** replace them.
 Unit tests cover Gryvia’s sharing labels and ConfigMap writes; CUDA/NCCL/NVSwitch/IB
 paths are unproven on real GPUs in this repository.
 
@@ -84,5 +84,5 @@ helm upgrade gryvia ... \
 That enables Gryvia’s sharing controller. Apply a `GryviaGPUSharingPolicy` (see `examples/nvidia/` and
 `examples/crds/gryviagpusharing-examples.yaml`). Prefer KAI `--gpu 0.5` for schedule-time packing
 ([kai-scheduler](https://github.com/zyvorai/zyvor-gryvia/blob/main/docs/kai-scheduler.md)) when you want
-Run:ai-like density without NVIDIA’s closed product.
+dense GPU packing without driver-level sharing.
 

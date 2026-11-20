@@ -23,4 +23,4 @@ Jobs with `spec.queueName` (or `gryvia.io/queue-name`) map to that Volcano queue
 
 Volcano’s strength is mature gang/DRF and Spark/MPI plugins. Gryvia already covers gangs through Kueue and KAI.
 This backend is for clusters that already standardize on Volcano as the pod scheduler. A future wave can add
-PodGroup minMember mirroring if demand justifies it (see [competitors](competitors.md)).
+PodGroup minMember mirroring if demand justifies it.

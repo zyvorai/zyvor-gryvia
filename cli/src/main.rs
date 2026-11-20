@@ -514,19 +514,6 @@ enum Commands {
         output: OutputFormat,
     },
 
-    /// Compare Gryvia to a competitor (static; no cluster required)
-    ///
-    /// Prints the adult-stack matrix: where Run:ai is a scheduler + org layer
-    /// and Gryvia ships Flight Recorder, eBPF netintel, intelligence, FinOps, sovereign.
-    #[command(after_help = examples(&["gryvia compare runai", "gryvia compare runai -o json"]))]
-    Compare {
-        /// Competitor to compare against
-        competitor: commands::compare::Competitor,
-
-        #[arg(short, long, value_enum, default_value_t = OutputFormat::Table, env = "GRYVIA_OUTPUT")]
-        output: OutputFormat,
-    },
-
     /// Build monthly invoice estimates from metered usage
     ///
     /// Groups GryviaUsageRecord objects (all namespaces) into one invoice per tenant for a UTC month, with
@@ -1603,10 +1590,6 @@ async fn run() -> Result<()> {
             commands::version::print_client();
             return Ok(());
         }
-        Commands::Compare { competitor, output } => {
-            commands::compare::execute(*competitor, matches!(output, OutputFormat::Json))?;
-            return Ok(());
-        }
         // Talks only to the LLM gateway.
         Commands::Rag {
             action:
@@ -2214,9 +2197,6 @@ async fn run() -> Result<()> {
                 output.as_str(),
             )
             .await?;
-        }
-        Commands::Compare { .. } => {
-            unreachable!("handled before the cluster client is created")
         }
         Commands::Invoice {
             tenant,

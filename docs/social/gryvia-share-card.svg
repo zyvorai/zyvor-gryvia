@@ -60,7 +60,7 @@
   <!-- license / version pills -->
   <g font-family="'Helvetica Neue',Helvetica,Arial,sans-serif">
     <rect x="72" y="424" width="114" height="34" rx="17" fill="#f5f5f7" stroke="#d2d2d7"/>
-    <text x="129.0" y="446" text-anchor="middle" font-size="14.5" font-weight="600" font-family="'Menlo','JetBrains Mono',monospace" fill="#1d1d1f">Zyvor Production 1.0</text>
+    <text x="129.0" y="446" text-anchor="middle" font-size="14.5" font-weight="600" font-family="'Menlo','JetBrains Mono',monospace" fill="#1d1d1f">Zyvor PL 1.0</text>
     <rect x="198" y="424" width="96" height="34" rx="17" fill="#f5f5f7" stroke="#d2d2d7"/>
     <text x="246.0" y="446" text-anchor="middle" font-size="14.5" font-weight="600" font-family="'Menlo','JetBrains Mono',monospace" fill="#1d1d1f">Go 1.24+</text>
     <rect x="306" y="424" width="168" height="34" rx="17" fill="#f5f5f7" stroke="#d2d2d7"/>

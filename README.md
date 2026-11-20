@@ -4,7 +4,6 @@
 
 # Gryvia
 
-[Client overview (PDF)](docs/Gryvia-Client-Overview.pdf)
 
 ## Stop babysitting GPUs. Start shipping models.
 
@@ -14,7 +13,7 @@
 
 **Place** every job on the right GPU · **Share** them by the half, the MIG slice or the gang · **Bill** every team by the GPU-hour
 
-Run:ai is a scheduler + org layer. Gryvia is the adult platform: Flight Recorder, eBPF fabric intelligence, workload intelligence, token+GPU FinOps, sovereign composition. See [`gryvia compare runai`](docs/competitors.md).
+Gryvia ships Flight Recorder, eBPF fabric intelligence, workload intelligence, token+GPU FinOps, sovereign composition.
 
 [![Docs site](https://github.com/zyvorai/zyvor-gryvia/actions/workflows/pages.yml/badge.svg)](https://zyvorai.github.io/zyvor-gryvia/)
 [![License](https://img.shields.io/badge/License-Zyvor%20Production%201.0-0071e3?style=flat-square&labelColor=1d1d1f)](LICENSE)
@@ -25,7 +24,7 @@ Run:ai is a scheduler + org layer. Gryvia is the adult platform: Flight Recorder
 [![Book a demo](https://img.shields.io/badge/Book_a_demo-0071e3?style=for-the-badge)](https://zyvor.dev/schedule?utm_source=github&utm_medium=gryvia&utm_campaign=readme_hero)
 [![30-day PoC](https://img.shields.io/badge/30--day_PoC-000000?style=for-the-badge)](https://zyvor.dev/poc?utm_source=github&utm_medium=gryvia&utm_campaign=readme_hero)
 
-[**Quickstart**](#quickstart) · [**Website**](https://zyvorai.github.io/zyvor-gryvia/) · [**Docs**](website/docs/intro.md) · [**Architecture**](#architecture) · [**Competitors**](docs/competitors.md) · [**What works today**](#what-works-today) · [**License**](#license)
+[**Quickstart**](#quickstart) · [**Website**](https://zyvorai.github.io/zyvor-gryvia/) · [**Docs**](website/docs/intro.md) · [**Architecture**](#architecture) · [**What works today**](#what-works-today) · [**License**](#license)
 
 </div>
 
@@ -227,35 +226,6 @@ ready, have the wrong `gryvia.io/gpu` type, lack the requested RDMA/SR-IOV label
 memory, plus CPU/memory) and takes the top `distributed.nodes`. It records that choice in `status.nodesAllocated`; the
 pods are constrained by node selector and placed by the Kubernetes scheduler (or by KAI when it is on). Detail:
 [Scheduling guide](website/docs/guides/SCHEDULING.md).
-
-</details>
-
-### Gryvia vs plain Kubernetes + GPU Operator, in four rows
-
-| You want | Plain Kubernetes | Gryvia |
-|---|---|---|
-| To run a training job | Write Pods, Services and PVCs | One `GryviaAIJob`, or `gryvia submit` |
-| Half a GPU or a gang | Manual time-slicing, no gangs | `--gpu 0.5`, `--nodes 4` |
-| Fair queues per team | Build it yourself | KAI, Kueue or the native queue, one per tenant |
-| To know who used what | Not built in | GPU-hour metering, budgets, estimate invoices |
-
-<details>
-<summary><b>Gryvia vs Kubernetes + GPU Operator: the full table</b></summary>
-
-![Gryvia vs Kubernetes + GPU Operator: one job spec, GPU-aware, metered per tenant](docs/ux/readme-vs.jpg)
-
-Gryvia runs on Kubernetes and uses NVIDIA's GPU Operator for drivers; this is what it adds on top.
-
-| Capability | Vanilla K8s + GPU Operator | Gryvia |
-|---|---|---|
-| Job spec | Pods, Jobs and StatefulSets you write | One `GryviaAIJob` (type, gpus, gpuType, distributed); the operator creates the Indexed Job (or a StatefulSet for inference), the headless Service and the PVC |
-| Job placement | Default scheduler (first-fit) | Nodes filtered and scored on GPU type, RDMA/SR-IOV, NVLink, free GPUs and memory; gangs and queues through KAI Scheduler, Kueue or the native queue gate |
-| GPU sharing | Whole GPUs, or manual time-slicing | `--gpu 0.5` through KAI GPU fractions or the native scheduler (MIG, MPS, DRA) |
-| RDMA/NVLink setup | Manual | Network operator creates device plugins and Multus attachments |
-| Storage for training | Standard CSI | Storage operator for VAST, Weka, DDN, Lustre and CephFS backends |
-| GPU failure handling | Manual intervention | Per-GPU health on `GryviaGpuNode` (DCGM), quarantine and an escalating reset, driver-reload, reboot ladder |
-| Cost tracking | Not built in | GPU-hour metering, SKU catalog, estimate invoices, per-team quotas and budgets, chargeback |
-| Multi-tenancy | Namespaces and your own RBAC | `GryviaTenant` namespaces with quota, NetworkPolicy, per-tenant queues and RBAC |
 
 </details>
 

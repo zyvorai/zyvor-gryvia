@@ -170,4 +170,4 @@ See `values.yaml` for every option. Uninstall with `helm uninstall gryvia -n gry
 
 ### Adult platform overlay
 
-`-f values-adult-platform.yaml` enables fairshare apply, Flight Recorder token wiring, intelligence actions, network cost and the billing ledger — the stack that makes Run:ai look like a queue UI. See `docs/competitors.md`.
+`-f values-adult-platform.yaml` enables fairshare apply, Flight Recorder token wiring, intelligence actions, network cost and the billing ledger.
