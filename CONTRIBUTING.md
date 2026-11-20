@@ -19,7 +19,7 @@ Create detailed bug reports with:
 
 ### Pull Requests
 
-1. Fork the repository
+1. Fork the repository (source-available under the [Zyvor Production License v1.0](LICENSE); contributions are licensed under it)
 2. Create feature branch: `git checkout -b feature/my-feature`
 3. Make changes and add tests
 4. Commit: `git commit -m "feat: Add feature"`

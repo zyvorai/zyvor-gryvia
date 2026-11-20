@@ -13,7 +13,7 @@ keywords:
 home: https://github.com/zyvorai/gryvia
 sources:
   - https://github.com/zyvorai/gryvia
-  - https://github.com/zyvorai/zyntra
+  - https://github.com/zyvorai/zyvor-zyntra-site
   - https://github.com/zyvorai/netra
 dependencies:
   - name: gryvia

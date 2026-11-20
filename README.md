@@ -307,7 +307,7 @@ Non-production use is permitted under the Zyvor Production License v1.0; product
 
 ## Contributing
 
-We welcome contributions: see [CONTRIBUTING.md](CONTRIBUTING.md).
+Contributions are accepted under the same license: see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 

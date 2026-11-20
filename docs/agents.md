@@ -84,7 +84,7 @@ For vLLM, the model must be served with tool calling turned on (`--enable-auto-t
 
 ### Zyntra tools
 
-A `zyntra` tool gives the model a [Zyntra](https://github.com/zyvorai/zyntra) ontology: the typed business objects,
+A `zyntra` tool gives the model a [Zyntra](https://github.com/zyvorai/zyvor-zyntra-site) ontology: the typed business objects,
 links and KPIs Zyntra builds from its connectors (in the [Sovereign AI OS](sovereign-aios.md) release, Gryvia's
 tenants, GPU nodes, jobs, models, inference services and datasets).
 

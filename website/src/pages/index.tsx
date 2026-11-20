@@ -150,8 +150,8 @@ export default function Home(): ReactNode {
                 harvesting and signed provenance. It lives in its own repository and does not use the Kubernetes path.
               </p>
               <div className={s.ctaRow}>
-                <Link className={s.linkArrow} to="https://github.com/zyvorai/zyvor-gryvia-apple">View zyvor-gryvia-apple</Link>
-                <Link className={s.linkArrow} to="https://zyvorai.github.io/zyvor-gryvia-apple/">Companion site</Link>
+                <Link className={s.linkArrow} to="https://github.com/zyvorai/gryvia-apple">View gryvia-apple</Link>
+                <Link className={s.linkArrow} to="https://zyvorai.github.io/gryvia-apple/">Companion site</Link>
               </div>
             </Reveal>
             <Reveal>
