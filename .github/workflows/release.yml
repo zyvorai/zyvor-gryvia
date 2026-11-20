@@ -76,7 +76,7 @@ jobs:
           labels: |
             org.opencontainers.image.source=https://github.com/zyvorai/gryvia
             org.opencontainers.image.version=${{ env.TAG }}
-            org.opencontainers.image.licenses=Apache-2.0
+            org.opencontainers.image.licenses=LicenseRef-Zyvor-Production-1.0
       - name: Record digest
         run: |
           mkdir -p "$RUNNER_TEMP/digests"

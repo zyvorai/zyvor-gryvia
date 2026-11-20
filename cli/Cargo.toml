@@ -4,7 +4,7 @@ version = "1.0.0"
 edition = "2021"
 authors = ["Gryvia Contributors"]
 description = "CLI for managing Gryvia GPU clusters"
-license = "Apache-2.0"
+license = "LicenseRef-Zyvor-Production-1.0"
 repository = "https://github.com/zyvorai/gryvia"
 
 [[bin]]
