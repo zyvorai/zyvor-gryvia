@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 import { describe, expect, it } from 'vitest'
 import { ADMIN_ONLY_PREFIXES, NAVIGATION, TENANT_HOME, canAccessPath, isAdminUser, navFor } from './roles'

@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 /* Stand-in for libnccl.so: exports the NCCL symbols straggler.c probes, with the
  * real public signatures (ncclUniqueId passed by value, 128 bytes) but no GPU

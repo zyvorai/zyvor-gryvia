@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 // Draft model behind the workflow step editor, its conversion to/from the gateway's spec JSON, and its validation.
 // Gateway shape: { steps: [{ name, type, dependsOn?, jobTemplate|script|webhook, retries?, timeoutSeconds? }], parameters?: {k: v} }

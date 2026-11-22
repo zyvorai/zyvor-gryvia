@@ -1,5 +1,5 @@
 # Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 """OIDC login end to end against a fake identity provider. Keys are generated here, discovery and JWKS
 are served by a fake httpx.AsyncClient, so no network is used."""

@@ -1,5 +1,5 @@
 # Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 """Tests of ingest.py against an in-process fake LLM gateway and Qdrant. Run: python3 examples/rag/test_ingest.py"""
 import hashlib

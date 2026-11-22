@@ -198,5 +198,5 @@ host network under it.
 
 ## Licenses
 
-Gryvia, Zyntra and Netra are all under the Zyvor Production License v1.0, which is not an open-source license, so
+Gryvia, Zyntra and Netra are all under the Zyvor Production Licence v2.0, which is not an open-source license, so
 the release is source-available, not open source. Check that the combination fits your use before you deploy it.

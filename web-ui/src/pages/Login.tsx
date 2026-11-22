@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 import { useEffect, useId, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
@@ -79,7 +79,7 @@ const ABOUT: LoginAbout = {
   ],
   goalsTitle: 'Project goals',
   goals: [
-    'Source-available under the Zyvor Production License v1.0',
+    'Source-available under the Zyvor Production Licence v2.0',
     'Runs on your hardware: sovereign and air-gap ready',
     "Kubernetes-native: CRDs and operators you already know how to run",
     'Honest status: every claim says how it is verified (alpha today)',

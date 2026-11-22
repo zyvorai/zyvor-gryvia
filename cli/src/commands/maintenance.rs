@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 //! `gryvia maintenance`: cordon/annotate nodes for maintenance, optionally evict pods, and list nodes
 //! currently marked. Pods are only ever removed through the Eviction API, which honours

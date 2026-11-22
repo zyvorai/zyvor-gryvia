@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 # Tests for scripts/install-k3s-gpu.sh. They run the script in --dry-run with faked detection, so they need no
 # root, no GPU and no network, and assert on the commands it would run.

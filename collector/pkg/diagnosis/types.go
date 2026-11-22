@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 // Package diagnosis turns the node-local observations Gryvia already collects
 // (Flight Recorder events, folded fabric status, cgroup v2 pressure and

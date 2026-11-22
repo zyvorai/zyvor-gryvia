@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 # End-to-end checks of the GryviaAIJob run-to-completion lifecycle on a cluster that has Gryvia
 # installed and no GPUs (kind). Run by .github/workflows/e2e-jobs.yml, one scenario per step:

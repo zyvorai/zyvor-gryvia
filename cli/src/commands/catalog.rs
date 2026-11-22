@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 //! `gryvia catalog`: the GPU SKUs a provider offers (GryviaGpuSku, cluster-scoped), with hourly rates.
 //!

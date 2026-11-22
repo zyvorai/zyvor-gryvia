@@ -1,5 +1,5 @@
 # Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 from tests.test_oidc import claims, env, keys  # noqa: F401  (fixtures)
 from tests.test_roles import gw  # noqa: F401  (fixture)

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 # Helm render tests for aiOperator.checkpointGuard: off renders no flag and no roles/rolebindings rule; on adds
 # the ai-operator flag (and only there) and the rbac.authorization.k8s.io rule. Needs helm; no cluster.

@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 /* ibv_driver <ibv_verbs.o> <libfakeibv.so>: attach every probe, call the fake
  * exports in-process (this process is both traced and tracer), print the counters. */

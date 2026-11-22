@@ -2,7 +2,7 @@ galaxy_info:
   role_name: rke2_hardened
   author: Zyvor AI Labs
   description: RKE2 with the CIS profile, FIPS checks, audit logging and a registry mirror
-  license: LicenseRef-Zyvor-Production-1.0
+  license: LicenseRef-Zyvor-Production-2.0
   min_ansible_version: "2.15"
   platforms:
     - name: EL

@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 //! `gryvia rag index|reingest|query`: GryviaVectorIndex objects (namespaced). The ai-operator (with --enable-rag)
 //! keeps each index's store and runs an ingestion Job per dataset version; `query` asks the LLM gateway's

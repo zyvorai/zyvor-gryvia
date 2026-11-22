@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
@@ -50,7 +50,7 @@ describe('Login', () => {
       'Sovereign AI OS', 'Workflows and experiments']) {
       expect(about.textContent).toContain(t)
     }
-    expect(screen.getByText('Source-available under the Zyvor Production License v1.0')).toBeTruthy()
+    expect(screen.getByText('Source-available under the Zyvor Production Licence v2.0')).toBeTruthy()
   })
 
   it('focuses the username without leaving the hero', () => {

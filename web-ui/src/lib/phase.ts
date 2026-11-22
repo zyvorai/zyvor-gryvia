@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 // One status vocabulary for every page: a word has one meaning and one colour everywhere.
 // Colour is deviation: healthy/neutral states are not green-washed, real problems are red.

@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 // Package discovery turns the Node labels published by NVIDIA GPU Feature
 // Discovery (GFD), the node's allocatable resources and DCGM exporter metrics

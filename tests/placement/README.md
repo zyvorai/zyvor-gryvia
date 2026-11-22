@@ -1,6 +1,6 @@
 # Placement benchmark
 
-Janus-format cluster and workload fixtures (copied from [Janus](https://github.com/zyvorai/janus), Zyvor Production License v1.0)
+Janus-format cluster and workload fixtures (copied from [Janus](https://github.com/zyvorai/janus), Zyvor Production Licence v2.0)
 run through the operator's real node-selection code by `operators/ai-operator/cmd/placement-sim`.
 `scripts/placement-benchmark.sh` compares the result with `baseline.json` and fails when makespan, mean wait or
 GPU utilisation gets worse by more than the tolerance (default 1%). It measures placement quality on a fixed

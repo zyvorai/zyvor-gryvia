@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 # Upgrade and rollback test: install the previous Gryvia on a kind cluster, create objects, upgrade to
 # this checkout the documented way (website/docs/guides/OPERATIONS.md), check that nothing was lost,

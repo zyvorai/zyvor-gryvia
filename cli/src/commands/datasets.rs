@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 //! `gryvia datasets list|get|create|delete`: GryviaDataset objects (cluster-scoped). The storage-operator
 //! (with --enable-datasets) downloads each dataset's source into a PVC in `spec.namespace`, one directory per
