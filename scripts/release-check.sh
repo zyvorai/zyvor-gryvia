@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 # Verify a published Gryvia release from the outside, the way a user sees it:
 #   1. every image exists for the tag and can be pulled anonymously (registry API, no credentials), for amd64 and arm64

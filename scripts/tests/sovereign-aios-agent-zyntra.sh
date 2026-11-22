@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 # The agent runtime's zyntra tool against a real Zyntra, wired the way helm/sovereign-aios wires them: the agent token
 # and Zyntra's policy come from the rendered chart, Zyntra serves the chart's pack against a stand-in Gryvia gateway,

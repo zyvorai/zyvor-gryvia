@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 // verifyobj loads every eBPF object file in a directory through the kernel verifier without attaching anything.
 // It is the CI check for ebpf/ (no bpftool needed) and needs root and a kernel with BTF:

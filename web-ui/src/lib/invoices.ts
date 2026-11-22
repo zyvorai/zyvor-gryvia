@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 // Pure helpers for the Invoices page. Invoices are estimates built from job run time and catalog rates.
 export interface InvoiceLine { sku: string; gpuType: string; gpuHours: number; rate: number; amount: number; jobs: number }

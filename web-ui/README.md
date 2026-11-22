@@ -80,4 +80,4 @@ web-ui/src/
 
 ## License
 
-Zyvor Production License v1.0 (LicenseRef-Zyvor-Production-1.0). See the repository LICENSE.
+Zyvor Production Licence v2.0 (LicenseRef-Zyvor-Production-2.0). See the repository LICENSE.

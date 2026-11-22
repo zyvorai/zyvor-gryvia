@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 // Package inference reads the serving engines' own Prometheus metrics (vLLM, NVIDIA Triton,
 // HuggingFace TGI) and folds them into per-job inference latency figures.

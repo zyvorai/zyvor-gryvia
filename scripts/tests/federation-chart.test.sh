@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 # Federation is opt-in: the default render passes no federation flags and grants no Workload patch; allowedServers
 # adds the probe flags only; failover adds its flag and the Workload patch rule, and refuses to render without

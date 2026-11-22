@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 # Tests for scripts/release-check.sh: tag parsing, --dry-run, and the pass/fail exit paths against fake
 # curl, cosign, helm and kubectl binaries. No network.

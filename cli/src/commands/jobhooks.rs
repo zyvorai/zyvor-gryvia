@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 //! `gryvia job-hooks list|get|create|delete`: GryviaJobHook objects (namespaced). The ai-operator (with
 //! --enable-job-hooks) POSTs a signed body or a Slack message when a GryviaAIJob or GryviaWorkflow in the hook's

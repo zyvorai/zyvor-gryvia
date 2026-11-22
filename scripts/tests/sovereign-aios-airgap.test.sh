@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 # Offline checks for the Sovereign AI OS air gap (deploy/airgap, deploy/argocd/sovereign-aios): the chart's images are
 # in deploy/airgap/images.txt; with values-airgap.yaml every image comes from the Harbor mirror under the path

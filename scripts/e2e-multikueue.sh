@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 # Two-cluster MultiKueue check (docs/kueue-integration.md): a GryviaAIJob submitted on the MANAGER cluster is
 # dispatched by Kueue to a WORKER cluster, runs there, and its status comes back. Both are kind clusters on the

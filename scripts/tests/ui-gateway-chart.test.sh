@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 # Helm render tests for the dashboard's Gateway API (Envoy) exposure: off by default, mutually exclusive with
 # ui.ingress, requires the backend CA ConfigMap, HTTPS listener + redirect only with a certificate, and the

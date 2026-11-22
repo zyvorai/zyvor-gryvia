@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 //
 // Additive signal types for nccl_transport.c, p2p_fallback.c, capture_gate.c and
 // the XDP slot map of xdp_mux.c. Keep the numbers aligned with

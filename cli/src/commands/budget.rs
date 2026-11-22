@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 //! `gryvia budget`: GryviaBudget objects (cluster-scoped) with spend against limits, read through the
 //! Kubernetes API like `gryvia quota`. Spend is an estimate from usage records, not an invoice.

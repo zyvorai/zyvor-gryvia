@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 // Command gpu-reset-agent runs one GPU reset agent for the node named by NODE_NAME (or --node).
 // Default is dry-run; --execute actually runs nvidia-smi --gpu-reset. Driver reload and node reboot

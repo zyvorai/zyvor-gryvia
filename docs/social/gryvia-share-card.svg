@@ -1,5 +1,5 @@
 <!-- Copyright (c) 2024-2026 Susant Sahani and contributors. -->
-<!-- SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0 -->
+<!-- SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0 -->
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-label="Gryvia — GPU is the new CPU. Gryvia is its scheduler. Kubernetes-native GPU fabric with topology-aware scheduling, RDMA/NVLink automation and parallel-filesystem storage. Early stage: design targets, not measured results.">
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="0" y2="630" gradientUnits="userSpaceOnUse">
@@ -101,5 +101,5 @@
   <!-- footer -->
   <line x1="72" y1="560" x2="1128" y2="560" stroke="#e5e5ea" stroke-width="1"/>
   <text x="72" y="596" font-family="'Menlo','JetBrains Mono',monospace" font-size="16" fill="#6e6e73">github.com/zyvorai/gryvia</text>
-  <text x="1128" y="596" text-anchor="end" font-family="'Helvetica Neue',Helvetica,Arial,sans-serif" font-size="16" fill="#6e6e73">Zyvor Production License v1.0</text>
+  <text x="1128" y="596" text-anchor="end" font-family="'Helvetica Neue',Helvetica,Arial,sans-serif" font-size="16" fill="#6e6e73">Zyvor Production Licence v2.0</text>
 </svg>

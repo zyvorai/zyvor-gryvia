@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 //
 // Opt-in eBPF objects. The loader attaches every .o file in its directory whose hooks
 // resolve, so an object nothing consumes would still cost a probe (and a ring buffer read)

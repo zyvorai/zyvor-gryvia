@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 # Helm render tests for aiOperator.idleReclaim: off renders nothing; on renders the four flags, also when the
 # values come from an older release that has no idleReclaim defaults (helm upgrade --reuse-values).

@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 //! Shared list/get/create/delete of one Gryvia kind through the Kubernetes API, for the commands that only
 //! need those verbs (`gryvia datasets`, `gryvia rag index`, `gryvia agents`). Each command describes its kind

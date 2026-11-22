@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 // Package cron is a small parser for standard five-field cron expressions
 // ("minute hour day-of-month month day-of-week"), evaluated in UTC. It exists so the
