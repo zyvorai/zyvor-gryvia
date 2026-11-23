@@ -45,8 +45,16 @@ type ChargebackPeriod struct {
 
 // ChargebackAllocationModel defines cost allocation
 type ChargebackAllocationModel struct {
-	// Method is the allocation method (actual-usage, reserved-capacity, equal-split, weighted)
+	// Method is the allocation method. Implemented: actual-usage (default) and idle-proportional
+	// (actual usage plus a share of IdleCost proportional to each cost center usage).
+	// +kubebuilder:validation:Enum=actual-usage;idle-proportional;reserved-capacity;equal-split;weighted
 	Method string `json:"method,omitempty"`
+
+	// IdleCost is the cost, in the pricing currency, of provisioned GPU capacity nobody used in the
+	// period. Used only by the idle-proportional method; it is split across cost centers in
+	// proportion to their metered cost, to the cent, and never invented from thin air.
+	// +kubebuilder:validation:Minimum=0
+	IdleCost float64 `json:"idleCost,omitempty"`
 
 	// IncludePlatformCosts includes platform overhead
 	IncludePlatformCosts bool `json:"includePlatformCosts,omitempty"`
@@ -173,6 +181,9 @@ type ChargebackCurrentPeriod struct {
 
 	// ByResourceType is the breakdown by resource type
 	ByResourceType *ResourceTypeCosts `json:"byResourceType,omitempty"`
+
+	// IdleUnallocated is idle cost that no cost center could be charged for because none had usage
+	IdleUnallocated float64 `json:"idleUnallocated,omitempty"`
 }
 
 // CostCenterStatus tracks cost center spending
@@ -183,8 +194,11 @@ type CostCenterStatus struct {
 	// Name of the cost center
 	Name string `json:"name,omitempty"`
 
-	// Cost for this cost center
+	// Cost for this cost center, including IdleCost when the idle-proportional method is used
 	Cost float64 `json:"cost,omitempty"`
+
+	// IdleCost is the part of Cost that is this cost center share of idle capacity
+	IdleCost float64 `json:"idleCost,omitempty"`
 
 	// Budget for this cost center
 	Budget float64 `json:"budget,omitempty"`
@@ -203,6 +217,8 @@ type ResourceTypeCosts struct {
 	Network  float64 `json:"network,omitempty"`
 	Support  float64 `json:"support,omitempty"`
 	Platform float64 `json:"platform,omitempty"`
+	// Idle is the idle capacity cost charged to cost centers (idle-proportional method)
+	Idle float64 `json:"idle,omitempty"`
 }
 
 // ChargebackReportRef tracks the last generated report

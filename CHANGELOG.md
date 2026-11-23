@@ -5,6 +5,11 @@ and the project aims to follow [Semantic Versioning](https://semver.org/) once i
 
 ## [Unreleased]
 
+### Added
+- Chargeback `allocationModel.method: idle-proportional` with `allocationModel.idleCost`: the cost of unused GPU capacity is split across cost centers in proportion to their metered cost, to the cent (new `pkg/idlecost`, status fields `costCenters[].idleCost`, `byResourceType.idle`, `idleUnallocated`). `idleCost` without the method is refused. See `docs/idle-cost.md`. Unit tests only; not run against a cluster.
+- `operators/quota-operator/pkg/fairshare`: weighted borrowing share and preemption-victim selection (Kueue-style strategies, never below a queue nominal quota, size-capped). A tested library; no controller calls it yet.
+- `docs/RESEARCH.md`: GPU scheduling and ML platform landscape, gaps and ranked ideas.
+
 ### Changed
 - Dependency refresh: `go get -u` and `go mod tidy` in all ten Go modules (collector, six operators, sdk/go, tests/e2e, tests/performance); controller-runtime 0.25.3, client-go/apimachinery 0.37.2 everywhere. API gateway pins: kubernetes 37.0.3, pydantic 2.14.4, fastapi 0.165.0 (gateway and agents example); the gateway suite (773 tests) passes on Python 3.14.
 - CI: `docker/login-action` v4, `sigstore/cosign-installer` v4, Python 3.14 and Node 24 in workflows; Dockerfiles for the Python services and examples use `python:3.14-slim` / `python:3.14-alpine` (tags verified on Docker Hub); the gateway image moves from 3.11 to 3.14.
@@ -12,6 +17,7 @@ and the project aims to follow [Semantic Versioning](https://semver.org/) once i
 ### Fixed
 - Generated CRDs (`crds/`, `helm/gryvia/crds/`) and `website/docs/reference/crds.md` were stale against the Go types (property order and some descriptions); regenerated with controller-gen v0.22.0.
 - `services/api-gateway/tests/test_usage.py`: the CSV export test did not expect the `kind` column the endpoint already emits.
+- `operators/quota-operator`: `gryviausagerecord_controller.go` was not gofmt-clean.
 - `tests/e2e`: test namespaces were invalid because `t.Name()` contains `_`.
 
 ### Held back

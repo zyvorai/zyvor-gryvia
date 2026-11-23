@@ -163,20 +163,20 @@ func (r *GryviaUsageRecordReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	}
 
 	spec := gryviav1.GryviaUsageRecordSpec{
-		Tenant:         tenantName,
-		Job:            job.Name,
-		JobUID:         string(job.UID),
-		GpuType:        job.Spec.GpuType,
-		Sku:            skuName,
-		Gpus:           wholeGPUs,
-		EffectiveGpus:  effectiveGPUs,
-		Start:          runStart,
-		End:            endPtr,
-		GpuHours:       gpuHours,
-		Rate:           rate,
-		Cost:           gpuHours * rate,
-		Currency:       currency,
-		Final:          final,
+		Tenant:        tenantName,
+		Job:           job.Name,
+		JobUID:        string(job.UID),
+		GpuType:       job.Spec.GpuType,
+		Sku:           skuName,
+		Gpus:          wholeGPUs,
+		EffectiveGpus: effectiveGPUs,
+		Start:         runStart,
+		End:           endPtr,
+		GpuHours:      gpuHours,
+		Rate:          rate,
+		Cost:          gpuHours * rate,
+		Currency:      currency,
+		Final:         final,
 	}
 
 	if !exists {
