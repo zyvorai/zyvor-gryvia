@@ -101,7 +101,7 @@ spec:
       name: http
 
 ---
-# VSCode route (optional): replaces the former nginx Ingress. Envoy upgrades websockets without extra
+# VSCode route (optional): replaces the former nginx Ingress. Setura upgrades websockets without extra
 # annotations; the `gryvia` Gateway (namespace gryvia-system) must allow routes from this namespace.
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute

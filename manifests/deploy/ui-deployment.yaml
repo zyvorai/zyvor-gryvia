@@ -157,8 +157,8 @@ subjects:
   name: gryvia-ui
   namespace: gryvia-system
 ---
-# Envoy Gateway (Gateway API) front door; replaces the former nginx Ingress. Install the controller and the
-# `eg` GatewayClass first (see docs: Envoy Gateway). The dashboard serves HTTPS on 443, so Envoy re-encrypts
+# Setura (Gateway API) front door; replaces the former nginx Ingress. Install the controller and the
+# `setura` GatewayClass first (see docs/setura-gateway.md). The dashboard serves HTTPS on 443, so Setura re-encrypts
 # and the BackendTLSPolicy pins the CA from the ConfigMap `gryvia-ui-ca`, created once from the UI certificate:
 #   kubectl -n gryvia-system get secret gryvia-tls -o jsonpath='{.data.tls\.crt}' | base64 -d |
 #     kubectl -n gryvia-system create configmap gryvia-ui-ca --from-file=ca.crt=/dev/stdin
@@ -170,7 +170,7 @@ metadata:
   annotations:
     cert-manager.io/cluster-issuer: "letsencrypt-prod"
 spec:
-  gatewayClassName: eg
+  gatewayClassName: setura
   listeners:
   - name: http
     protocol: HTTP
