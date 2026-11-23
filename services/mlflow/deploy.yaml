@@ -217,9 +217,9 @@ spec:
       targetPort: 5000
 
 ---
-# MLflow route (optional): Envoy Gateway `gryvia` (manifests/deploy/ui-deployment.yaml) with a `mlflow` listener
+# MLflow route (optional): Setura `gryvia` (manifests/deploy/ui-deployment.yaml) with a `mlflow` listener
 # added to it, or any Gateway you attach to. Replaces the former nginx Ingress; no body-size limit and
-# a 10 minute request timeout are the Envoy defaults/equivalents of the old annotations.
+# a 10 minute request timeout are the Setura defaults/equivalents of the old annotations.
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:

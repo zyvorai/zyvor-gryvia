@@ -2,7 +2,7 @@
 # Copyright 2026 Zyvor AI Labs · https://zyvor.dev
 # SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
-# Helm render tests for the dashboard's Gateway API (Envoy) exposure: off by default, mutually exclusive with
+# Helm render tests for the dashboard's Gateway API (Setura) exposure: off by default, mutually exclusive with
 # ui.ingress, requires the backend CA ConfigMap, HTTPS listener + redirect only with a certificate, and the
 # attach-to-existing mode creates no Gateway. No cluster needed.
 set -uo pipefail
@@ -45,10 +45,10 @@ grep -q 'port: 9444' <<<"$OUT2" && ok "httpsPort is configurable" || fail "https
 [[ "$(count '^kind: HTTPRoute$')" == 2 ]] && ok "two routes (redirect + app)" || fail "two routes (redirect + app)"
 
 echo "attach to an existing Gateway"
-OUT="$(render "${GW[@]}" --set ui.gateway.createGateway=false --set ui.gateway.gatewayName=shared --set ui.gateway.gatewayNamespace=envoy-gateway-system)"
+OUT="$(render "${GW[@]}" --set ui.gateway.createGateway=false --set ui.gateway.gatewayName=shared --set ui.gateway.gatewayNamespace=setura-system)"
 lacks "no Gateway created" '^kind: Gateway$'
 has   "parentRef name" 'name: shared'
-has   "parentRef namespace" 'namespace: envoy-gateway-system'
+has   "parentRef namespace" 'namespace: setura-system'
 
 echo "guards"
 if render "${GW[@]}" --set ui.ingress.enabled=true >/dev/null; then fail "ingress+gateway rejected"; else ok "ingress+gateway rejected"; fi

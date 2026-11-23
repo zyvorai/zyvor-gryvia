@@ -18,9 +18,9 @@
 #   GRYVIA_NVIDIA     1 = also install NVIDIA's GPU Operator (driver, container toolkit, device plugin,
 #                     DCGM) so GPU nodes get ready without manual setup: sets nvidia.enabled=true
 #   GRYVIA_HOST_DRIVER 1 = the nodes already have the NVIDIA driver (sets nvidia.driver.enabled=false)
-#   GRYVIA_GATEWAY_HOST  serve the dashboard through Envoy Gateway at this hostname (ui.gateway.*): installs Envoy
-#                     Gateway first only if the cluster has none (scripts/install-envoy-gateway.sh) and creates
-#                     the gryvia-ui-ca ConfigMap Envoy uses to verify the dashboard's certificate
+#   GRYVIA_GATEWAY_HOST  serve the dashboard through Setura at this hostname (ui.gateway.*): installs Setura
+#                     first only if the cluster has none (scripts/install-setura-gateway.sh) and creates
+#                     the gryvia-ui-ca ConfigMap Setura uses to verify the dashboard's certificate
 #   GRYVIA_GATEWAY_TLS_SECRET  kubernetes.io/tls Secret for the HTTPS listener (port ui.gateway.httpsPort, 7443)
 #   HELM_EXTRA_ARGS   extra arguments passed to `helm upgrade --install`
 set -euo pipefail
@@ -45,7 +45,7 @@ if [[ -d "$CHART" ]]; then
   helm dependency build "$CHART" >/dev/null
 fi
 if [[ -n "${GRYVIA_GATEWAY_HOST:-}" ]]; then
-  "$(dirname "${BASH_SOURCE[0]}")/install-envoy-gateway.sh"
+  "$(dirname "${BASH_SOURCE[0]}")/install-setura-gateway.sh"
   args+=(--set ui.gateway.enabled=true --set "ui.gateway.host=$GRYVIA_GATEWAY_HOST" --set ui.gateway.backendTLS.caConfigMapName=gryvia-ui-ca)
   [[ -n "${GRYVIA_GATEWAY_TLS_SECRET:-}" ]] && args+=(--set "ui.gateway.tlsSecretName=$GRYVIA_GATEWAY_TLS_SECRET")
 fi
@@ -57,7 +57,7 @@ echo "Installing Gryvia into namespace $NS ..."
 kubectl get namespace "$NS" >/dev/null 2>&1 || kubectl create namespace "$NS"
 helm "${args[@]}"
 if [[ -n "${GRYVIA_GATEWAY_HOST:-}" ]]; then
-  # The chart's dashboard certificate (secret gryvia-tls) is what Envoy must trust on the backend hop.
+  # The chart's dashboard certificate (secret gryvia-tls) is what Setura must trust on the backend hop.
   kubectl -n "$NS" get secret gryvia-tls -o jsonpath='{.data.tls\.crt}' | base64 -d > "${TMPDIR:-/tmp}/gryvia-ui-ca.crt"
   kubectl -n "$NS" create configmap gryvia-ui-ca --from-file=ca.crt="${TMPDIR:-/tmp}/gryvia-ui-ca.crt" --dry-run=client -o yaml | kubectl apply -f -
   rm -f "${TMPDIR:-/tmp}/gryvia-ui-ca.crt"
