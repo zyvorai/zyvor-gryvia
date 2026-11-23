@@ -42,12 +42,26 @@ spec:
               allocationModel:
                 description: AllocationModel defines how costs are allocated
                 properties:
+                  idleCost:
+                    description: |-
+                      IdleCost is the cost, in the pricing currency, of provisioned GPU capacity nobody used in the
+                      period. Used only by the idle-proportional method; it is split across cost centers in
+                      proportion to their metered cost, to the cent, and never invented from thin air.
+                    minimum: 0
+                    type: number
                   includePlatformCosts:
                     description: IncludePlatformCosts includes platform overhead
                     type: boolean
                   method:
-                    description: Method is the allocation method (actual-usage, reserved-capacity,
-                      equal-split, weighted)
+                    description: |-
+                      Method is the allocation method. Implemented: actual-usage (default) and idle-proportional
+                      (actual usage plus a share of IdleCost proportional to each cost center usage).
+                    enum:
+                    - actual-usage
+                    - idle-proportional
+                    - reserved-capacity
+                    - equal-split
+                    - weighted
                     type: string
                   platformOverhead:
                     description: PlatformOverhead is the overhead percentage
@@ -242,6 +256,10 @@ spec:
                     properties:
                       compute:
                         type: number
+                      idle:
+                        description: Idle is the idle capacity cost charged to cost
+                          centers (idle-proportional method)
+                        type: number
                       network:
                         type: number
                       platform:
@@ -260,11 +278,16 @@ spec:
                           description: Budget for this cost center
                           type: number
                         cost:
-                          description: Cost for this cost center
+                          description: Cost for this cost center, including IdleCost
+                            when the idle-proportional method is used
                           type: number
                         id:
                           description: ID of the cost center
                           type: string
+                        idleCost:
+                          description: IdleCost is the part of Cost that is this cost
+                            center share of idle capacity
+                          type: number
                         name:
                           description: Name of the cost center
                           type: string
@@ -280,6 +303,10 @@ spec:
                   endDate:
                     description: EndDate of the current period
                     type: string
+                  idleUnallocated:
+                    description: IdleUnallocated is idle cost that no cost center
+                      could be charged for because none had usage
+                    type: number
                   startDate:
                     description: StartDate of the current period
                     type: string

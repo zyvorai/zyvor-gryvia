@@ -154,7 +154,7 @@ func Run(args []string) error {
 		intent = ParseIntentPolicy(raw)
 	}
 	gw := &Gateway{
-		Intent: intent,
+		Intent:    intent,
 		Source:    source,
 		Indexes:   source,
 		Meter:     meter,

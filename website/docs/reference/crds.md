@@ -10,7 +10,7 @@ Gryvia defines 49 custom resources in the `gryvia.io` API group (version `v1alph
 
 | Kind | Resource | Scope | Controller | Required spec fields | Other spec fields |
 |------|----------|-------|------------|----------------------|-------------------|
-| `GryviaAIJob` | `gryviaaijobs` | Namespaced | ai-operator | `gpus`, `image`, `type` | `affinity`, `args`, `command`, `distributed`, `env`, `gpuType`, `imagePullPolicy`, `model`, … |
+| `GryviaAIJob` | `gryviaaijobs` | Namespaced | ai-operator | `gpus`, `image`, `type` | `affinity`, `args`, `command`, `distributed`, `env`, `gpuType`, `idleTimeout`, `imagePullPolicy`, … |
 | `GryviaAgent` | `gryviaagents` | Namespaced | ai-operator | `model` | `image`, `maxSteps`, `replicas`, `resources`, `systemPrompt`, `tools` |
 | `GryviaAutoPolicy` | `gryviaautopolicies` | Namespaced | network-intelligence | none | `approvalRequired`, `excludeServices`, `learningWindow`, `mode`, `targetNamespaces` |
 | `GryviaAutoTuner` | `gryviaautotuners` | Namespaced | ai-operator | `jobTemplate`, `maxTrials`, `objective`, `parameterSpace`, `searchAlgorithm` | `ashaConfig`, `earlyStoppingRounds`, `parallelism` |
@@ -55,7 +55,7 @@ Gryvia defines 49 custom resources in the `gryvia.io` API group (version `v1alph
 | `GryviaTrainingInsight` | `gryviatraininginsights` | Namespaced | network-intelligence | none | `analysisWindow`, `metrics`, `targetJob` |
 | `GryviaTrainingProfiler` | `gryviatrainingprofilers` | Namespaced | ai-operator | `target` | `analysis`, `metrics`, `output` |
 | `GryviaTrainingTimeMachine` | `gryviatrainingtimemachines` | Namespaced | ai-operator | `sourceJob` | `forks`, `retention`, `timeline` |
-| `GryviaUsageRecord` | `gryviausagerecords` | Namespaced | quota-operator | `cost`, `final`, `gpuHours`, `gpus`, `job`, `jobUID`, `rate`, `start`, `tenant` | `currency`, `end`, `gpuType`, `inputTokens`, `kind`, `model`, `outputTokens`, `sku` |
+| `GryviaUsageRecord` | `gryviausagerecords` | Namespaced | quota-operator | `cost`, `final`, `gpuHours`, `gpus`, `job`, `jobUID`, `rate`, `start`, `tenant` | `currency`, `effectiveGpus`, `end`, `gpuType`, `inputTokens`, `kind`, `model`, `outputTokens`, … |
 | `GryviaVectorIndex` | `gryviavectorindexes` | Namespaced | ai-operator | `datasetRef`, `embedding`, `store` | `chunking`, `collection`, `ingestImage`, `schedule`, `suspend` |
 | `GryviaWorkflow` | `gryviaworkflows` | Namespaced | ai-operator | `steps` | `parameters`, `schedule` |
 | `GryviaWorkspace` | `gryviaworkspaces` | Namespaced | ai-operator | `type` | `cpuLimit`, `cpuRequest`, `env`, `gpuCount`, `gpuType`, `idleTimeoutMinutes`, `image`, `maxLifetimeHours`, … |

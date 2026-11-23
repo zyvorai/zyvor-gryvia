@@ -11,6 +11,7 @@ import (
 	"time"
 
 	gryviav1 "github.com/zyvorai/gryvia/operators/quota-operator/api/v1"
+	"github.com/zyvorai/gryvia/operators/quota-operator/pkg/idlecost"
 	"github.com/zyvorai/gryvia/operators/quota-operator/pkg/spend"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -51,8 +52,12 @@ func (r *GryviaChargebackReconciler) Reconcile(ctx context.Context, req ctrl.Req
 	return ctrl.Result{RequeueAfter: time.Minute}, r.Status().Update(ctx, cb)
 }
 func (r *GryviaChargebackReconciler) calculate(ctx context.Context, cb *gryviav1.GryviaChargeback, now time.Time) error {
-	if cb.Spec.AllocationModel.Method != "" && cb.Spec.AllocationModel.Method != "actual-usage" {
-		return fmt.Errorf("only actual-usage allocation is supported")
+	method := cb.Spec.AllocationModel.Method
+	if method != "" && method != "actual-usage" && method != "idle-proportional" {
+		return fmt.Errorf("only actual-usage and idle-proportional allocation are supported")
+	}
+	if method != "idle-proportional" && cb.Spec.AllocationModel.IdleCost != 0 {
+		return fmt.Errorf("idleCost needs method idle-proportional")
 	}
 	if cb.Spec.Pricing.Storage != nil || cb.Spec.Pricing.Network != nil {
 		return fmt.Errorf("storage/network attribution requires separate usage records")
@@ -137,8 +142,25 @@ func (r *GryviaChargebackReconciler) calculate(ctx context.Context, cb *gryviav1
 	if math.IsNaN(overhead) || math.IsInf(overhead, 0) || overhead < 0 {
 		return fmt.Errorf("platform overhead must be finite and nonnegative")
 	}
+	// Idle capacity is shared over the real cost centers only; unassigned usage is not billed idle.
+	idleShare := map[string]float64{}
+	if method == "idle-proportional" {
+		in := make([]idlecost.Input, 0, len(cb.Spec.CostCenters))
+		for _, cc := range cb.Spec.CostCenters {
+			in = append(in, idlecost.Input{ID: cc.ID, Cost: costs[cc.ID]})
+		}
+		alloc, aerr := idlecost.Allocate(cb.Spec.AllocationModel.IdleCost, in)
+		if aerr != nil {
+			return aerr
+		}
+		for _, sh := range alloc.Shares {
+			idleShare[sh.ID] = sh.Idle
+			out.ByResourceType.Idle += sh.Idle
+		}
+		out.IdleUnallocated = alloc.Unallocated
+	}
 	for _, cc := range cb.Spec.CostCenters {
-		cost := costs[cc.ID]
+		cost := costs[cc.ID] + idleShare[cc.ID]
 		budget := 0.0
 		if cc.Budget != nil {
 			switch cb.Spec.Period.Type {
@@ -157,7 +179,7 @@ func (r *GryviaChargebackReconciler) calculate(ctx context.Context, cb *gryviav1
 		if budget > 0 {
 			percent = cost / budget * 100
 		}
-		out.CostCenters = append(out.CostCenters, gryviav1.CostCenterStatus{ID: cc.ID, Name: cc.Name, Cost: cost, Budget: budget, Variance: cost - budget, PercentUsed: percent})
+		out.CostCenters = append(out.CostCenters, gryviav1.CostCenterStatus{ID: cc.ID, Name: cc.Name, Cost: cost, IdleCost: idleShare[cc.ID], Budget: budget, Variance: cost - budget, PercentUsed: percent})
 	}
 	if cost := costs["unassigned"]; cost > 0 {
 		if cb.Spec.AllocationModel.IncludePlatformCosts {
@@ -168,10 +190,11 @@ func (r *GryviaChargebackReconciler) calculate(ctx context.Context, cb *gryviav1
 	for _, cost := range costs {
 		out.ByResourceType.Compute += cost
 	}
+	computeAndIdle := out.ByResourceType.Compute + out.ByResourceType.Idle
 	if cb.Spec.AllocationModel.IncludePlatformCosts {
-		out.ByResourceType.Platform = out.ByResourceType.Compute * overhead / 100
+		out.ByResourceType.Platform = computeAndIdle * overhead / 100
 	}
-	out.TotalCost = out.ByResourceType.Compute + out.ByResourceType.Platform
+	out.TotalCost = computeAndIdle + out.ByResourceType.Platform
 	cb.Status.CurrentPeriod = out
 	return nil
 }

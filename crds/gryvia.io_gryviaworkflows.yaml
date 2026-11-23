@@ -1231,11 +1231,24 @@ spec:
                             clusters without GPUs).
                           format: int32
                           type: integer
+                        idleTimeout:
+                          description: |-
+                            IdleTimeout cancels a Running job after this long with no activity (e.g. "30m").
+                            Activity is gryvia.io/last-activity when set, otherwise status.startTime. Distinct from
+                            timeout (absolute activeDeadline). Useful for long-lived StatefulSet / interactive jobs.
+                          type: string
                         image:
                           description: Container image
                           type: string
                         imagePullPolicy:
                           description: Image pull policy
+                          type: string
+                        migProfile:
+                          description: |-
+                            MigProfile asks for MIG slices instead of whole GPUs ("1g.10gb", "3g.40gb", ...): each of
+                            the gpus per pod becomes one nvidia.com/mig-<profile> device. Nodes must advertise that
+                            resource (NVIDIA device plugin with the mixed MIG strategy). Empty means whole GPUs.
+                          pattern: ^[0-9]+g\.[0-9]+gb$
                           type: string
                         model:
                           description: Model name (llama-70b, gpt-4, stable-diffusion,

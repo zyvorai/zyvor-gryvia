@@ -73,7 +73,7 @@ jobs:
               spec:
                 containers:
                   - name: fake
-                    image: python:3.12-alpine
+                    image: python:3.14-alpine
                     command: [python3, /srv/fake_collector.py]
                     ports: [{containerPort: 9090}]
                     readinessProbe: {httpGet: {path: /readyz, port: 9090}, periodSeconds: 3}

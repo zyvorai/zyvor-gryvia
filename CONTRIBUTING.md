@@ -50,7 +50,7 @@ make lint           # golangci-lint on operators, clippy, web-ui lint, flake8 on
 
 - Go 1.27 (see the `go` line in each `go.mod`)
 - Rust (stable)
-- Node.js 22 (what CI uses)
+- Node.js 24 (what CI uses)
 - Docker / Podman
 - kubectl + helm
 

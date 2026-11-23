@@ -2,7 +2,7 @@
 # (the kind e2e). No quantize: llm-compressor AWQ/GPTQ needs a GPU. The library versions are the ones the e2e ran with;
 # the GGUF converter is llama.cpp's convert_hf_to_gguf.py and gguf-py from the same build as the llama.cpp server image.
 #   docker build -f examples/model-factory/Dockerfile.cpu -t <registry>/gryvia-model-factory:cpu examples/model-factory
-FROM python:3.12-slim
+FROM python:3.14-slim
 
 ARG LLAMA_CPP_REF=b11347
 
