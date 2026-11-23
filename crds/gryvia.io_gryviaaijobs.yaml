@@ -1187,6 +1187,12 @@ spec:
                   clusters without GPUs).
                 format: int32
                 type: integer
+              idleTimeout:
+                description: |-
+                  IdleTimeout cancels a Running job after this long with no activity (e.g. "30m").
+                  Activity is gryvia.io/last-activity when set, otherwise status.startTime. Distinct from
+                  timeout (absolute activeDeadline). Useful for long-lived StatefulSet / interactive jobs.
+                type: string
               image:
                 description: Container image
                 type: string
@@ -1308,11 +1314,6 @@ spec:
                   Job timeout (e.g., 90m, 24h, 7d). For a batch Job this is activeDeadlineSeconds: the
                   job is Failed (DeadlineExceeded) once it has been active this long. Not used by the
                   StatefulSet workload.
-                type: string
-              idleTimeout:
-                description: |-
-                  IdleTimeout cancels a Running job after this long with no activity (e.g. "30m").
-                  Activity is gryvia.io/last-activity when set, otherwise status.startTime.
                 type: string
               tolerations:
                 description: Tolerations
@@ -3754,7 +3755,8 @@ spec:
                       Borrowers are the other queues of the cohort currently using more than their quota; the
                       queue can reclaim that capacity by preemption when reclaimWithinCohort allows it
                     items:
-                      description: QueueBorrower is a cohort member holding capacity above its own quota.
+                      description: QueueBorrower is a cohort member holding capacity
+                        above its own quota.
                       properties:
                         borrowed:
                           format: int64
@@ -3768,7 +3770,8 @@ spec:
                     maxItems: 8
                     type: array
                   category:
-                    description: Category is WaitingForWorkload, QuotaExhausted, AdmissionChecksPending, Evicted or Pending
+                    description: Category is WaitingForWorkload, QuotaExhausted, AdmissionChecksPending,
+                      Evicted or Pending
                     type: string
                   clusterQueue:
                     description: ClusterQueue is the queue the job is waiting in

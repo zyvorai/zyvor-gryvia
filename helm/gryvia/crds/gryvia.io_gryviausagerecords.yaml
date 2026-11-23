@@ -65,6 +65,11 @@ spec:
               currency:
                 description: Currency of rate and cost
                 type: string
+              effectiveGpus:
+                description: |-
+                  EffectiveGpus is the physical GPU fraction billed (fractional share or MIG slice). When
+                  unset or zero on older records, consumers should fall back to gpus.
+                type: number
               end:
                 description: End is when the run finished (the job ended or Kueue
                   evicted it); nil while it is running
@@ -75,18 +80,18 @@ spec:
                   never modified again
                 type: boolean
               gpuHours:
-                description: GpuHours is wall-clock hours multiplied by gpus
+                description: GpuHours is wall-clock hours multiplied by effectiveGpus
+                  (or gpus when effectiveGpus is 0)
                 type: number
               gpuType:
                 description: GpuType of the job
                 type: string
               gpus:
-                description: Gpus is the whole GPU unit count (TotalGPUs)
+                description: |-
+                  Gpus is the whole GPU unit count (TotalGPUs); kept for compatibility and dashboards that
+                  expect an integer slot count.
                 format: int32
                 type: integer
-              effectiveGpus:
-                description: EffectiveGpus is the physical GPU fraction billed (share or MIG)
-                type: number
               inputTokens:
                 description: InputTokens is the prompt tokens of a tokens record
                 format: int64

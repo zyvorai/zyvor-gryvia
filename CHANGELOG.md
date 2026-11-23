@@ -10,6 +10,7 @@ and the project aims to follow [Semantic Versioning](https://semver.org/) once i
 - CI: `docker/login-action` v4, `sigstore/cosign-installer` v4, Python 3.14 and Node 24 in workflows; Dockerfiles for the Python services and examples use `python:3.14-slim` / `python:3.14-alpine` (tags verified on Docker Hub); the gateway image moves from 3.11 to 3.14.
 
 ### Fixed
+- Generated CRDs (`crds/`, `helm/gryvia/crds/`) and `website/docs/reference/crds.md` were stale against the Go types (property order and some descriptions); regenerated with controller-gen v0.22.0.
 - `services/api-gateway/tests/test_usage.py`: the CSV export test did not expect the `kind` column the endpoint already emits.
 - `tests/e2e`: test namespaces were invalid because `t.Name()` contains `_`.
 

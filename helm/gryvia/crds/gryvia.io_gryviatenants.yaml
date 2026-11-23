@@ -201,19 +201,6 @@ spec:
                   concurrentGPUs:
                     description: ConcurrentGPUs is the max concurrent GPUs
                     type: integer
-                  fairShareWeight:
-                    description: |-
-                      FairShareWeight is the tenant's weight in Kueue fair sharing (default 1). A tenant with
-                      weight 3 is entitled to three times the contended capacity of a tenant with weight 1.
-                      Applied only when the quota operator runs with --kueue-fair-sharing.
-                    minimum: 1
-                    type: integer
-                  lendingLimit:
-                    description: |-
-                      LendingLimit caps how many of the tenant's own GPUs other tenants may borrow. Unset means
-                      all idle quota is lendable.
-                    minimum: 0
-                    type: integer
                   concurrentJobs:
                     description: ConcurrentJobs is the max concurrent jobs
                     type: integer
@@ -227,6 +214,13 @@ spec:
                         description: Monthly cost limit in USD
                         type: number
                     type: object
+                  fairShareWeight:
+                    description: |-
+                      FairShareWeight is the tenant's weight in Kueue fair sharing (default 1). A tenant with
+                      weight 3 is entitled to three times the contended capacity of a tenant with weight 1.
+                      Applied only when the quota operator runs with --kueue-fair-sharing.
+                    minimum: 1
+                    type: integer
                   gpuHours:
                     description: GPUHours defines GPU hours quota
                     properties:
@@ -237,6 +231,12 @@ spec:
                         description: Monthly GPU hours limit
                         type: number
                     type: object
+                  lendingLimit:
+                    description: |-
+                      LendingLimit caps how many of the tenant's own GPUs other tenants may borrow. Unset means
+                      all idle quota is lendable.
+                    minimum: 0
+                    type: integer
                   perGPUType:
                     additionalProperties:
                       description: TenantGPUTypeQuota defines per-GPU-type quota
