@@ -41,9 +41,9 @@ func setupTestCluster(t *testing.T) *testCluster {
 	require.NoError(t, err, "Failed to create clientset")
 
 	// Use unique namespace per test
-	ns := fmt.Sprintf("gryvia-e2e-%s", strings.ToLower(strings.ReplaceAll(t.Name(), "/", "-")))
+	ns := fmt.Sprintf("gryvia-e2e-%s", strings.ToLower(strings.NewReplacer("/", "-", "_", "-").Replace(t.Name())))
 	if len(ns) > 63 {
-		ns = ns[:63]
+		ns = strings.TrimRight(ns[:63], "-")
 	}
 
 	tc := &testCluster{

@@ -63,7 +63,7 @@ jobs:
       - uses: azure/setup-helm@v5
       - uses: actions/setup-python@v7
         with:
-          python-version: '3.12'
+          python-version: '3.14'
       - run: pip install -r gryvia/examples/agents/requirements.txt pyyaml cryptography
       - name: Chart render tests
         working-directory: gryvia
@@ -91,7 +91,7 @@ jobs:
       - uses: azure/setup-helm@v5
       - uses: actions/setup-python@v7
         with:
-          python-version: '3.12'
+          python-version: '3.14'
       - run: pip install pyyaml ansible-core ansible-lint
       - name: Charts
         working-directory: gryvia

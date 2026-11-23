@@ -38,7 +38,7 @@ concurrency:
 
 env:
   KIND_CLUSTER: sovereign-aios
-  TINY_PY_IMAGE: python:3.12-alpine
+  TINY_PY_IMAGE: python:3.14-alpine
   LLAMA_IMAGE: ghcr.io/ggml-org/llama.cpp:server-b11347
   LLAMA_MODEL: Qwen/Qwen2.5-0.5B-Instruct-GGUF:Q4_K_M
   ZYNTRA_REF: ${{ inputs.zyntra_ref || 'main' }}

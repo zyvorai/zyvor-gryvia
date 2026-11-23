@@ -102,7 +102,7 @@ def test_export_csv(make_client, seeded):
     assert r.headers["content-disposition"].startswith("attachment; filename=")
     rows = list(csv.DictReader(io.StringIO(r.text)))
     assert len(rows) == 4
-    assert list(rows[0]) == ["tenant", "namespace", "job", "sku", "gpuType", "gpus", "start", "end", "gpuHours",
+    assert list(rows[0]) == ["tenant", "namespace", "job", "sku", "gpuType", "gpus", "kind", "start", "end", "gpuHours",
                              "rate", "cost", "currency", "final"]
     assert sum(float(x["cost"]) for x in rows) == 64.0
     assert rows[0]["namespace"] == "tenant-alpha" and rows[0]["job"] == "j1"
