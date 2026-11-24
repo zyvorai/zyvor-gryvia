@@ -23,6 +23,7 @@ const AREAS: &[&str] = &[
     "sovereign",
 ];
 
+#[allow(dead_code)]
 pub fn areas() -> &'static [&'static str] {
     AREAS
 }
@@ -35,12 +36,7 @@ pub async fn schemas(gateway: &GatewayClient, output: &str) -> Result<()> {
     output::print_serialized(if output == "table" { "json" } else { output }, &v)
 }
 
-pub async fn analyze(
-    gateway: &GatewayClient,
-    area: &str,
-    body: Value,
-    output: &str,
-) -> Result<()> {
+pub async fn analyze(gateway: &GatewayClient, area: &str, body: Value, output: &str) -> Result<()> {
     if !AREAS.contains(&area) {
         anyhow::bail!("unknown area {area}; choose one of: {}", AREAS.join(", "));
     }

@@ -36,7 +36,9 @@ pub const GROUPS: &[(&str, &[&str])] = &[
             "tenant",
             "catalog",
             "usage",
+            "waste",
             "invoice",
+            "ledger",
             "reservation",
             "budget",
         ],
@@ -45,8 +47,11 @@ pub const GROUPS: &[(&str, &[&str])] = &[
         "ML",
         &["models", "datasets", "llm", "rag", "agents", "job-hooks"],
     ),
-    ("Operations", &["health", "maintenance"]),
-    ("Observe", &["network", "security", "gpu"]),
+    ("Operations", &["health", "maintenance", "export"]),
+    (
+        "Observe",
+        &["network", "security", "gpu", "flight", "intelligence"],
+    ),
     ("Utilities", &["completion", "version"]),
 ];
 

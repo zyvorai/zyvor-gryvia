@@ -184,12 +184,13 @@ fn images(spec: Option<&k8s_openapi::api::core::v1::PodSpec>) -> Vec<String> {
     .unwrap_or_default()
 }
 
-/// Read everything the report needs. A failed read becomes a warning, never an error.
-
+/// The scheduler backend named by the controller's flags, if any.
 fn detect_scheduler_backend(pod: Option<&k8s_openapi::api::core::v1::PodSpec>) -> Option<String> {
     let pod = pod?;
     for c in &pod.containers {
-        let Some(args) = c.args.as_ref() else { continue };
+        let Some(args) = c.args.as_ref() else {
+            continue;
+        };
         for a in args {
             if a.contains("kai-scheduler") {
                 return Some("kai".into());
@@ -231,7 +232,9 @@ pub async fn collect(client: &GryviaClient, namespace: &str) -> Inputs {
                     images: images(spec.and_then(|s| s.template.spec.as_ref())),
                 });
                 if name.contains("ai-operator") {
-                    if let Some(backend) = detect_scheduler_backend(spec.and_then(|s| s.template.spec.as_ref())) {
+                    if let Some(backend) =
+                        detect_scheduler_backend(spec.and_then(|s| s.template.spec.as_ref()))
+                    {
                         inputs.scheduler_backend = backend;
                     }
                 }

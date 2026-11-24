@@ -50,13 +50,34 @@ fn record_tenant(r: &Value) -> String {
         .pointer("/metadata/namespace")
         .and_then(Value::as_str)
         .unwrap_or("");
-    ns.strip_prefix("tenant-")
-        .unwrap_or(ns)
-        .to_string()
+    ns.strip_prefix("tenant-").unwrap_or(ns).to_string()
 }
 
-fn compute_rows(tenants: &[Value], records: &[Value], days: i64) -> (Vec<Row>, f64) {
-    let cutoff = Utc::now() - Duration::days(days.max(1));
+/// Weight of usage `age_days` old: 1 with no half-life, 0.5 at one half-life, never above 1.
+fn decay_factor(age_days: f64, half_life_days: Option<f64>) -> f64 {
+    match half_life_days {
+        Some(h) if h > 0.0 && age_days > 0.0 => 0.5_f64.powf(age_days / h),
+        _ => 1.0,
+    }
+}
+
+fn compute_rows(
+    tenants: &[Value],
+    records: &[Value],
+    days: i64,
+    half_life_days: Option<f64>,
+) -> (Vec<Row>, f64) {
+    compute_rows_at(tenants, records, days, half_life_days, Utc::now())
+}
+
+fn compute_rows_at(
+    tenants: &[Value],
+    records: &[Value],
+    days: i64,
+    half_life_days: Option<f64>,
+    now: chrono::DateTime<Utc>,
+) -> (Vec<Row>, f64) {
+    let cutoff = now - Duration::days(days.max(1));
     let mut hours: BTreeMap<String, f64> = BTreeMap::new();
     for r in records {
         let start = r
@@ -70,10 +91,14 @@ fn compute_rows(tenants: &[Value], records: &[Value], days: i64) -> (Vec<Row>, f
             }
         }
         let t = record_tenant(r);
+        let age_days = start
+            .map(|s| (now - s).num_seconds() as f64 / 86400.0)
+            .unwrap_or(0.0);
         let h = r
             .pointer("/spec/gpuHours")
             .and_then(Value::as_f64)
-            .unwrap_or(0.0);
+            .unwrap_or(0.0)
+            * decay_factor(age_days, half_life_days);
         *hours.entry(t).or_default() += h;
     }
 
@@ -133,6 +158,7 @@ fn compute_rows(tenants: &[Value], records: &[Value], days: i64) -> (Vec<Row>, f
 pub async fn report(
     client: &GryviaClient,
     days: i64,
+    half_life_days: Option<f64>,
     output: &str,
     apply: bool,
     dry_run: bool,
@@ -165,10 +191,11 @@ pub async fn report(
         })
         .unwrap_or_default();
 
-    let (rows, total_h) = compute_rows(&tenants, &records, days);
+    let (rows, total_h) = compute_rows(&tenants, &records, days, half_life_days);
 
     let payload = serde_json::json!({
         "lookbackDays": days,
+        "halfLifeDays": half_life_days,
         "totalGpuHours": total_h,
         "apply": apply,
         "dryRun": dry_run,
@@ -232,11 +259,7 @@ pub async fn report(
             continue;
         }
         tenants_api
-            .patch(
-                &r.tenant,
-                &PatchParams::default(),
-                &Patch::Merge(&patch),
-            )
+            .patch(&r.tenant, &PatchParams::default(), &Patch::Merge(&patch))
             .await
             .map_err(|e| {
                 anyhow!(
@@ -259,4 +282,44 @@ pub async fn report(
         println!("{applied} tenant weight(s) patched");
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn tenants() -> Vec<Value> {
+        vec![
+            json!({"metadata": {"name": "a"}, "spec": {"quotas": {"fairShareWeight": 1}}}),
+            json!({"metadata": {"name": "b"}, "spec": {"quotas": {"fairShareWeight": 1}}}),
+        ]
+    }
+
+    #[test]
+    fn decay_factor_halves_per_half_life() {
+        assert_eq!(decay_factor(7.0, Some(7.0)), 0.5);
+        assert_eq!(decay_factor(0.0, Some(7.0)), 1.0);
+        assert_eq!(decay_factor(-3.0, Some(7.0)), 1.0);
+        assert_eq!(decay_factor(9.0, None), 1.0);
+        assert_eq!(decay_factor(9.0, Some(0.0)), 1.0);
+    }
+
+    #[test]
+    fn half_life_favours_recent_usage() {
+        let now = chrono::DateTime::parse_from_rfc3339("2026-03-31T00:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        let records = vec![
+            json!({"spec": {"tenant": "a", "gpuHours": 100.0, "start": "2026-03-17T00:00:00Z"}}),
+            json!({"spec": {"tenant": "b", "gpuHours": 100.0, "start": "2026-03-30T00:00:00Z"}}),
+        ];
+        let (flat, _) = compute_rows_at(&tenants(), &records, 30, None, now);
+        assert_eq!(flat[0].share_actual, flat[1].share_actual);
+        let (rows, total) = compute_rows_at(&tenants(), &records, 30, Some(7.0), now);
+        assert_eq!(rows[0].gpu_hours, 25.0);
+        assert!(rows[1].share_actual > rows[0].share_actual);
+        assert!(rows[0].recommended_weight >= rows[1].recommended_weight);
+        assert!(total < 200.0);
+    }
 }

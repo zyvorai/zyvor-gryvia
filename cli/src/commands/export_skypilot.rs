@@ -15,33 +15,30 @@ use crate::display;
 pub async fn skypilot(client: &GryviaClient, name: Option<&str>) -> Result<()> {
     let api = super::capacity::gvk_api(client, "GryviaAIJob", "gryviaaijobs");
     let job = if let Some(n) = name {
-        let obj = api
-            .get(n)
-            .await
-            .map_err(|e| {
-                anyhow::anyhow!(
-                    "Failed to get job {n}: {}",
-                    display::cluster_error_text(&e.to_string())
-                )
-            })?;
+        let obj = api.get(n).await.map_err(|e| {
+            anyhow::anyhow!(
+                "Failed to get job {n}: {}",
+                display::cluster_error_text(&e.to_string())
+            )
+        })?;
         serde_json::to_value(obj)?
     } else {
-        let list = api
-            .list(&ListParams::default())
-            .await
-            .map_err(|e| {
-                anyhow::anyhow!(
-                    "Failed to list jobs: {}",
-                    display::cluster_error_text(&e.to_string())
-                )
-            })?;
+        let list = api.list(&ListParams::default()).await.map_err(|e| {
+            anyhow::anyhow!(
+                "Failed to list jobs: {}",
+                display::cluster_error_text(&e.to_string())
+            )
+        })?;
         let mut items: Vec<Value> = list
             .items
             .iter()
             .filter_map(|o| serde_json::to_value(o).ok())
             .collect();
         if items.is_empty() {
-            bail!("no GryviaAIJob in namespace {}; pass a job name", client.namespace());
+            bail!(
+                "no GryviaAIJob in namespace {}; pass a job name",
+                client.namespace()
+            );
         }
         items.sort_by(|a, b| {
             let ta = a

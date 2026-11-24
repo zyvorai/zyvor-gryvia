@@ -80,8 +80,14 @@ fn print_table(v: &Value) {
         .pointer("/coverage/complete")
         .and_then(Value::as_bool)
         .unwrap_or(false);
-    let reachable = v.pointer("/coverage/reachable").and_then(Value::as_i64).unwrap_or(0);
-    let total = v.pointer("/coverage/total").and_then(Value::as_i64).unwrap_or(0);
+    let reachable = v
+        .pointer("/coverage/reachable")
+        .and_then(Value::as_i64)
+        .unwrap_or(0);
+    let total = v
+        .pointer("/coverage/total")
+        .and_then(Value::as_i64)
+        .unwrap_or(0);
     let events = v
         .get("events")
         .and_then(Value::as_array)

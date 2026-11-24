@@ -82,6 +82,8 @@ class Deps:
     # (url, headers, subprotocols, origin) -> an upstream WebSocket connection
     workspace_transport: Optional[Any] = None
     workspace_ws_connect: Optional[Callable[..., Awaitable[Any]]] = None
+    # (days) -> {namespace: average GPU utilization percent}; Prometheus/DCGM in main.py, injected in tests
+    gpu_util_fetch: Optional[Callable[[int], Awaitable[Dict[str, float]]]] = None
 
 
 async def require_admin(request: Request) -> None:

@@ -6,6 +6,8 @@ and the project aims to follow [Semantic Versioning](https://semver.org/) once i
 ## [Unreleased]
 
 ### Added
+- GPU waste report: `GET /api/waste` and `gryvia waste` compare metered GPU-hours with DCGM utilization per tenant (effective hours, wasted hours and cost, `underused` below `lowUtilPct`, CSV export, tenant-scoped). Utilization is read through Prometheus; without it the report returns `telemetry: false`. See docs/waste-report.md. pytest with fake Prometheus data and Rust unit tests; not run against real DCGM data.
+- Time-decayed fairshare: `halfLifeDays` on `/api/fairshare` and `/api/fairshare/apply`, and `gryvia tenant fairshare --half-life-days`, weigh recent GPU-hours more than old ones. pytest and Rust unit tests.
 - Chargeback `allocationModel.method: idle-proportional` with `allocationModel.idleCost`: the cost of unused GPU capacity is split across cost centers in proportion to their metered cost, to the cent (new `pkg/idlecost`, status fields `costCenters[].idleCost`, `byResourceType.idle`, `idleUnallocated`). `idleCost` without the method is refused. See `docs/idle-cost.md`. Unit tests only; not run against a cluster.
 - `operators/quota-operator/pkg/fairshare`: weighted borrowing share and preemption-victim selection (Kueue-style strategies, never below a queue nominal quota, size-capped). A tested library; no controller calls it yet.
 - `docs/RESEARCH.md`: GPU scheduling and ML platform landscape, gaps and ranked ideas.
