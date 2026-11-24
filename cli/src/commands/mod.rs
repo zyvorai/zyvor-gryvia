@@ -21,6 +21,7 @@ pub mod get;
 pub mod gpu_trace;
 pub mod graph;
 pub mod health;
+pub mod insights;
 pub mod intelligence;
 pub mod invoice;
 pub mod jobhooks;

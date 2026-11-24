@@ -63,3 +63,18 @@ and the OpenCost page is the specification page.
 - https://www.opencost.io/docs/specification
 - https://run-ai-docs.nvidia.com/self-hosted/platform-management/runai-scheduler/scheduling/concepts-and-principles
 - https://docs.ray.io/en/latest/cluster/kubernetes/index.html
+
+## Round 3 (2026-11-24)
+
+Pages read for this round: the Kueue pending-workloads API page (each pending workload gets `positionInClusterQueue` and
+`positionInLocalQueue` so users can estimate when a job starts), and the Kubecost 2.4 GPU page (an efficiency report with
+"GPU workload idle" per workload and "idle by cluster" for GPUs no container requested). Search results only, not read as
+pages: Run:ai documents a Reports page with CSV download and time-based fairshare but no wait-time or quota-utilization
+report; AMD's Resource Manager project dashboard shows average wait time and a quota-utilization panel; Slurm exit states
+(OUT_OF_MEMORY, NODE_FAIL, PREEMPTED, TIMEOUT) and GPU-cluster failure studies split failures into deterministic ones
+(OOM, application bugs) and transient ones (node or network faults, preemption); SkyPilot searches found nothing new.
+
+Built from this (docs/job-insights.md): queue positions, wait-time percentiles, failure classification with a
+transient flag, per-job GPU right-sizing from measured utilization, and quota use per tenant. Not built: Kubecost-style
+infrastructure idle (GPUs no job requested; needs node inventory and DCGM), request sizing applied automatically, and
+log-based failure root cause.

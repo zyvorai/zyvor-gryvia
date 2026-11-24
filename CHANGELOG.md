@@ -6,6 +6,7 @@ and the project aims to follow [Semantic Versioning](https://semver.org/) once i
 ## [Unreleased]
 
 ### Added
+- Job insights (see docs/job-insights.md; gateway routes and `gryvia insights` subcommands): `GET /api/queue` lists waiting jobs with position (cluster-wide, per queue, per tenant), GPUs ahead, waiting time and reason; `GET /api/queue/stats` gives p50/p90/max queue wait per tenant and queue; `GET /api/failures` classifies Failed, Preempted and Rejected jobs (oom, image-pull, node-failure, preempted, deadline, quota, scheduling, app-error) and marks each transient or deterministic, with CSV export; `GET /api/rightsizing` compares each job's measured GPU utilization with its request and advises a GPU share or fewer GPUs with the GPU-hours saved; `GET /api/quota-usage` shows GPUs in use against `concurrentGPUs` per tenant and flags tenants blocked at their quota or borrowing. All are tenant-scoped and read-only. Handler-level pytest for every route (admin, tenant scope, filters, validation, CSV) and Rust unit tests for the table output; not run against a live cluster. Research: docs/RESEARCH.md round 3.
 - GPU waste report: `GET /api/waste` and `gryvia waste` compare metered GPU-hours with DCGM utilization per tenant (effective hours, wasted hours and cost, `underused` below `lowUtilPct`, CSV export, tenant-scoped). Utilization is read through Prometheus; without it the report returns `telemetry: false`. See docs/waste-report.md. pytest with fake Prometheus data and Rust unit tests; not run against real DCGM data.
 - Time-decayed fairshare: `halfLifeDays` on `/api/fairshare` and `/api/fairshare/apply`, and `gryvia tenant fairshare --half-life-days`, weigh recent GPU-hours more than old ones. pytest and Rust unit tests.
 - Chargeback `allocationModel.method: idle-proportional` with `allocationModel.idleCost`: the cost of unused GPU capacity is split across cost centers in proportion to their metered cost, to the cent (new `pkg/idlecost`, status fields `costCenters[].idleCost`, `byResourceType.idle`, `idleUnallocated`). `idleCost` without the method is refused. See `docs/idle-cost.md`. Unit tests only; not run against a cluster.
@@ -13,10 +14,15 @@ and the project aims to follow [Semantic Versioning](https://semver.org/) once i
 - `docs/RESEARCH.md`: GPU scheduling and ML platform landscape, gaps and ranked ideas.
 
 ### Changed
+- Dependencies, round 3: `cargo update` in `cli/` (Cargo.lock only; kube 5.1.0; no Cargo.toml bound allowed a newer major); web-ui `@tanstack/react-query` 5.108.4, `lucide-react` 1.78.0, `react-router-dom` 7.18.6, `recharts` 3.11.1; website `framer-motion` 11.18.2 to 14.14.0 (three majors; Docusaurus 3.10.2 builds and the site renders from `npm run build`, pages not viewed in a browser). Go modules and the gateway's Python pins were already at the latest versions (only indirect modules held back by their parents' constraints).
+- CRDs regenerated with controller-gen v0.23.0 (CI installs `@latest`): only the `controller-gen.kubebuilder.io/version` annotation changed.
+- `web-ui`: typescript pinned to `~6.0.3` (typescript-eslint supports `<6.1.0` and refuses to run on 7.0); `src/pages/Usage.tsx` types its `kind` filter; the empty `ImportMetaEnv` interface in `src/vite-env.d.ts` is gone (lint error). `npm ci`, lint, build and vitest (301 tests) pass.
 - Dependency refresh: `go get -u` and `go mod tidy` in all ten Go modules (collector, six operators, sdk/go, tests/e2e, tests/performance); controller-runtime 0.25.3, client-go/apimachinery 0.37.2 everywhere. API gateway pins: kubernetes 37.0.3, pydantic 2.14.4, fastapi 0.165.0 (gateway and agents example); the gateway suite (773 tests) passes on Python 3.14.
 - CI: `docker/login-action` v4, `sigstore/cosign-installer` v4, Python 3.14 and Node 24 in workflows; Dockerfiles for the Python services and examples use `python:3.14-slim` / `python:3.14-alpine` (tags verified on Docker Hub); the gateway image moves from 3.11 to 3.14.
 
 ### Fixed
+- `web-ui`: `npm ci`, lint and the TypeScript build all failed on main (typescript 7 against typescript-eslint, a type error in Usage.tsx, an empty interface); see Changed.
+- `scripts/e2e-kueue.sh`: removed an unused `local cq` that `shellcheck -S warning` flagged (the function of the same name is unaffected).
 - Generated CRDs (`crds/`, `helm/gryvia/crds/`) and `website/docs/reference/crds.md` were stale against the Go types (property order and some descriptions); regenerated with controller-gen v0.22.0.
 - `services/api-gateway/tests/test_usage.py`: the CSV export test did not expect the `kind` column the endpoint already emits.
 - `operators/quota-operator`: `gryviausagerecord_controller.go` was not gofmt-clean.

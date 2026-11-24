@@ -8,7 +8,7 @@ import { api } from '@/lib/api'
 import { notify } from '@/lib/notify'
 import { useIsAdmin } from '@/lib/useRole'
 import { saveBlob } from '@/lib/download'
-import { USAGE_GROUPS, defaultUsageRange, exportFilename, keyHeader, parseGroupBy, rangeError, usageParams, type UsageRow } from '@/lib/cloud'
+import { USAGE_GROUPS, defaultUsageRange, exportFilename, keyHeader, parseGroupBy, rangeError, usageParams, type UsageKind, type UsageRow } from '@/lib/cloud'
 import { formatNumber } from '@/lib/format'
 import { formatRate } from '@/lib/cloud'
 import type { SortAccessor } from '@/lib/tableState'
@@ -36,7 +36,7 @@ export default function Usage() {
   const groupBy = parseGroupBy(params.get('groupBy'), admin ? 'tenant' : 'sku')
   const tenant = admin ? (params.get('tenant') ?? '') : ''
   const kindRaw = params.get('kind') ?? 'all'
-  const kind = kindRaw === 'gpu' || kindRaw === 'tokens' ? kindRaw : 'all'
+  const kind: UsageKind = kindRaw === 'gpu' || kindRaw === 'tokens' ? kindRaw : 'all'
   const [exporting, setExporting] = useState<'csv' | 'json' | null>(null)
 
   const setParam = (name: string, value: string) =>

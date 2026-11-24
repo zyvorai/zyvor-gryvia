@@ -149,7 +149,6 @@ YAML
   wait_for 120 "LocalQueue $cap_ns/gryvia exists" kubectl -n "$cap_ns" get localqueue gryvia
   wait_for 120 "LocalQueue $free_ns/gryvia exists" kubectl -n "$free_ns" get localqueue gryvia
 
-  local cq
   cq() { kubectl get clusterqueue "$1" -o jsonpath="$2" 2>/dev/null; }
   [[ "$(cq gryvia-fs-cap '{.spec.cohortName}{.spec.cohort}')" == "fs-e2e" ]] || fail "fs-cap cohort != fs-e2e"
   [[ "$(cq gryvia-fs-cap '{.spec.resourceGroups[0].flavors[0].resources[0].borrowingLimit}')" == "0" ]] || fail "fs-cap borrowingLimit != 0"
