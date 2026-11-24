@@ -118,6 +118,7 @@ struct Cli {
 }
 
 #[derive(Subcommand)]
+#[allow(clippy::large_enum_variant)]
 enum Commands {
     /// Submit an AI training or inference job in one line, from a YAML file, or from a Slurm batch script
     #[command(after_help = examples(&[
@@ -215,7 +216,12 @@ enum Commands {
         env: Vec<String>,
 
         /// Cancel a Running job after this idle duration (e.g. 30m); uses gryvia.io/last-activity or startTime
-        #[arg(long, value_name = "DURATION", requires = "image", conflicts_with = "sbatch")]
+        #[arg(
+            long,
+            value_name = "DURATION",
+            requires = "image",
+            conflicts_with = "sbatch"
+        )]
         idle_timeout: Option<String>,
 
         /// Command and arguments after `--`
@@ -485,12 +491,27 @@ enum Commands {
     },
 
     /// Workload intelligence analysis (gateway)
-    #[command(subcommand)]
+    #[command(subcommand, after_help = examples(&["gryvia intelligence schemas", "gryvia intelligence analyze cost"]))]
     Intelligence(IntelligenceCommands),
 
     /// Billing ledger verify and invoice finalize/void (gateway; needs billing.ledger.enabled)
-    #[command(subcommand)]
+    #[command(subcommand, after_help = examples(&["gryvia ledger verify research", "gryvia ledger finalize research --month 2026-09"]))]
     Ledger(LedgerCommands),
+
+    /// GPU waste per tenant: metered GPU-hours against measured utilization (via the API gateway)
+    #[command(after_help = examples(&["gryvia waste", "gryvia waste --days 30 --low-util-pct 40", "gryvia waste -o json"]))]
+    Waste {
+        /// Window in days
+        #[arg(long, default_value_t = 7, value_parser = clap::value_parser!(u32).range(1..=90))]
+        days: u32,
+
+        /// Tenants below this average utilization percent are marked underused
+        #[arg(long, default_value_t = 30.0)]
+        low_util_pct: f64,
+
+        #[arg(short, long, value_enum, default_value_t = OutputFormat::Table, env = "GRYVIA_OUTPUT")]
+        output: OutputFormat,
+    },
 
     /// Flight Recorder report for a job (via the API gateway)
     #[command(after_help = examples(&["gryvia flight train-job", "gryvia flight train-job -n ml --diagnosis", "gryvia flight train-job -o json"]))]
@@ -1201,6 +1222,10 @@ enum TenantCommands {
         /// With --apply, print patches without writing (default when --apply is set without this flag: write)
         #[arg(long)]
         dry_run: bool,
+
+        /// Time-decay usage: a GPU-hour used this many days ago counts half (recent usage weighs more)
+        #[arg(long)]
+        half_life_days: Option<f64>,
 
         /// Limit apply to one tenant
         #[arg(long)]
@@ -2083,12 +2108,14 @@ async fn run() -> Result<()> {
                 days,
                 apply,
                 dry_run,
+                half_life_days,
                 tenant,
                 output,
             } => {
                 commands::fairshare::report(
                     &client,
                     days,
+                    half_life_days,
                     output.as_str(),
                     apply,
                     dry_run,
@@ -2177,6 +2204,16 @@ async fn run() -> Result<()> {
                         .await?;
                 }
             }
+        }
+        Commands::Waste {
+            days,
+            low_util_pct,
+            output,
+        } => {
+            let gw = gateway.as_ref().ok_or_else(|| {
+                anyhow::anyhow!("set --gateway or GRYVIA_GATEWAY_URL for the waste command")
+            })?;
+            commands::waste::report(gw, days, low_util_pct, output.as_str()).await?;
         }
         Commands::Flight {
             job,

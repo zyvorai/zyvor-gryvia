@@ -5,6 +5,7 @@
    \______/     GPU nodes:    Warning  2/3 ready
                 GPU add-ons:  OK  dcgm-exporter 2/2, nvidia-device-plugin 2/2
                 Collectors:   disabled  not installed
+                Scheduler:    OK  default (kube-scheduler)
 
 Deployment gryvia-gpu-operator          Desired: 1, Ready: 1/1, Available: 1/1
 Deployment gryvia-ai-operator           Desired: 1, Ready: 1/1, Available: 1/1

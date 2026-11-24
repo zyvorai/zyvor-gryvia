@@ -505,6 +505,24 @@ JOB_NAMESPACE = os.environ.get("GRYVIA_JOB_NAMESPACE", "default")
 
 from routers import Deps, register_routers  # noqa: E402
 
+
+async def _gpu_util_by_namespace(days: int) -> Dict[str, float]:
+    """Average DCGM GPU utilization per namespace over ``days`` (empty when Prometheus is unavailable)."""
+    if prom is None:
+        return {}
+    query = f'avg by (namespace) (avg_over_time(DCGM_FI_DEV_GPU_UTIL{{namespace!=""}}[{int(days)}d]))'
+    loop = asyncio.get_running_loop()
+    res = await loop.run_in_executor(None, lambda: prom.custom_query(query=query))
+    out: Dict[str, float] = {}
+    for item in res or []:
+        ns = (item.get("metric") or {}).get("namespace")
+        try:
+            out[ns] = float(item["value"][1])
+        except (KeyError, IndexError, TypeError, ValueError):
+            continue
+    return out
+
+
 deps = Deps(
     verify_auth=verify_auth,
     k8s_custom=k8s_custom,
@@ -545,6 +563,7 @@ deps = Deps(
     or None,
     require_prod_approval=os.environ.get("GRYVIA_REQUIRE_PROD_APPROVAL", "") == "1",
     intelligence_actions=os.environ.get("GRYVIA_INTELLIGENCE_ACTIONS", "") == "1",
+    gpu_util_fetch=_gpu_util_by_namespace,
     submission_admission=os.environ.get("GRYVIA_SUBMISSION_ADMISSION_ENFORCE", "")
     == "1",
     intelligence_retention_days=max(

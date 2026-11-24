@@ -131,9 +131,9 @@ async fn get_workspace(client: &GryviaClient, name: &str) -> Result<Value> {
 
 /// `kubectl exec -it` into the workspace container (requires kubectl on PATH).
 pub async fn ssh(client: &GryviaClient, name: &str, command: Option<Vec<String>>) -> Result<()> {
-    let ws = get_workspace(client, &name).await?;
+    let ws = get_workspace(client, name).await?;
     let ns = client.namespace();
-    let pod = pod_name_of(&ws, &name);
+    let pod = pod_name_of(&ws, name);
     let patch = json!({
         "metadata": {
             "annotations": {
@@ -142,7 +142,7 @@ pub async fn ssh(client: &GryviaClient, name: &str, command: Option<Vec<String>>
         }
     });
     let _ = crd::api(client, &WORKSPACES)
-        .patch(&name, &PatchParams::default(), &Patch::Merge(&patch))
+        .patch(name, &PatchParams::default(), &Patch::Merge(&patch))
         .await;
 
     let mut args = vec![
@@ -177,10 +177,15 @@ pub async fn ssh(client: &GryviaClient, name: &str, command: Option<Vec<String>>
 }
 
 /// Copy a local path into the workspace `/workspace` directory via `kubectl cp`.
-pub async fn sync(client: &GryviaClient, name: &str, local_path: &str, remote_subdir: Option<&str>) -> Result<()> {
-    let ws = get_workspace(client, &name).await?;
+pub async fn sync(
+    client: &GryviaClient,
+    name: &str,
+    local_path: &str,
+    remote_subdir: Option<&str>,
+) -> Result<()> {
+    let ws = get_workspace(client, name).await?;
     let ns = client.namespace();
-    let pod = pod_name_of(&ws, &name);
+    let pod = pod_name_of(&ws, name);
     let dest = match remote_subdir {
         Some(s) if !s.is_empty() => format!("{ns}/{pod}:/workspace/{s}"),
         _ => format!("{ns}/{pod}:/workspace/"),
@@ -193,7 +198,7 @@ pub async fn sync(client: &GryviaClient, name: &str, local_path: &str, remote_su
         }
     });
     let _ = crd::api(client, &WORKSPACES)
-        .patch(&name, &PatchParams::default(), &Patch::Merge(&patch))
+        .patch(name, &PatchParams::default(), &Patch::Merge(&patch))
         .await;
 
     let status = std::process::Command::new("kubectl")

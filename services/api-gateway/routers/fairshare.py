@@ -19,7 +19,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from . import tenancy
 from .common import GROUP, VERSION, Deps, require_admin, run
 from .tenancy import is_admin
-from .usage import fetch_records, filter_records, _num, _tenant_of
+from .usage import fetch_records, filter_records, _num, _start_of, _tenant_of
 from .uiutil import prune
 
 TENANT_PLURAL = "gryviatenants"
@@ -39,11 +39,22 @@ def _weight_of(tenant: Dict[str, Any]) -> int:
     return n if n > 0 else 1
 
 
-def _gpu_hours(records: List[Dict[str, Any]]) -> Dict[str, float]:
+def decay_factor(age_days: float, half_life_days: Optional[float]) -> float:
+    """Weight of usage that is ``age_days`` old: 1 when decay is off, 0.5 at one half-life."""
+    if not half_life_days or half_life_days <= 0 or age_days <= 0:
+        return 1.0
+    return 0.5 ** (age_days / half_life_days)
+
+
+def _gpu_hours(records: List[Dict[str, Any]], half_life_days: Optional[float] = None,
+               now: Optional[datetime] = None) -> Dict[str, float]:
+    now = now or datetime.now(timezone.utc)
     out: Dict[str, float] = {}
     for r in records:
         t = _tenant_of(r)
-        out[t] = out.get(t, 0.0) + _num((r.get("spec") or {}).get("gpuHours"))
+        start = _start_of(r)
+        age = (now - start).total_seconds() / 86400.0 if start else 0.0
+        out[t] = out.get(t, 0.0) + _num((r.get("spec") or {}).get("gpuHours")) * decay_factor(age, half_life_days)
     return out
 
 
@@ -52,8 +63,12 @@ def compute_fairshare(
     records: List[Dict[str, Any]],
     *,
     lookback_days: int,
+    half_life_days: Optional[float] = None,
+    now: Optional[datetime] = None,
 ) -> Dict[str, Any]:
-    hours_by = _gpu_hours(records)
+    """With ``half_life_days`` set, usage is time-decayed (KAI/Run:ai style time-based fairshare): a GPU-hour
+    used one half-life ago counts half, so recent consumption weighs more than old consumption."""
+    hours_by = _gpu_hours(records, half_life_days, now)
     rows: List[Dict[str, Any]] = []
     total_w = 0.0
     total_h = 0.0
@@ -83,6 +98,7 @@ def compute_fairshare(
     rows.sort(key=lambda r: r["tenant"])
     return {
         "lookbackDays": lookback_days,
+        "halfLifeDays": half_life_days if half_life_days and half_life_days > 0 else None,
         "totalGpuHours": round(total_h, 4),
         "applyEnabled": _env_apply(),
         "items": rows,
@@ -104,6 +120,7 @@ def build_router(deps: Deps) -> APIRouter:
     async def get_fairshare(
         request: Request,
         days: int = Query(default=7, ge=1, le=90),
+        halfLifeDays: Optional[float] = Query(default=None, gt=0, le=365),
         _=Depends(deps.verify_auth),
     ):
         if not is_admin(request):
@@ -112,7 +129,7 @@ def build_router(deps: Deps) -> APIRouter:
         lo = hi - timedelta(days=days)
         tenants = await tenancy.list_tenants(deps.k8s_custom, force=True)
         records = filter_records(await fetch_records(deps.k8s_custom, None), None, lo, hi)
-        return compute_fairshare(tenants, records, lookback_days=days)
+        return compute_fairshare(tenants, records, lookback_days=days, half_life_days=halfLifeDays)
 
     @router.post("/api/fairshare/apply")
     @deps.limiter.limit("10/minute")
@@ -120,6 +137,7 @@ def build_router(deps: Deps) -> APIRouter:
         request: Request,
         body: ApplyFairshare,
         days: int = Query(default=7, ge=1, le=90),
+        halfLifeDays: Optional[float] = Query(default=None, gt=0, le=365),
         _=Depends(deps.verify_auth),
         __=Depends(require_admin),
     ):
@@ -132,7 +150,7 @@ def build_router(deps: Deps) -> APIRouter:
         lo = hi - timedelta(days=days)
         tenants = await tenancy.list_tenants(deps.k8s_custom, force=True)
         records = filter_records(await fetch_records(deps.k8s_custom, None), None, lo, hi)
-        report = compute_fairshare(tenants, records, lookback_days=days)
+        report = compute_fairshare(tenants, records, lookback_days=days, half_life_days=halfLifeDays)
 
         applied: List[Dict[str, Any]] = []
         for row in report["items"]:
