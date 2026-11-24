@@ -498,6 +498,10 @@ enum Commands {
     #[command(subcommand, after_help = examples(&["gryvia ledger verify research", "gryvia ledger finalize research --month 2026-09"]))]
     Ledger(LedgerCommands),
 
+    /// Queue positions, wait times, failure causes, GPU right-sizing and quota use (via the API gateway)
+    #[command(subcommand, after_help = examples(&["gryvia insights queue", "gryvia insights waits --days 30", "gryvia insights failures", "gryvia insights rightsizing --target-util-pct 60", "gryvia insights quota"]))]
+    Insights(InsightsCommands),
+
     /// GPU waste per tenant: metered GPU-hours against measured utilization (via the API gateway)
     #[command(after_help = examples(&["gryvia waste", "gryvia waste --days 30 --low-util-pct 40", "gryvia waste -o json"]))]
     Waste {
@@ -1252,6 +1256,53 @@ enum IntelligenceCommands {
         #[arg(long)]
         body: Option<String>,
         #[arg(short, long, value_enum, default_value_t = OutputFormat::Json, env = "GRYVIA_OUTPUT")]
+        output: OutputFormat,
+    },
+}
+
+#[derive(Subcommand)]
+enum InsightsCommands {
+    /// Jobs waiting to start, with their place in line (priority, then age)
+    Queue {
+        /// Only this queue
+        #[arg(long)]
+        queue: Option<String>,
+        #[arg(short, long, value_enum, default_value_t = OutputFormat::Table, env = "GRYVIA_OUTPUT")]
+        output: OutputFormat,
+    },
+    /// How long jobs waited before starting (p50, p90, max per tenant)
+    Waits {
+        /// Window in days
+        #[arg(long, default_value_t = 7, value_parser = clap::value_parser!(u32).range(1..=90))]
+        days: u32,
+        #[arg(short, long, value_enum, default_value_t = OutputFormat::Table, env = "GRYVIA_OUTPUT")]
+        output: OutputFormat,
+    },
+    /// Why jobs failed, grouped by cause, and whether a retry can help
+    Failures {
+        /// Window in days
+        #[arg(long, default_value_t = 7, value_parser = clap::value_parser!(u32).range(1..=90))]
+        days: u32,
+        /// Only this cause (oom, image-pull, node-failure, preempted, deadline, quota, scheduling, app-error, unknown)
+        #[arg(long)]
+        category: Option<String>,
+        #[arg(short, long, value_enum, default_value_t = OutputFormat::Table, env = "GRYVIA_OUTPUT")]
+        output: OutputFormat,
+    },
+    /// Jobs that asked for more GPUs than they used, with a smaller request
+    Rightsizing {
+        /// Window in days
+        #[arg(long, default_value_t = 14, value_parser = clap::value_parser!(u32).range(1..=90))]
+        days: u32,
+        /// Utilization percent the recommendation aims for
+        #[arg(long, default_value_t = 70.0)]
+        target_util_pct: f64,
+        #[arg(short, long, value_enum, default_value_t = OutputFormat::Table, env = "GRYVIA_OUTPUT")]
+        output: OutputFormat,
+    },
+    /// GPUs in use against each tenant quota, and which tenants are blocked at it
+    Quota {
+        #[arg(short, long, value_enum, default_value_t = OutputFormat::Table, env = "GRYVIA_OUTPUT")]
         output: OutputFormat,
     },
 }
@@ -2204,6 +2255,52 @@ async fn run() -> Result<()> {
                         .await?;
                 }
             }
+        }
+        Commands::Insights(action) => {
+            let gw = gateway.as_ref().ok_or_else(|| {
+                anyhow::anyhow!("set --gateway or GRYVIA_GATEWAY_URL for the insights command")
+            })?;
+            let (kind, path, output) = match action {
+                InsightsCommands::Queue { queue, output } => (
+                    "queue",
+                    match queue {
+                        Some(q) => format!("/api/queue?queue={}", commands::insights::enc(&q)),
+                        None => "/api/queue".to_string(),
+                    },
+                    output,
+                ),
+                InsightsCommands::Waits { days, output } => {
+                    ("waits", format!("/api/queue/stats?days={days}"), output)
+                }
+                InsightsCommands::Failures {
+                    days,
+                    category,
+                    output,
+                } => (
+                    "failures",
+                    match category {
+                        Some(c) => format!(
+                            "/api/failures?days={days}&category={}",
+                            commands::insights::enc(&c)
+                        ),
+                        None => format!("/api/failures?days={days}"),
+                    },
+                    output,
+                ),
+                InsightsCommands::Rightsizing {
+                    days,
+                    target_util_pct,
+                    output,
+                } => (
+                    "rightsizing",
+                    format!("/api/rightsizing?days={days}&targetUtilPct={target_util_pct}"),
+                    output,
+                ),
+                InsightsCommands::Quota { output } => {
+                    ("quota", "/api/quota-usage".to_string(), output)
+                }
+            };
+            commands::insights::run(gw, kind, &path, output.as_str()).await?;
         }
         Commands::Waste {
             days,
